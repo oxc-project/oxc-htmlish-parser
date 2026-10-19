@@ -1,0 +1,19 @@
+[package]
+name = "sig"
+version = "0.0.0"
+edition = "2024"
+rust-version.workspace = true
+description = "Structural signature of oxc-htmlish-parser's AST: the differential runner's side."
+repository = "https://github.com/oxc-project/oxc-htmlish-parser"
+license = "MIT"
+publish = false
+
+# Dev task: prints to stdout, so it deliberately does not opt into the workspace's strict lints.
+
+[[bin]]
+name = "sig-batch"
+path = "src/main.rs"
+
+[dependencies]
+oxc-htmlish-parser = { path = "../../crates/oxc_htmlish_parser" }
+serde_json = "1"

@@ -39,6 +39,14 @@ Every deliberate difference is an entry in `DIVERGENCES.md`.
 | --- | --- |
 | `cargo test` | error table (`src/parser.rs`), AST snapshots + span nesting (`tests/ast.rs`) |
 | `cargo insta review` | accept snapshot changes after an intentional AST change |
+| `just differential <html\|vue> [count] [seed]` | structural fuzz against the oracles (`angular-html-parser`, `@vue/compiler-dom`) |
+
+First run: `npm i` in `tasks/differential`.
 
 - `tests/fixtures/html/*.html` parse as HTML, `tests/fixtures/vue/*.vue` as Vue; one compact tree per fixture.
 - Add a fixture when a change touches structure or facts.
+- The differential compares a signature (`tasks/sig/src/main.rs`, mirrored in `run.ts`):
+  names, attributes, Vue directive parts, end-tag presence, raw text and comment contents.
+  It fails on a tree mismatch or on our error where the oracle parses; the oracle's error where we parse is counted as lenient.
+  Oracle-side normalizations (what Vue drops even with `whitespace: "preserve"`, split texts) live in `run.ts`;
+  mismatches documented in `DIVERGENCES.md` are exempted by shape (`QUIRKS`).

@@ -17,16 +17,15 @@ Root sfc=false
   Element [130..135] "title" Html end_tag=[152..160] "</title>"
     Text [136..152] "<b>not a tag</b>" (-|-) content=[136..152] "<b>not a tag</b>"
   Text [160..161] "\n" (nl|nl)
-  Element [162..165] "svg" Svg end_tag=[191..197] "</svg>"
-    Element [167..172] "title" Svg end_tag=[183..191] "</title>"
-      Element [174..175] "b" Svg end_tag=[179..183] "</b>"
-        Text [176..179] "tag" (-|-) content=[176..179] "tag"
-  Text [197..198] "\n" (nl|nl)
-  Element [199..202] "pre" Html leading_lf end_tag=[212..218] "</pre>"
-    Text [204..212] "\ntwo lfs" (nl|-) content=[205..212] "two lfs"
-  Text [218..219] "\n" (nl|nl)
-  Element [220..223] "pre" Html leading_lf end_tag=[225..231] "</pre>"
-  Text [231..232] "\n" (nl|nl)
-  Element [233..236] "pre" Html end_tag=[244..250] "</pre>"
-    Text [237..244] "{{ x }}" (-|-) content=[237..244] "{{ x }}"
-  Text [250..251] "\n" (nl|nl)
+  Element [162..165] "svg" Svg end_tag=[200..206] "</svg>"
+    Element [167..172] "title" Svg end_tag=[192..200] "</title>"
+      Text [173..192] "<b>raw text too</b>" (-|-) content=[173..192] "<b>raw text too</b>"
+  Text [206..207] "\n" (nl|nl)
+  Element [208..211] "pre" Html leading_lf end_tag=[221..227] "</pre>"
+    Text [213..221] "\ntwo lfs" (nl|-) content=[214..221] "two lfs"
+  Text [227..228] "\n" (nl|nl)
+  Element [229..232] "pre" Html leading_lf end_tag=[234..240] "</pre>"
+  Text [240..241] "\n" (nl|nl)
+  Element [242..245] "pre" Html end_tag=[253..259] "</pre>"
+    Text [246..253] "{{ x }}" (-|-) content=[246..253] "{{ x }}"
+  Text [259..260] "\n" (nl|nl)

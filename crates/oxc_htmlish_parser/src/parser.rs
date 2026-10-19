@@ -193,6 +193,26 @@ impl<'a> Builder<'a> {
         if self.rules.html { tags::lowercase(name, buf) } else { name }
     }
 
+    /// The namespace a new child of the current element starts in.
+    fn child_namespace(&self) -> Namespace {
+        self.stack.last().map_or(Namespace::Html, |parent| {
+            let element = &parent.element;
+            if element.namespace == Namespace::Svg
+                && element.name.slice(self.source).eq_ignore_ascii_case("foreignObject")
+            {
+                Namespace::Html
+            } else {
+                element.namespace
+            }
+        })
+    }
+
+    /// HTML applies its tag table to the HTML namespace only (SVG and MathML elements are never void);
+    /// Vue looks void tags up by name alone.
+    fn is_void(&self, key: &str, namespace: Namespace) -> bool {
+        (namespace == Namespace::Html || !self.rules.html) && tags::is_void(key)
+    }
+
     fn in_v_pre(&self) -> bool {
         self.stack.last().is_some_and(|open| open.v_pre)
     }
@@ -306,6 +326,13 @@ impl<'a> Builder<'a> {
     fn markup(&mut self) -> PResult<()> {
         let start = self.pos;
         match self.bytes[start + 1] {
+            // Vue (as browsers) reads `</` without a name as a bogus comment;
+            // `angular-html-parser` skips whitespace before the name (`</ div >`).
+            b'/' if !self.rules.html
+                && self.byte(start + 2).is_some_and(|b| !b.is_ascii_alphabetic() && b != b'>') =>
+            {
+                self.bogus_comment(2)
+            }
             b'/' => self.end_tag(),
             b'!' if self.starts_with_ci(start, "<!--") => self.comment(),
             b'!' if self.starts_with_ci(start, "<![CDATA[") => {
@@ -424,7 +451,7 @@ impl<'a> Builder<'a> {
         let name = &self.source[name_start..name_end];
 
         let mut buf = [0; 16];
-        if tags::is_void(self.key(name, &mut buf)) {
+        if self.is_void(self.key(name, &mut buf), self.child_namespace()) {
             return error(DiagnosticKind::VoidEndTag, tag);
         }
         // Every dialect so far matches end tags case-insensitively.
@@ -441,10 +468,11 @@ impl<'a> Builder<'a> {
             let mut buf = [0; 16];
             self.rules.html
                 && (open.element.self_closing
-                    || tags::closed_by_parent(tags::lowercase(
-                        open.element.name.slice(self.source),
-                        &mut buf,
-                    )))
+                    || open.element.namespace == Namespace::Html
+                        && tags::closed_by_parent(tags::lowercase(
+                            open.element.name.slice(self.source),
+                            &mut buf,
+                        )))
         };
         if !self.stack[index + 1..].iter().all(implicitly_closable) {
             return error(DiagnosticKind::UnexpectedEndTag, tag);
@@ -498,6 +526,7 @@ impl<'a> Builder<'a> {
 
         if self.rules.html
             && let Some(parent) = self.stack.last()
+            && parent.element.namespace == Namespace::Html
         {
             let mut parent_buf = [0; 16];
             let parent_key =
@@ -511,22 +540,12 @@ impl<'a> Builder<'a> {
         let namespace = match key {
             "svg" => Namespace::Svg,
             "math" => Namespace::MathMl,
-            _ => self.stack.last().map_or(Namespace::Html, |parent| {
-                let element = &parent.element;
-                if element.namespace == Namespace::Svg
-                    && element.name.slice(self.source).eq_ignore_ascii_case("foreignObject")
-                {
-                    Namespace::Html
-                } else {
-                    element.namespace
-                }
-            }),
+            _ => self.child_namespace(),
         };
-
-        let void = tags::is_void(key);
-        let closes_now =
-            void || (self_closing && (!self.rules.html || namespace != Namespace::Html));
-        let ignore_lf = tags::ignores_first_lf(key);
+        let html = namespace == Namespace::Html;
+        let void = self.is_void(key, namespace);
+        let closes_now = void || (self_closing && (!self.rules.html || !html));
+        let ignore_lf = html && tags::ignores_first_lf(key);
 
         let v_pre = self.rules.vue
             && (self.in_v_pre() || attributes.iter().any(|a| a.name.slice(self.source) == "v-pre"));
@@ -550,7 +569,7 @@ impl<'a> Builder<'a> {
             }
         } else {
             let mut lower_buf = [0; 16];
-            tags::content(tags::lowercase(name_str, &mut lower_buf), namespace == Namespace::Svg)
+            tags::content(tags::lowercase(name_str, &mut lower_buf))
         };
 
         let tag_span = span(start, at);

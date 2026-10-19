@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/oxc_htmlish_parser"]
+members = ["crates/oxc_htmlish_parser", "tasks/sig"]
 
 [workspace.package]
 rust-version = "1.95.0"

@@ -7,6 +7,7 @@ The parse-behavior oracles:
 
 Each entry is a place where we deliberately do not match, with the input that shows it.
 Where the oracle errors and we parse, Prettier fails on the file and nothing can depend on it.
+`runner:` names the shape `tasks/differential/run.ts` exempts; entries without one are never generated there, fixtures pin them.
 
 ## HTML
 
@@ -64,6 +65,18 @@ We use tab, LF, FF, CR and space, as the HTML tokenizer does.
 `angular-html-parser` declares `preventNamespaceInheritance` on `foreignObject`,
 but the case-insensitive lookup (`foreignobject`) misses the entry, so its children stay SVG.
 
+### A void element closes before anything that follows it
+
+`angular-html-parser` keeps a void element on its stack until the next token.
+A doctype right after it becomes its child,
+and a start tag right after it cannot implicitly close the void element's parent.
+`runner: doctype after void`, `runner: implicit close after void`
+
+```html
+<th><img src=x><td>
+<!-- angular-html-parser: td inside th; ours: th, td siblings -->
+```
+
 ### An attribute name may start with `=`
 
 `<a =b>` is an attribute named `=b`, as in browsers;
@@ -81,6 +94,17 @@ Vue's tokenizer only looks for `}}`; so do we (`{{ '}}' }}` closes inside the st
 
 Vue has no implicit end tags (`<p><div></div></p>` nests), and matches `</transition>` to `<Transition>`.
 Prettier's Vue options keep the HTML implicit-close table and match case-sensitively.
+
+### A `<` inside a start tag is an error
+
+Vue reads it as part of the tag name (`<a<C />` is an element named `a<C`); we reject it, as Prettier does.
+`runner: < in start tag`
+
+### `</` without a name is a bogus comment
+
+As in Vue and browsers (`</ x>`, `</3>`).
+Vue's comment content skips the whitespace after `</`; ours is the raw data.
+`runner: </ whitespace`
 
 ### `v-pre`
 

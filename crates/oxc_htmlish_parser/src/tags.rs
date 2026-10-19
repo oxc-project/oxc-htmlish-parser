@@ -1,6 +1,7 @@
 //! The tag table: the only HTML tree-construction knowledge the parser has.
 //!
 //! Names are matched as given; callers lowercase them where the dialect is case-insensitive.
+//! In HTML the table applies to HTML-namespace elements only, raw text aside (as in `angular-html-parser`).
 //! Implicit closing follows `angular-html-parser` (`html_tags.ts`), not WHATWG.
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -33,11 +34,11 @@ pub fn is_void(name: &str) -> bool {
 }
 
 /// `lowercase` is the lowercased name: content types are case-insensitive in every dialect.
-pub fn content(lowercase: &str, in_svg: bool) -> Content {
+/// Namespaces do not matter (as in `angular-html-parser`, whose tokenizer cannot see them): SVG `<title>` is raw text too.
+pub fn content(lowercase: &str) -> Content {
     match lowercase {
         "script" | "style" => Content::Raw,
-        "textarea" => Content::Escapable,
-        "title" if !in_svg => Content::Escapable,
+        "textarea" | "title" => Content::Escapable,
         _ => Content::Normal,
     }
 }
