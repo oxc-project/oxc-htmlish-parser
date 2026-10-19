@@ -8,11 +8,12 @@
 //! ## Basic Usage
 //!
 //! ```rust
-//! use oxc_htmlish_parser::{Allocator, Dialect, Parser};
+//! use oxc_htmlish_parser::{Allocator, Dialect, Parser, ast::NodeId};
 //!
 //! let allocator = Allocator::default();
 //! let root = Parser::new(&allocator, "<p>Hello</p>\n", Dialect::Html).parse().unwrap();
-//! assert_eq!(root.children.len(), 2);
+//! // `<p>` and the trailing line break, under the document node.
+//! assert_eq!(root.children(NodeId::DOCUMENT).count(), 2);
 //! ```
 
 pub mod ast;

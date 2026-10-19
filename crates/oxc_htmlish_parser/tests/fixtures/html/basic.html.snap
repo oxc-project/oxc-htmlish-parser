@@ -8,9 +8,9 @@ Root sfc=false
     @[22..26] "lang" = [27..29] "en"
     Text [30..31] "\n" (nl|nl)
     Element [32..36] "head" Html end_tag=[86..93] "</head>"
-      Element [38..42] "meta" Html no_end_tag span_end=59
+      Element [38..42] "meta" Html void no_end_tag span_end=59
         @[43..50] "charset" =" [52..57] "utf-8"
-      Element [60..65] "title" Html end_tag=[78..86] "</title>"
+      Element [60..65] "title" Html escapable end_tag=[78..86] "</title>"
         Text [66..78] "Hi &amp; bye" (-|-) content=[66..78] "Hi &amp; bye"
     Text [93..94] "\n" (nl|nl)
     Element [95..99] "body" Html end_tag=[246..253] "</body>"
@@ -26,7 +26,7 @@ Root sfc=false
       Text [163..166] "\n  " (nl|nl)
       Comment content=[170..181] " a comment "
       Text [184..229] "\n  a < b &unknown; {{ not interpolation }}\n  " (nl|nl) content=[187..226] "a < b &unknown; {{ not interpolation }}"
-      Element [230..233] "DIV" Html end_tag=[239..245] "</div>"
+      Element [230..233] "DIV" Html key="div" end_tag=[239..245] "</div>" end_name=[241..244] "div"
         Text [234..239] "Upper" (-|-) content=[234..239] "Upper"
       Text [245..246] "\n" (nl|nl)
     Text [253..254] "\n" (nl|nl)

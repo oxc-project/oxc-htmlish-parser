@@ -8,14 +8,14 @@ Root sfc=true
     Text [22..23] " " (sp|sp)
     Interpolation expression=[25..27] " '"
     Text [29..36] "' }}\n  " (-|nl) content=[29..33] "' }}"
-    Element [37..45] "textarea" Html end_tag=[53..64] "</textarea>"
+    Element [37..45] "textarea" Html escapable ignores_first_lf end_tag=[53..64] "</textarea>"
       Interpolation expression=[48..51] " t "
     Text [64..67] "\n  " (nl|nl)
     Element [68..69] "p" Html end_tag=[98..102] "</p>"
       Element [71..74] "div" Html end_tag=[92..98] "</div>"
         Text [75..92] "no implicit close" (-|-) content=[75..92] "no implicit close"
     Text [102..105] "\n  " (nl|nl)
-    Element [106..116] "Transition" Html end_tag=[118..131] "</transition>"
+    Element [106..116] "Transition" Html end_tag=[118..131] "</transition>" end_name=[120..130] "transition"
       Text [117..118] "x" (-|-) content=[117..118] "x"
     Text [131..134] "\n  " (nl|nl)
     Element [135..138] "div" Html self_closing no_end_tag span_end=141

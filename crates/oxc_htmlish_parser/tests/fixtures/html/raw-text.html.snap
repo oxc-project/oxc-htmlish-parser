@@ -2,19 +2,19 @@
 source: crates/oxc_htmlish_parser/tests/ast.rs
 ---
 Root sfc=false
-  Element [1..7] "script" Html end_tag=[40..49] "</script>"
+  Element [1..7] "script" Html raw end_tag=[40..49] "</script>"
     Text [8..40] "if (a < b && c) { x = \"</div>\" }" (-|-) content=[8..40] "if (a < b && c) { x = \"</div>\" }"
   Text [49..50] "\n" (nl|nl)
-  Element [51..57] "script" Html self_closing end_tag=[63..72] "</script>"
+  Element [51..57] "script" Html raw self_closing end_tag=[63..72] "</script>"
     Text [60..63] "raw" (-|-) content=[60..63] "raw"
   Text [72..73] "\n" (nl|nl)
-  Element [74..79] "style" Html end_tag=[88..97] "</STYLE >"
+  Element [74..79] "style" Html raw end_tag=[88..97] "</STYLE >" end_name=[90..95] "STYLE"
     Text [80..88] "a > b {}" (-|-) content=[80..88] "a > b {}"
   Text [97..98] "\n" (nl|nl)
-  Element [99..107] "textarea" Html leading_lf end_tag=[117..128] "</textarea>"
+  Element [99..107] "textarea" Html escapable leading_lf end_tag=[117..128] "</textarea>"
     Text [109..117] "first lf" (-|-) content=[109..117] "first lf"
   Text [128..129] "\n" (nl|nl)
-  Element [130..135] "title" Html end_tag=[152..160] "</title>"
+  Element [130..135] "title" Html escapable end_tag=[152..160] "</title>"
     Text [136..152] "<b>not a tag</b>" (-|-) content=[136..152] "<b>not a tag</b>"
   Text [160..161] "\n" (nl|nl)
   Element [162..165] "svg" Svg end_tag=[194..200] "</svg>"
@@ -27,6 +27,6 @@ Root sfc=false
   Text [221..222] "\n" (nl|nl)
   Element [223..226] "pre" Html leading_lf end_tag=[228..234] "</pre>"
   Text [234..235] "\n" (nl|nl)
-  Element [236..239] "pre" Html end_tag=[247..253] "</pre>"
+  Element [236..239] "pre" Html ignores_first_lf end_tag=[247..253] "</pre>"
     Text [240..247] "{{ x }}" (-|-) content=[240..247] "{{ x }}"
   Text [253..254] "\n" (nl|nl)

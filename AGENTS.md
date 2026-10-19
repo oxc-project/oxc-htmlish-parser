@@ -39,8 +39,10 @@ Every drop is an entry in `DIVERGENCES.md`, with a fixture and (if the different
   `Dialect` maps to private `Rules` flags; a Vue file with a root `<html>` / `<!doctype html>` restarts with HTML rules.
 - `src/tags.rs`: the tag table.
 - `src/vue.rs`: Vue directive name splitting.
-- `src/ast.rs`: the AST.
-  Not-yet-parsed dialect constructs slot in as new `Node` / `AttributeKind` variants.
+- `src/ast.rs`: the AST, every node in one list linked by `NodeId` (parent, next sibling, children),
+  so the formatter walks up and down and keys its tables by `NodeId`.
+  Elements carry the tag table's verdict (`key`, `void`, `content`, `ignores_first_lf`) and the end tag's name as written.
+  Not-yet-parsed dialect constructs slot in as new `NodeKind` / `AttributeKind` variants.
 
 ## Testing
 

@@ -5,7 +5,7 @@ Root sfc=true
   Element [1..9] "template" Html end_tag=[59..70] "</template>"
     Text [10..13] "\n  " (nl|nl)
     Element [14..17] "svg" Svg end_tag=[29..35] "</svg>"
-      Element [19..21] "br" Svg no_end_tag span_end=22
+      Element [19..21] "br" Svg void no_end_tag span_end=22
       Interpolation expression=[24..27] " a "
     Text [35..38] "\n  " (nl|nl)
     Comment bogus content=[40..50] " not a tag"

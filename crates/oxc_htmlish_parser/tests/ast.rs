@@ -9,11 +9,12 @@ use std::{fmt::Write as _, fs, path::Path};
 use insta::{Settings, assert_snapshot, glob};
 use oxc_htmlish_parser::{
     Allocator, Dialect, Parser, Span,
-    ast::{Attribute, AttributeKind, Node, Quote, Whitespace},
+    ast::{Attribute, AttributeKind, Content, NodeId, NodeKind, Quote, Root, Whitespace},
 };
 
-struct Printer<'s> {
+struct Printer<'s, 'a> {
     source: &'s str,
+    root: &'s Root<'a>,
     out: String,
     depth: usize,
 }
@@ -23,39 +24,57 @@ fn quoted(source: &str, span: Span) -> String {
     format!("[{}..{}] {:?}", span.start, span.end, span.slice(source))
 }
 
-impl Printer<'_> {
+impl Printer<'_, '_> {
     fn line(&mut self, text: &str) {
         self.out.push_str(&"  ".repeat(self.depth));
         self.out.push_str(text);
         self.out.push('\n');
     }
 
-    fn nodes(&mut self, nodes: &[Node<'_>]) {
+    fn children(&mut self, id: NodeId) {
         self.depth += 1;
-        for node in nodes {
-            self.node(node);
+        for (child, _) in self.root.children(id) {
+            self.node(child);
         }
         self.depth -= 1;
     }
 
-    fn node(&mut self, node: &Node<'_>) {
+    fn node(&mut self, id: NodeId) {
+        let node = &self.root[id];
         let q = |span| quoted(self.source, span);
-        let head = match node {
-            Node::Element(el) => {
+        let head = match &node.kind {
+            NodeKind::Document => unreachable!(),
+            NodeKind::Element(el) => {
                 let mut head = format!("Element {} {:?}", q(el.name), el.namespace);
+                if el.key != el.name.slice(self.source) {
+                    write!(head, " key={:?}", el.key).unwrap();
+                }
+                if el.void {
+                    head.push_str(" void");
+                }
+                match el.content {
+                    Content::Normal => {}
+                    Content::Raw => head.push_str(" raw"),
+                    Content::Escapable => head.push_str(" escapable"),
+                }
                 if el.self_closing {
                     head.push_str(" self_closing");
                 }
-                if el.leading_lf {
-                    head.push_str(" leading_lf");
+                if el.ignores_first_lf {
+                    head.push_str(if el.leading_lf { " leading_lf" } else { " ignores_first_lf" });
                 }
                 match el.end_tag {
-                    Some(tag) => write!(head, " end_tag={}", q(tag)).unwrap(),
-                    None => write!(head, " no_end_tag span_end={}", el.span.end).unwrap(),
+                    Some(tag) => {
+                        write!(head, " end_tag={}", q(tag.span)).unwrap();
+                        if tag.name.slice(self.source) != el.name.slice(self.source) {
+                            write!(head, " end_name={}", q(tag.name)).unwrap();
+                        }
+                    }
+                    None => write!(head, " no_end_tag span_end={}", node.span.end).unwrap(),
                 }
                 head
             }
-            Node::Text(text) => {
+            NodeKind::Text(text) => {
                 let ws = |w: Whitespace| match w {
                     Whitespace::None => "-",
                     Whitespace::Space => "sp",
@@ -68,45 +87,40 @@ impl Printer<'_> {
                 };
                 format!(
                     "Text {} ({}|{}){content}",
-                    q(text.span),
+                    q(node.span),
                     ws(text.leading),
                     ws(text.trailing)
                 )
             }
-            Node::Interpolation(n) => format!("Interpolation expression={}", q(n.expression)),
-            Node::Comment(n) => {
+            NodeKind::Interpolation(n) => format!("Interpolation expression={}", q(n.expression)),
+            NodeKind::Comment(n) => {
                 let bogus = if n.bogus { " bogus" } else { "" };
                 format!("Comment{bogus} content={}", q(n.content))
             }
-            Node::ConditionalComment(n) => {
-                format!("ConditionalComment condition={} content={}", q(n.condition), q(n.content))
+            NodeKind::ConditionalComment(n) => {
+                let unparsed = if n.parsed { "" } else { " unparsed" };
+                format!(
+                    "ConditionalComment condition={} content={}{unparsed}",
+                    q(n.condition),
+                    q(n.content)
+                )
             }
-            Node::ConditionalStart(n) => format!("ConditionalStart condition={}", q(n.condition)),
-            Node::ConditionalEnd(n) => format!("ConditionalEnd {}", q(n.span)),
-            Node::DocType(n) => format!("DocType value={}", q(n.value)),
-            Node::Cdata(n) => format!("Cdata {}", q(n.span)),
+            NodeKind::ConditionalStart(n) => {
+                format!("ConditionalStart condition={}", q(n.condition))
+            }
+            NodeKind::ConditionalEnd => format!("ConditionalEnd {}", q(node.span)),
+            NodeKind::DocType(n) => format!("DocType value={}", q(n.value)),
+            NodeKind::Cdata => format!("Cdata {}", q(node.span)),
         };
         self.line(&head);
-        match node {
-            Node::Element(el) => {
-                self.depth += 1;
-                for attribute in &el.attributes {
-                    self.attribute(attribute);
-                }
-                self.depth -= 1;
-                self.nodes(&el.children);
+        if let NodeKind::Element(el) = &node.kind {
+            self.depth += 1;
+            for attribute in &el.attributes {
+                self.attribute(attribute);
             }
-            Node::ConditionalComment(n) => {
-                if let Some(children) = &n.children {
-                    self.nodes(children);
-                } else {
-                    self.depth += 1;
-                    self.line("(unparsed)");
-                    self.depth -= 1;
-                }
-            }
-            _ => {}
+            self.depth -= 1;
         }
+        self.children(id);
     }
 
     fn attribute(&mut self, attribute: &Attribute<'_>) {
@@ -144,49 +158,51 @@ fn ast_snapshots() {
             _ => Dialect::Html,
         };
         let allocator = Allocator::default();
-        let mut printer = Printer { source: &source, out: String::new(), depth: 0 };
-        match Parser::new(&allocator, &source, dialect).parse() {
+        let out = match Parser::new(&allocator, &source, dialect).parse() {
             Ok(root) => {
-                check_spans(&root.children, root.span);
+                check(&root, NodeId::DOCUMENT);
+                let mut printer =
+                    Printer { source: &source, root: &root, out: String::new(), depth: 0 };
                 printer.line(&format!("Root sfc={}", root.sfc));
-                printer.nodes(&root.children);
+                printer.children(NodeId::DOCUMENT);
+                printer.out
             }
-            Err(diagnostic) => printer.line(&format!("Error: {diagnostic}")),
-        }
-        snapshot(path, &printer.out);
+            Err(diagnostic) => format!("Error: {diagnostic}\n"),
+        };
+        snapshot(path, &out);
     });
 }
 
-/// Siblings are ordered and disjoint, children and attributes lie inside their parent.
-fn check_spans(nodes: &[Node<'_>], parent: Span) {
-    let mut at = parent.start;
-    for node in nodes {
-        let span = node.span();
+/// Links are consistent (`next` chains end at `last_child`); siblings are ordered and disjoint, children and attributes lie inside their parent.
+fn check(root: &Root<'_>, id: NodeId) {
+    let parent = &root[id];
+    let inner = match &parent.kind {
+        NodeKind::Element(el) => {
+            for attribute in &el.attributes {
+                assert!(
+                    el.start_tag.start < attribute.span.start
+                        && attribute.span.end <= el.start_tag.end
+                );
+            }
+            Span::new(el.start_tag.end, el.end_tag.map_or(parent.span.end, |tag| tag.span.start))
+        }
+        NodeKind::ConditionalComment(n) => n.content,
+        _ => parent.span,
+    };
+    let mut at = inner.start;
+    let mut prev = None;
+    for (child, node) in root.children(id) {
+        assert_eq!(node.parent, Some(id));
+        let span = node.span;
         assert!(
-            at <= span.start && span.start < span.end && span.end <= parent.end,
-            "{span:?} in {parent:?}"
+            at <= span.start && span.start < span.end && span.end <= inner.end,
+            "{span:?} in {inner:?}"
         );
         at = span.end;
-        match node {
-            Node::Element(el) => {
-                let inner =
-                    Span::new(el.start_tag.end, el.end_tag.map_or(el.span.end, |tag| tag.start));
-                for attribute in &el.attributes {
-                    assert!(
-                        el.start_tag.start < attribute.span.start
-                            && attribute.span.end <= el.start_tag.end
-                    );
-                }
-                check_spans(&el.children, inner);
-            }
-            Node::ConditionalComment(n) => {
-                if let Some(children) = &n.children {
-                    check_spans(children, n.content);
-                }
-            }
-            _ => {}
-        }
+        prev = Some(child);
+        check(root, child);
     }
+    assert_eq!(parent.last_child, prev);
 }
 
 fn snapshot(path: &Path, out: &str) {

@@ -10,7 +10,7 @@ use oxc_allocator::{Allocator, ArenaBox, ArenaVec};
 use crate::ast::*;
 use crate::diagnostic::{Diagnostic, DiagnosticKind};
 use crate::span::{Span, span};
-use crate::tags::{self, Content, Tag};
+use crate::tags::{self, Tag};
 use crate::vue;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -39,22 +39,35 @@ impl<'a> Parser<'a> {
     ///
     /// The first broken structure (see [`DiagnosticKind`]); there is no recovery.
     pub fn parse(self) -> Result<Root<'a>, Diagnostic> {
-        let Ok(len) = u32::try_from(self.source.len()) else {
+        if u32::try_from(self.source.len()).is_err() {
             return Err(Diagnostic::new(DiagnosticKind::SourceTooLong, Span::empty(0)));
-        };
+        }
         let mut rules = match self.dialect {
             Dialect::Html => Rules { html: true, vue: false, sfc: false },
             Dialect::Vue => Rules { html: false, vue: true, sfc: true },
         };
+        let mut nodes = ArenaVec::with_capacity_in(self.source.len() / 16 + 1, &self.allocator);
+        nodes.push(Node {
+            kind: NodeKind::Document,
+            span: span(0, self.source.len()),
+            parent: None,
+            next: None,
+            first_child: None,
+            last_child: None,
+        });
         loop {
-            let builder =
-                Builder::new(self.allocator, self.source, rules, Context::ROOT, 0, len as usize);
+            let mut builder = Builder::new(self.allocator, self.source, rules, nodes);
             match builder.run() {
-                Ok(children) => {
-                    return Ok(Root { children, sfc: rules.sfc, span: Span::new(0, len) });
-                }
+                Ok(()) => return Ok(Root { nodes: builder.nodes, sfc: rules.sfc }),
                 Err(Stop::Error(diagnostic)) => return Err(diagnostic),
-                Err(Stop::Html) => rules = Rules { html: true, sfc: false, ..rules },
+                Err(Stop::Html) => {
+                    // Start over in the same buffer, keeping only the document node.
+                    nodes = builder.nodes;
+                    nodes.truncate(1);
+                    nodes[0].first_child = None;
+                    nodes[0].last_child = None;
+                    rules = Rules { html: true, sfc: false, ..rules };
+                }
             }
         }
     }
@@ -107,8 +120,11 @@ fn trim(bytes: &[u8]) -> (usize, usize) {
     (bytes.len() - bytes.trim_ascii_start().len(), bytes.trim_ascii_end().len())
 }
 
+/// An element whose end has not been seen yet.
 struct Open<'a> {
-    element: Element<'a>,
+    id: NodeId,
+    /// The tag name as written, for matching end tags.
+    name: &'a str,
     tag: Tag,
     /// What the element's children inherit.
     context: Context,
@@ -117,37 +133,39 @@ struct Open<'a> {
 struct Builder<'a> {
     allocator: &'a Allocator,
     source: &'a str,
-    /// The source up to where this builder stops.
+    /// The source up to where the current parse stops.
     bytes: &'a [u8],
     rules: Rules,
+    /// What the bottom of the stack inherits, and where its nodes go.
     base: Context,
+    base_parent: NodeId,
     pos: usize,
     stack: Vec<Open<'a>>,
-    root: ArenaVec<'a, Node<'a>>,
+    nodes: ArenaVec<'a, Node<'a>>,
 }
 
 impl<'a> Builder<'a> {
+    /// `nodes` holds the document node.
     fn new(
         allocator: &'a Allocator,
         source: &'a str,
         rules: Rules,
-        base: Context,
-        pos: usize,
-        end: usize,
+        nodes: ArenaVec<'a, Node<'a>>,
     ) -> Self {
         Self {
             allocator,
             source,
-            bytes: &source.as_bytes()[..end],
+            bytes: source.as_bytes(),
             rules,
-            base,
-            pos,
+            base: Context::ROOT,
+            base_parent: NodeId::DOCUMENT,
+            pos: 0,
             stack: vec![],
-            root: ArenaVec::new_in(&allocator),
+            nodes,
         }
     }
 
-    fn run(mut self) -> PResult<ArenaVec<'a, Node<'a>>> {
+    fn run(&mut self) -> PResult<()> {
         while self.pos < self.bytes.len() {
             if self.at_markup(self.pos) {
                 self.markup()?;
@@ -156,9 +174,35 @@ impl<'a> Builder<'a> {
             }
         }
         while let Some(open) = self.stack.pop() {
-            self.close(open, None, self.bytes.len());
+            self.close(&open, None, self.bytes.len());
         }
-        Ok(self.root)
+        Ok(())
+    }
+
+    /// Parses `[start, end)` as the children of `parent`, from scratch, with what the current position inherits.
+    /// Returns whether it parsed; if not, nothing was added.
+    fn parse_within(&mut self, parent: NodeId, start: usize, end: usize) -> bool {
+        let len = self.nodes.len();
+        let mut sub = Builder {
+            allocator: self.allocator,
+            source: self.source,
+            bytes: &self.source.as_bytes()[..end],
+            rules: Rules { sfc: false, ..self.rules },
+            base: self.context(),
+            base_parent: parent,
+            pos: start,
+            stack: vec![],
+            nodes: std::mem::replace(&mut self.nodes, ArenaVec::new_in(&self.allocator)),
+        };
+        let parsed = sub.run().is_ok();
+        self.nodes = sub.nodes;
+        if !parsed {
+            self.nodes.truncate(len);
+            let parent = &mut self.nodes[parent.index()];
+            parent.first_child = None;
+            parent.last_child = None;
+        }
+        parsed
     }
 
     // ---
@@ -243,20 +287,40 @@ impl<'a> Builder<'a> {
     // ---
     // Tree
 
-    fn push(&mut self, node: Node<'a>) {
-        match self.stack.last_mut() {
-            Some(open) => open.element.children.push(node),
-            None => self.root.push(node),
+    /// Appends a node as the last child of the current element.
+    fn push(&mut self, kind: NodeKind<'a>, span: Span) -> NodeId {
+        let parent = self.stack.last().map_or(self.base_parent, |open| open.id);
+        let id = NodeId::from_index(self.nodes.len());
+        let prev = self.nodes[parent.index()].last_child;
+        self.nodes.push(Node {
+            kind,
+            span,
+            parent: Some(parent),
+            next: None,
+            first_child: None,
+            last_child: None,
+        });
+        match prev {
+            Some(prev) => self.nodes[prev.index()].next = Some(id),
+            None => self.nodes[parent.index()].first_child = Some(id),
+        }
+        self.nodes[parent.index()].last_child = Some(id);
+        id
+    }
+
+    fn element_mut(&mut self, id: NodeId) -> &mut Element<'a> {
+        match &mut self.nodes[id.index()].kind {
+            NodeKind::Element(el) => el,
+            _ => unreachable!("only elements are opened"),
         }
     }
 
     /// `at` is where the element's content ends when it has no end tag.
-    fn close(&mut self, open: Open<'a>, end_tag: Option<Span>, at: usize) {
-        let mut element = open.element;
-        element.end_tag = end_tag;
-        element.span =
-            span(element.span.start as usize, end_tag.map_or(at, |tag| tag.end as usize));
-        self.push(Node::Element(ArenaBox::new_in(element, &self.allocator)));
+    fn close(&mut self, open: &Open<'a>, end_tag: Option<EndTag>, at: usize) {
+        self.element_mut(open.id).end_tag = end_tag;
+        let node = &mut self.nodes[open.id.index()];
+        let end = end_tag.map_or(at, |tag| tag.span.end as usize);
+        node.span = span(node.span.start as usize, end);
     }
 
     // ---
@@ -297,10 +361,10 @@ impl<'a> Builder<'a> {
                 return error(DiagnosticKind::UnterminatedInterpolation, span(open, open + 2));
             };
             self.push_text(start, open);
-            self.push(Node::Interpolation(Interpolation {
-                span: span(open, close + 2),
-                expression: span(open + 2, close),
-            }));
+            self.push(
+                NodeKind::Interpolation(Interpolation { expression: span(open + 2, close) }),
+                span(open, close + 2),
+            );
             self.pos = close + 2;
             start = self.pos;
         }
@@ -309,19 +373,20 @@ impl<'a> Builder<'a> {
     }
 
     fn push_text(&mut self, mut start: usize, end: usize) {
-        if let Some(open) = self.stack.last_mut()
+        if let Some(open) = self.stack.last()
             && open.tag.ignores_first_lf
-            && open.element.children.is_empty()
-            && !open.element.leading_lf
+            && self.nodes[open.id.index()].first_child.is_none()
         {
+            let id = open.id;
             let lf = match &self.bytes[start..end] {
                 [b'\r', b'\n', ..] => 2,
                 [b'\n' | b'\r', ..] => 1,
                 _ => 0,
             };
-            if lf > 0 {
+            let element = self.element_mut(id);
+            if lf > 0 && !element.leading_lf {
                 start += lf;
-                open.element.leading_lf = true;
+                element.leading_lf = true;
             }
         }
         if start == end {
@@ -339,12 +404,12 @@ impl<'a> Builder<'a> {
             }
         };
         let (lead, trail) = trim(bytes);
-        self.push(Node::Text(Text {
-            span: span(start, end),
+        let text = Text {
             content: span(start + lead, start + lead.max(trail)),
             leading: kind(&bytes[..lead]),
             trailing: kind(&bytes[trail..]),
-        }));
+        };
+        self.push(NodeKind::Text(text), span(start, end));
     }
 
     // ---
@@ -367,7 +432,7 @@ impl<'a> Builder<'a> {
                     return error(DiagnosticKind::UnterminatedCdata, span(start, start + 9));
                 };
                 self.pos = close + 3;
-                self.push(Node::Cdata(Cdata { span: span(start, self.pos) }));
+                self.push(NodeKind::Cdata, span(start, self.pos));
                 Ok(())
             }
             b'!' if self.starts_with_ci(start, "<!doctype") => self.doctype(),
@@ -386,46 +451,53 @@ impl<'a> Builder<'a> {
         self.pos = close + 3;
         let span = span(start, self.pos);
         let content = self::span(content_start, close);
-        let node = self.conditional_comment(span, content).unwrap_or(Node::Comment(Comment {
-            span,
-            content,
-            bogus: false,
-        }));
-        self.push(node);
+        if !self.conditional_comment(span, content) {
+            self.push(NodeKind::Comment(Comment { content, bogus: false }), span);
+        }
         Ok(())
     }
 
-    /// The three IE conditional comment shapes Prettier recognizes.
-    fn conditional_comment(&self, span: Span, content: Span) -> Option<Node<'a>> {
+    /// The three IE conditional comment shapes Prettier recognizes; `false` for any other comment.
+    fn conditional_comment(&mut self, span: Span, content: Span) -> bool {
         let text = content.slice(self.source);
         let base = content.start as usize;
 
         let Some(rest) = text.strip_prefix("[if") else {
-            let endif = text.strip_prefix("<!")?.trim_ascii_start();
-            return (endif == "[endif]").then_some(Node::ConditionalEnd(ConditionalEnd { span }));
+            let is_end =
+                text.strip_prefix("<!").is_some_and(|endif| endif.trim_ascii_start() == "[endif]");
+            if is_end {
+                self.push(NodeKind::ConditionalEnd, span);
+            }
+            return is_end;
         };
-        let close = rest.find(']')?;
+        let Some(close) = rest.find(']') else { return false };
         let condition = self::span(base + 3, base + 3 + close);
-        let after = rest[close + 1..].strip_prefix('>')?;
+        let Some(after) = rest[close + 1..].strip_prefix('>') else { return false };
         if after == "<!" {
-            return Some(Node::ConditionalStart(ConditionalStart { condition, span }));
+            self.push(NodeKind::ConditionalStart(ConditionalStart { condition }), span);
+            return true;
         }
-        let data = after.strip_suffix("[endif]")?.trim_ascii_end().strip_suffix("<!")?;
+        let Some(data) = after
+            .strip_suffix("[endif]")
+            .map(str::trim_ascii_end)
+            .and_then(|d| d.strip_suffix("<!"))
+        else {
+            return false;
+        };
         let data_start = base + 3 + close + 2;
         let data_end = data_start + data.len();
-        // The content is not at the SFC root, but inherits where the comment is.
-        let rules = Rules { sfc: false, ..self.rules };
-        let builder =
-            Builder::new(self.allocator, self.source, rules, self.context(), data_start, data_end);
-        Some(Node::ConditionalComment(ArenaBox::new_in(
-            ConditionalComment {
-                condition,
-                content: self::span(data_start, data_end),
-                children: builder.run().ok(),
-                span,
-            },
+        let content = self::span(data_start, data_end);
+        let comment = ArenaBox::new_in(
+            ConditionalComment { condition, content, parsed: true },
             &self.allocator,
-        )))
+        );
+        let id = self.push(NodeKind::ConditionalComment(comment), span);
+        if !self.parse_within(id, data_start, data_end)
+            && let NodeKind::ConditionalComment(comment) = &mut self.nodes[id.index()].kind
+        {
+            comment.parsed = false;
+        }
+        true
     }
 
     /// `<!x>` / `<?x>`: data up to the next `>`.
@@ -435,11 +507,8 @@ impl<'a> Builder<'a> {
             return error(DiagnosticKind::UnterminatedComment, span(start, start + prefix));
         };
         self.pos = close + 1;
-        self.push(Node::Comment(Comment {
-            span: span(start, self.pos),
-            content: span(start + prefix, close),
-            bogus: true,
-        }));
+        let content = span(start + prefix, close);
+        self.push(NodeKind::Comment(Comment { content, bogus: true }), span(start, self.pos));
         Ok(())
     }
 
@@ -455,7 +524,7 @@ impl<'a> Builder<'a> {
         if self.at_sfc_root() && value.slice(self.source) == "html" {
             return Err(Stop::Html);
         }
-        self.push(Node::DocType(DocType { span: span(start, self.pos), value }));
+        self.push(NodeKind::DocType(DocType { value }), span(start, self.pos));
         Ok(())
     }
 
@@ -468,34 +537,34 @@ impl<'a> Builder<'a> {
             return error(DiagnosticKind::UnterminatedEndTag, span(start, gt));
         }
         self.pos = gt + 1;
-        let tag = span(start, self.pos);
+        let tag = EndTag { span: span(start, self.pos), name: span(name_start, name_end) };
         let name = &self.source[name_start..name_end];
 
         let mut buf = [0; 16];
         if self.tag(name, tags::lowercase(name, &mut buf), self.context().namespace).void {
-            return error(DiagnosticKind::VoidEndTag, tag);
+            return error(DiagnosticKind::VoidEndTag, tag.span);
         }
         // Every dialect so far matches end tags case-insensitively.
-        let Some(index) = self
-            .stack
-            .iter()
-            .rposition(|open| open.element.name.slice(self.source).eq_ignore_ascii_case(name))
+        let Some(index) = self.stack.iter().rposition(|open| open.name.eq_ignore_ascii_case(name))
         else {
-            return error(DiagnosticKind::UnexpectedEndTag, tag);
+            return error(DiagnosticKind::UnexpectedEndTag, tag.span);
         };
         // An element whose `/>` was ignored (`<my-el />`) has no end tag to wait for;
         // the ancestor's end tag closes it, as in browsers.
         // (Only HTML rules leave such an element open.)
         if !self.stack[index + 1..]
             .iter()
-            .all(|open| open.element.self_closing || open.tag.closed_by_parent)
+            .all(|open| {
+                open.tag.closed_by_parent
+                    || matches!(&self.nodes[open.id.index()].kind, NodeKind::Element(el) if el.self_closing)
+            })
         {
-            return error(DiagnosticKind::UnexpectedEndTag, tag);
+            return error(DiagnosticKind::UnexpectedEndTag, tag.span);
         }
         while self.stack.len() > index {
             let open = self.stack.pop().expect("index < len");
             let end_tag = (self.stack.len() == index).then_some(tag);
-            self.close(open, end_tag, start);
+            self.close(&open, end_tag, start);
         }
         Ok(())
     }
@@ -538,10 +607,19 @@ impl<'a> Builder<'a> {
 
         let mut buf = [0; 16];
         let lowercase = tags::lowercase(name_str, &mut buf);
-        let key = if self.rules.html { lowercase } else { name_str };
+        let key = if !self.rules.html || !name_str.bytes().any(|b| b.is_ascii_uppercase()) {
+            name_str
+        } else if lowercase.is_empty() {
+            // Longer than every table entry: lowercased for the formatter's own tables.
+            let mut key = name_str.to_owned();
+            key.make_ascii_lowercase();
+            self.allocator.alloc_str(&key)
+        } else {
+            self.allocator.alloc_str(lowercase)
+        };
 
         if let Some(open) = self.stack.pop_if(|parent| parent.tag.closed_by.contains(&key)) {
-            self.close(open, None, start);
+            self.close(&open, None, start);
         }
 
         let inherited = self.context();
@@ -562,30 +640,10 @@ impl<'a> Builder<'a> {
             }
         }
 
-        let sfc_block = self.at_sfc_root();
-        let tag_span = span(start, at);
-        let open = Open {
-            element: Element {
-                name,
-                namespace,
-                attributes,
-                children: ArenaVec::new_in(&self.allocator),
-                start_tag: tag_span,
-                self_closing,
-                leading_lf: false,
-                end_tag: None,
-                span: tag_span,
-            },
-            tag,
-            context: Context { namespace: tags::children_namespace(name_str, namespace), v_pre },
-        };
-        if closes_now {
-            self.close(open, None, at);
-            return Ok(());
-        }
-
-        let content = if sfc_block {
-            if name_str == "template" && !has_non_html_lang(self.source, &open.element.attributes) {
+        let content = if closes_now {
+            Content::Normal
+        } else if self.at_sfc_root() {
+            if name_str == "template" && !has_non_html_lang(self.source, &attributes) {
                 Content::Normal
             } else {
                 Content::Raw
@@ -593,6 +651,32 @@ impl<'a> Builder<'a> {
         } else {
             tag.content
         };
+
+        let tag_span = span(start, at);
+        let element = Element {
+            name,
+            key,
+            namespace,
+            attributes,
+            start_tag: tag_span,
+            self_closing,
+            void: tag.void,
+            content,
+            ignores_first_lf: tag.ignores_first_lf,
+            leading_lf: false,
+            end_tag: None,
+        };
+        let id = self.push(NodeKind::Element(ArenaBox::new_in(element, &self.allocator)), tag_span);
+        let open = Open {
+            id,
+            name: name_str,
+            tag,
+            context: Context { namespace: tags::children_namespace(name_str, namespace), v_pre },
+        };
+        if closes_now {
+            self.close(&open, None, at);
+            return Ok(());
+        }
         self.stack.push(open);
         match content {
             Content::Normal => Ok(()),
@@ -644,7 +728,7 @@ impl<'a> Builder<'a> {
         let content_start = self.pos;
         let finder = memmem::Finder::new(b"</");
         let mut from = content_start;
-        let (close_start, close_end) = loop {
+        let (close_start, name_start, close_end) = loop {
             let Some(lt) = finder.find(&self.bytes[from..]).map(|i| from + i) else {
                 return error(DiagnosticKind::UnterminatedRawText, start_tag);
             };
@@ -652,7 +736,7 @@ impl<'a> Builder<'a> {
             if self.starts_with_ci(name_start, name) {
                 let gt = self.skip_ws(name_start + name.len());
                 if self.byte(gt) == Some(b'>') {
-                    break (lt, gt + 1);
+                    break (lt, name_start, gt + 1);
                 }
             }
             from = lt + 2;
@@ -664,7 +748,11 @@ impl<'a> Builder<'a> {
         }
         self.pos = close_end;
         let open = self.stack.pop().expect("pushed by start_tag");
-        self.close(open, Some(span(close_start, close_end)), close_start);
+        let end_tag = EndTag {
+            span: span(close_start, close_end),
+            name: span(name_start, name_start + name.len()),
+        };
+        self.close(&open, Some(end_tag), close_start);
         Ok(())
     }
 }
@@ -715,7 +803,9 @@ mod tests {
         let allocator = Allocator::default();
         let root =
             Parser::new(&allocator, "<!--[if IE]></p><![endif]-->", Dialect::Html).parse().unwrap();
-        let [Node::ConditionalComment(comment)] = root.children.as_slice() else { panic!() };
-        assert!(comment.children.is_none());
+        let (id, node) = root.children(NodeId::DOCUMENT).next().unwrap();
+        let NodeKind::ConditionalComment(comment) = &node.kind else { panic!() };
+        assert!(!comment.parsed);
+        assert!(root.children(id).next().is_none());
     }
 }

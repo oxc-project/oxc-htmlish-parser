@@ -9,7 +9,7 @@
 
 use oxc_htmlish_parser::{
     Allocator, Dialect, Parser,
-    ast::{AttributeKind, Element, Node},
+    ast::{AttributeKind, Element, NodeId, NodeKind, Root},
 };
 use serde_json::{Value, json};
 
@@ -25,7 +25,7 @@ fn main() {
         .iter()
         .map(|source| {
             let sig = match Parser::new(&allocator, source, dialect).parse() {
-                Ok(root) => nodes(source, &root.children),
+                Ok(root) => children(source, &root, NodeId::DOCUMENT),
                 Err(diagnostic) => Value::String(diagnostic.to_string()),
             };
             allocator.reset();
@@ -35,27 +35,31 @@ fn main() {
     serde_json::to_writer(std::io::stdout().lock(), &outputs).unwrap();
 }
 
-fn nodes(source: &str, nodes: &[Node<'_>]) -> Value {
-    nodes.iter().map(|node| self::node(source, node)).collect()
+fn children(source: &str, root: &Root<'_>, id: NodeId) -> Value {
+    root.children(id).map(|(child, _)| node(source, root, child)).collect()
 }
 
-fn node(source: &str, node: &Node<'_>) -> Value {
-    let raw = |kind: &str| json!([kind, node.span().slice(source)]);
-    match node {
-        Node::Element(el) => element(source, el),
-        Node::Text(_) => raw("t"),
-        Node::Interpolation(_) => raw("i"),
-        Node::Comment(n) => json!(["c", n.content.slice(source)]),
-        Node::ConditionalComment(_) | Node::ConditionalStart(_) | Node::ConditionalEnd(_) => {
-            let raw = node.span().slice(source);
+fn node(source: &str, root: &Root<'_>, id: NodeId) -> Value {
+    let node = &root[id];
+    let raw = |kind: &str| json!([kind, node.span.slice(source)]);
+    match &node.kind {
+        NodeKind::Document => unreachable!(),
+        NodeKind::Element(el) => element(source, root, id, el),
+        NodeKind::Text(_) => raw("t"),
+        NodeKind::Interpolation(_) => raw("i"),
+        NodeKind::Comment(n) => json!(["c", n.content.slice(source)]),
+        NodeKind::ConditionalComment(_)
+        | NodeKind::ConditionalStart(_)
+        | NodeKind::ConditionalEnd => {
+            let raw = node.span.slice(source);
             json!(["c", &raw[4..raw.len() - 3]])
         }
-        Node::DocType(_) => raw("d"),
-        Node::Cdata(_) => raw("x"),
+        NodeKind::DocType(_) => raw("d"),
+        NodeKind::Cdata => raw("x"),
     }
 }
 
-fn element(source: &str, el: &Element<'_>) -> Value {
+fn element(source: &str, root: &Root<'_>, id: NodeId, el: &Element<'_>) -> Value {
     let mut flags = String::new();
     if el.self_closing {
         flags.push('/');
@@ -95,5 +99,5 @@ fn element(source: &str, el: &Element<'_>) -> Value {
             }
         })
         .collect();
-    json!(["el", el.name.slice(source), flags, attrs, nodes(source, &el.children)])
+    json!(["el", el.name.slice(source), flags, attrs, children(source, root, id)])
 }

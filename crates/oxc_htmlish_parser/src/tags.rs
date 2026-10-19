@@ -3,17 +3,7 @@
 //! Lookups take lowercase names; the parser's `Builder::tag` applies each dialect's case and namespace policy on top.
 //! Implicit closing follows `angular-html-parser` (`html_tags.ts`), not WHATWG.
 
-use crate::ast::Namespace;
-
-#[derive(Clone, Copy, Default, PartialEq, Eq)]
-pub enum Content {
-    #[default]
-    Normal,
-    /// `script` / `style`: no markup until the end tag.
-    Raw,
-    /// `textarea` / `title`: no markup until the end tag, but Vue `{{ }}` still splits.
-    Escapable,
-}
+use crate::ast::{Content, Namespace};
 
 /// What the table says about one element.
 #[derive(Clone, Copy, Default)]

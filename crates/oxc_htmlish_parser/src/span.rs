@@ -8,7 +8,7 @@ pub fn span(start: usize, end: usize) -> Span {
 ///
 /// Offsets are `u32` (matching oxc convention);
 /// sources larger than 4 GiB are rejected by the parser up front.
-#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, Hash, PartialEq, Eq)]
 pub struct Span {
     /// Start offset. (Inclusive)
     pub start: u32,

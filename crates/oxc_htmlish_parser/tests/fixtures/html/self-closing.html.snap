@@ -5,9 +5,9 @@ Root sfc=false
   Element [1..4] "div" Html self_closing end_tag=[12..18] "</div>"
     Text [7..12] "after" (-|-) content=[7..12] "after"
   Text [18..19] "\n" (nl|nl)
-  Element [20..22] "br" Html self_closing no_end_tag span_end=24
-  Element [25..27] "br" Html self_closing no_end_tag span_end=30
-  Element [31..34] "img" Html no_end_tag span_end=46
+  Element [20..22] "br" Html void self_closing no_end_tag span_end=24
+  Element [25..27] "br" Html void self_closing no_end_tag span_end=30
+  Element [31..34] "img" Html void no_end_tag span_end=46
     @[35..38] "src" = [39..45] "a.png/"
   Text [46..47] "\n" (nl|nl)
   Element [48..49] "a" Html end_tag=[65..69] "</a>"
@@ -20,7 +20,7 @@ Root sfc=false
   Element [94..97] "svg" Svg end_tag=[164..170] "</svg>"
     Element [99..103] "path" Svg self_closing no_end_tag span_end=113
       @[104..105] "d" =" [107..109] "M0"
-    Element [114..127] "foreignObject" Svg end_tag=[148..164] "</foreignObject>"
+    Element [114..127] "foreignObject" Svg key="foreignobject" end_tag=[148..164] "</foreignObject>"
       Element [129..132] "div" Html self_closing end_tag=[142..148] "</div>"
         Text [135..142] "in html" (-|-) content=[135..142] "in html"
   Text [170..171] "\n" (nl|nl)
