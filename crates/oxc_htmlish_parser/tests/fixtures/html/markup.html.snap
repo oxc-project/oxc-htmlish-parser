@@ -1,0 +1,29 @@
+---
+source: crates/oxc_htmlish_parser/tests/ast.rs
+---
+Root sfc=false
+  Cdata [0..17] "<![CDATA[ <x> ]]>"
+  Text [17..18] "\n" (nl|nl)
+  Comment bogus content=[20..27] "x bogus"
+  Text [28..29] "\n" (nl|nl)
+  Comment bogus content=[30..49] "?xml version=\"1.0\"?"
+  Text [50..51] "\n" (nl|nl)
+  ConditionalComment condition=[58..63] " IE 8" content=[65..86] "<p class=\"ie\">old</p>"
+    Element [66..67] "p" Html end_tag=[82..86] "</p>"
+      @[68..73] "class" =" [75..77] "ie"
+      Text [79..82] "old" (-|-) content=[79..82] "old"
+  Text [98..99] "\n" (nl|nl)
+  ConditionalComment condition=[106..114] " lt IE 9" content=[116..121] "<div>"
+    Element [117..120] "div" Html no_end_tag span_end=121
+  Text [133..134] "\n" (nl|nl)
+  ConditionalStart condition=[141..145] " !IE"
+  Element [153..154] "p" Html end_tag=[161..165] "</p>"
+    Text [155..161] "modern" (-|-) content=[155..161] "modern"
+  ConditionalEnd [165..181] "<!--<![endif]-->"
+  Text [181..182] "\n" (nl|nl)
+  Element [183..184] "a" Html end_tag=[213..217] "</a>"
+    @[185..186] "b" =" [188..192] "it's"
+    @[194..195] "c" =' [197..205] "say \"hi\""
+    @[207..208] "d" = [210..211] "e"
+    Text [212..213] "x" (-|-) content=[212..213] "x"
+  Text [217..218] "\n" (nl|nl)

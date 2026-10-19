@@ -1,0 +1,33 @@
+---
+source: crates/oxc_htmlish_parser/tests/ast.rs
+---
+Root sfc=false
+  DocType value=[10..14] "html"
+  Text [15..16] "\n" (nl|nl)
+  Element [17..21] "html" Html end_tag=[254..261] "</html>"
+    @[22..26] "lang" = [27..29] "en"
+    Text [30..31] "\n" (nl|nl)
+    Element [32..36] "head" Html end_tag=[86..93] "</head>"
+      Element [38..42] "meta" Html no_end_tag span_end=59
+        @[43..50] "charset" =" [52..57] "utf-8"
+      Element [60..65] "title" Html end_tag=[78..86] "</title>"
+        Text [66..78] "Hi &amp; bye" (-|-) content=[66..78] "Hi &amp; bye"
+    Text [93..94] "\n" (nl|nl)
+    Element [95..99] "body" Html end_tag=[246..253] "</body>"
+      @[100..105] "class" =' [107..110] "a b"
+      @[112..118] "hidden"
+      @[119..125] "data-x" =" [129..130] "1"
+      Text [132..135] "\n  " (nl|nl)
+      Element [136..137] "p" Html end_tag=[159..163] "</p>"
+        Text [138..146] "Hello,  " (-|sp) content=[138..144] "Hello,"
+        Element [147..148] "b" Html end_tag=[154..158] "</b>"
+          Text [149..154] "world" (-|-) content=[149..154] "world"
+        Text [158..159] "!" (-|-) content=[158..159] "!"
+      Text [163..166] "\n  " (nl|nl)
+      Comment content=[170..181] " a comment "
+      Text [184..229] "\n  a < b &unknown; {{ not interpolation }}\n  " (nl|nl) content=[187..226] "a < b &unknown; {{ not interpolation }}"
+      Element [230..233] "DIV" Html end_tag=[239..245] "</div>"
+        Text [234..239] "Upper" (-|-) content=[234..239] "Upper"
+      Text [245..246] "\n" (nl|nl)
+    Text [253..254] "\n" (nl|nl)
+  Text [261..262] "\n" (nl|nl)

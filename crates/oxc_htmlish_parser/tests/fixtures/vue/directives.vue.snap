@@ -1,0 +1,51 @@
+---
+source: crates/oxc_htmlish_parser/tests/ast.rs
+---
+Root sfc=true
+  Element [1..9] "template" Html end_tag=[403..414] "</template>"
+    Text [10..13] "\n  " (nl|nl)
+    Element [14..15] "C" Html self_closing no_end_tag span_end=73
+      @[16..20] "v-if" =" [22..23] "a" vue name="if"
+      @[25..34] "v-else-if" =" [36..37] "b" vue name="else-if"
+      @[39..45] "v-else" vue name="else"
+      @[46..51] "v-for" =" [53..60] "x in xs" vue name="for"
+      @[62..66] ":key" =" [68..69] "x" vue name=":" arg="key"
+    Text [73..76] "\n  " (nl|nl)
+    Element [77..78] "C" Html self_closing no_end_tag span_end=147
+      @[79..88] "v-bind:id" =" [90..91] "a" vue name="bind" arg="id"
+      @[93..100] ":[name]" =" [102..103] "b" vue name=":" arg="[name]" dynamic
+      @[105..117] ":[a.b].camel" =" [119..120] "c" vue name=":" arg="[a.b]" dynamic modifiers=["camel"]
+      @[122..127] ".prop" =" [129..130] "d" vue name="." arg="prop"
+      @[132..138] "v-bind" =" [140..143] "obj" vue name="bind"
+    Text [147..150] "\n  " (nl|nl)
+    Element [151..152] "C" Html self_closing no_end_tag span_end=206
+      @[153..159] "@click" =" [161..162] "f" vue name="@" arg="click"
+      @[164..188] "v-on:keyup.enter.prevent" =" [190..191] "g" vue name="on" arg="keyup" modifiers=["enter", "prevent"]
+      @[193..199] "@[evt]" =" [201..202] "h" vue name="@" arg="[evt]" dynamic
+    Text [206..209] "\n  " (nl|nl)
+    Element [210..211] "C" Html self_closing no_end_tag span_end=280
+      @[212..220] "#default" =" [222..230] "{ item }" vue name="#" arg="default"
+      @[232..242] "#item.name" =" [244..245] "s" vue name="#" arg="item.name"
+      @[247..260] "v-slot:header" vue name="slot" arg="header"
+      @[261..273] "v-model.trim" =" [275..276] "m" vue name="model" modifiers=["trim"]
+    Text [280..283] "\n  " (nl|nl)
+    Element [284..285] "C" Html self_closing no_end_tag span_end=316
+      @[286..287] ":"
+      @[288..289] "@"
+      @[290..292] "v-"
+      @[293..300] "v-bind:"
+      @[301..307] ":[open"
+      @[308..313] "plain"
+    Text [316..319] "\n  " (nl|nl)
+    Element [320..323] "div" Html end_tag=[375..381] "</div>"
+      @[324..326] ":a" =" [328..329] "1"
+      @[331..336] "v-pre"
+      Text [337..346] "{{ raw }}" (-|-) content=[337..346] "{{ raw }}"
+      Element [347..351] "span" Html end_tag=[368..375] "</span>"
+        @[352..354] ":b" =" [356..357] "2"
+        Text [359..368] "{{ raw }}" (-|-) content=[359..368] "{{ raw }}"
+    Text [381..384] "\n  " (nl|nl)
+    Element [385..386] "p" Html end_tag=[398..402] "</p>"
+      Interpolation expression=[389..396] " after "
+    Text [402..403] "\n" (nl|nl)
+  Text [414..415] "\n" (nl|nl)

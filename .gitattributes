@@ -1,0 +1,5 @@
+# Auto detect text files and perform LF normalization
+* text=auto eol=lf
+
+# CRLF fixture: the line endings are the test
+crates/oxc_htmlish_parser/tests/fixtures/html/crlf.html -text

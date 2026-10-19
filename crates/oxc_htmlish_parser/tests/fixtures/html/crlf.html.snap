@@ -1,0 +1,10 @@
+---
+source: crates/oxc_htmlish_parser/tests/ast.rs
+---
+Root sfc=false
+  Element [1..4] "pre" Html leading_lf end_tag=[8..14] "</pre>"
+    Text [7..8] "x" (-|-) content=[7..8] "x"
+  Text [14..16] "\r\n" (nl|nl)
+  Element [17..18] "p" Html end_tag=[25..29] "</p>"
+    Text [19..25] "a\r\n  b" (-|-) content=[19..25] "a\r\n  b"
+  Text [29..31] "\r\n" (nl|nl)

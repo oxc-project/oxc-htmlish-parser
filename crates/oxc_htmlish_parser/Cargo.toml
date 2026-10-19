@@ -1,0 +1,26 @@
+[package]
+name = "oxc-htmlish-parser"
+version = "0.0.0"
+edition = "2024"
+rust-version.workspace = true
+authors = []
+description = "A loose, span-faithful parser for HTML and HTML-based template languages, designed for building formatters."
+repository = "https://github.com/oxc-project/oxc-htmlish-parser"
+license = "MIT"
+readme = "../../README.md"
+keywords = ["parser", "html", "vue"]
+categories = ["parser-implementations", "text-processing"]
+exclude = ["/tests"]
+
+[lints]
+workspace = true
+
+[dependencies]
+oxc_allocator = ">=0.137.0"
+
+[dev-dependencies]
+insta = { version = "1.47", features = ["glob"] }
+
+[[example]]
+name = "parse"
+path = "../../examples/parse.rs"

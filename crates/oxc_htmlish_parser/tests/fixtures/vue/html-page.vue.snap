@@ -1,0 +1,20 @@
+---
+source: crates/oxc_htmlish_parser/tests/ast.rs
+---
+Root sfc=false
+  DocType value=[10..14] "html"
+  Text [15..16] "\n" (nl|nl)
+  Element [17..21] "html" Html end_tag=[99..106] "</html>"
+    Text [22..23] "\n" (nl|nl)
+    Element [24..28] "body" Html end_tag=[91..98] "</body>"
+      Text [29..32] "\n  " (nl|nl)
+      Element [33..36] "div" Html end_tag=[56..62] "</div>"
+        @[37..41] "v-if" =" [43..45] "ok" vue name="if"
+        Interpolation expression=[49..54] " msg "
+      Text [62..65] "\n  " (nl|nl)
+      Element [66..67] "p" Html no_end_tag span_end=91
+        Text [68..79] "implicit\n  " (-|nl) content=[68..76] "implicit"
+        Element [80..87] "my-comp" Html self_closing no_end_tag span_end=91
+          Text [90..91] "\n" (nl|nl)
+    Text [98..99] "\n" (nl|nl)
+  Text [106..107] "\n" (nl|nl)
