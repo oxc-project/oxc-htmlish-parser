@@ -89,6 +89,16 @@ and a start tag right after it cannot implicitly close the void element's parent
 <!-- angular-html-parser: td inside th; ours: th, td siblings -->
 ```
 
+### A `prefix:` is part of the element name
+
+`angular-html-parser` reads `<html:style>` as `style` in the HTML namespace and `<svg:rect>` as an SVG `rect`.
+The HTML tokenizer has no namespace prefixes: both are unknown HTML elements, with markup inside, as in browsers.
+
+```html
+<p><html:style><b>x</b></html:style></p>
+<!-- angular-html-parser: a style element holding the text "<b>x</b>"; ours: html:style holding a b element -->
+```
+
 ### An attribute name may start with `=`
 
 `<a =b>` is an attribute named `=b`, as in browsers;

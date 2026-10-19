@@ -1,0 +1,11 @@
+---
+source: crates/oxc_htmlish_parser/tests/ast.rs
+---
+Root sfc=false
+  Element [1..2] "p" Html end_tag=[58..62] "</p>"
+    Text [3..4] "a" (-|-) content=[3..4] "a"
+    Element [5..15] "html:style" Html end_tag=[24..37] "</html:style>"
+      Element [17..18] "b" Html end_tag=[20..24] "</b>"
+        Text [19..20] "x" (-|-) content=[19..20] "x"
+    Element [38..46] "svg:rect" Html end_tag=[47..58] "</svg:rect>"
+  Text [62..63] "\n" (nl|nl)
