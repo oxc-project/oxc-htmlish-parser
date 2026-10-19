@@ -12,7 +12,16 @@ Parse behavior targets each dialect's own parser, not the spec.
 - Where Prettier errors on input the dialect accepts (`<DIV></div>`, unknown entities, `{{ a<b }}` in Vue), that is a bug to fix here.
 - Truly broken structure (unmatched end tag, unterminated start tag) is an error, as in Prettier; the parse stops at the first one.
 
-Every deliberate difference is an entry in `DIVERGENCES.md`.
+An oracle difference is never matched by reflex.
+Before changing the parser either way, decide it in order:
+
+1. Is there a norm? WHATWG for HTML, the dialect's compiler for the rest.
+2. Does the oracle deviate from it?
+3. Is the deviation intent or accident?
+   Intent is backed by a test, a declared table entry, an issue or explicit code: keep.
+   Accident is a by-product of the machinery (a lookup that misses, a token left on a stack) with an unambiguous reading under the norm: drop.
+
+Every drop is an entry in `DIVERGENCES.md`, with a fixture and (if the differential generates the shape) a `QUIRKS` exemption.
 
 ## Scope
 
@@ -49,4 +58,4 @@ First run: `npm i` in `tasks/differential`.
   names, attributes, Vue directive parts, end-tag presence, raw text and comment contents.
   It fails on a tree mismatch or on our error where the oracle parses; the oracle's error where we parse is counted as lenient.
   Oracle-side normalizations (what Vue drops even with `whitespace: "preserve"`, split texts) live in `run.ts`;
-  mismatches documented in `DIVERGENCES.md` are exempted by shape (`QUIRKS`).
+  mismatches documented in `DIVERGENCES.md` are exempted by shape (`QUIRKS`; `NO_QUIRKS=1` shows them).

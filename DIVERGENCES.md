@@ -65,6 +65,18 @@ We use tab, LF, FF, CR and space, as the HTML tokenizer does.
 `angular-html-parser` declares `preventNamespaceInheritance` on `foreignObject`,
 but the case-insensitive lookup (`foreignobject`) misses the entry, so its children stay SVG.
 
+### SVG `<title>` holds markup
+
+`angular-html-parser`'s tag table declares SVG `title` as parsable data (only the HTML `title` is escapable raw text),
+but its tokenizer only sees an explicit `svg:` prefix, so `<svg><title>` is raw text there.
+We follow the declared intent, as browsers do.
+`runner: svg title`
+
+```html
+<svg><title><b>t</b></title></svg>
+<!-- angular-html-parser: title holds the text "<b>t</b>"; ours: title holds a b element -->
+```
+
 ### A void element closes before anything that follows it
 
 `angular-html-parser` keeps a void element on its stack until the next token.

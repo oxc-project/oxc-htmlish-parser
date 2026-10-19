@@ -16,6 +16,7 @@ exclude = ["/tests"]
 workspace = true
 
 [dependencies]
+memchr = "2"
 oxc_allocator = ">=0.137.0"
 
 [dev-dependencies]

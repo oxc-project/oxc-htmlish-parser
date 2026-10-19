@@ -18,12 +18,12 @@ struct Printer<'s> {
     depth: usize,
 }
 
-impl Printer<'_> {
-    /// `[a..b] "slice"`: the slice makes offsets reviewable.
-    fn quoted(&self, span: Span) -> String {
-        format!("[{}..{}] {:?}", span.start, span.end, span.slice(self.source))
-    }
+/// `[a..b] "slice"`: the slice makes offsets reviewable.
+fn quoted(source: &str, span: Span) -> String {
+    format!("[{}..{}] {:?}", span.start, span.end, span.slice(source))
+}
 
+impl Printer<'_> {
     fn line(&mut self, text: &str) {
         self.out.push_str(&"  ".repeat(self.depth));
         self.out.push_str(text);
@@ -39,9 +39,10 @@ impl Printer<'_> {
     }
 
     fn node(&mut self, node: &Node<'_>) {
-        match node {
+        let q = |span| quoted(self.source, span);
+        let head = match node {
             Node::Element(el) => {
-                let mut head = format!("Element {} {:?}", self.quoted(el.name), el.namespace);
+                let mut head = format!("Element {} {:?}", q(el.name), el.namespace);
                 if el.self_closing {
                     head.push_str(" self_closing");
                 }
@@ -49,16 +50,10 @@ impl Printer<'_> {
                     head.push_str(" leading_lf");
                 }
                 match el.end_tag {
-                    Some(tag) => write!(head, " end_tag={}", self.quoted(tag)).unwrap(),
+                    Some(tag) => write!(head, " end_tag={}", q(tag)).unwrap(),
                     None => write!(head, " no_end_tag span_end={}", el.span.end).unwrap(),
                 }
-                self.line(&head);
-                self.depth += 1;
-                for attribute in &el.attributes {
-                    self.attribute(attribute);
-                }
-                self.depth -= 1;
-                self.nodes(&el.children);
+                head
             }
             Node::Text(text) => {
                 let ws = |w: Whitespace| match w {
@@ -69,32 +64,39 @@ impl Printer<'_> {
                 let content = if text.is_whitespace_only() {
                     String::new()
                 } else {
-                    format!(" content={}", self.quoted(text.content))
+                    format!(" content={}", q(text.content))
                 };
-                let line = format!(
+                format!(
                     "Text {} ({}|{}){content}",
-                    self.quoted(text.span),
+                    q(text.span),
                     ws(text.leading),
                     ws(text.trailing)
-                );
-                self.line(&line);
+                )
             }
-            Node::Interpolation(n) => {
-                let line = format!("Interpolation expression={}", self.quoted(n.expression));
-                self.line(&line);
-            }
+            Node::Interpolation(n) => format!("Interpolation expression={}", q(n.expression)),
             Node::Comment(n) => {
                 let bogus = if n.bogus { " bogus" } else { "" };
-                let line = format!("Comment{bogus} content={}", self.quoted(n.content));
-                self.line(&line);
+                format!("Comment{bogus} content={}", q(n.content))
             }
             Node::ConditionalComment(n) => {
-                let line = format!(
-                    "ConditionalComment condition={} content={}",
-                    self.quoted(n.condition),
-                    self.quoted(n.content)
-                );
-                self.line(&line);
+                format!("ConditionalComment condition={} content={}", q(n.condition), q(n.content))
+            }
+            Node::ConditionalStart(n) => format!("ConditionalStart condition={}", q(n.condition)),
+            Node::ConditionalEnd(n) => format!("ConditionalEnd {}", q(n.span)),
+            Node::DocType(n) => format!("DocType value={}", q(n.value)),
+            Node::Cdata(n) => format!("Cdata {}", q(n.span)),
+        };
+        self.line(&head);
+        match node {
+            Node::Element(el) => {
+                self.depth += 1;
+                for attribute in &el.attributes {
+                    self.attribute(attribute);
+                }
+                self.depth -= 1;
+                self.nodes(&el.children);
+            }
+            Node::ConditionalComment(n) => {
                 if let Some(children) = &n.children {
                     self.nodes(children);
                 } else {
@@ -103,34 +105,19 @@ impl Printer<'_> {
                     self.depth -= 1;
                 }
             }
-            Node::ConditionalStart(n) => {
-                let line = format!("ConditionalStart condition={}", self.quoted(n.condition));
-                self.line(&line);
-            }
-            Node::ConditionalEnd(n) => {
-                let line = format!("ConditionalEnd {}", self.quoted(n.span));
-                self.line(&line);
-            }
-            Node::DocType(n) => {
-                let line = format!("DocType value={}", self.quoted(n.value));
-                self.line(&line);
-            }
-            Node::Cdata(n) => {
-                let line = format!("Cdata {}", self.quoted(n.span));
-                self.line(&line);
-            }
+            _ => {}
         }
     }
 
     fn attribute(&mut self, attribute: &Attribute<'_>) {
-        let mut line = format!("@{}", self.quoted(attribute.name));
+        let mut line = format!("@{}", quoted(self.source, attribute.name));
         if let Some(value) = attribute.value {
             let quote = match value.quote {
                 Quote::None => "",
                 Quote::Single => "'",
                 Quote::Double => "\"",
             };
-            write!(line, " ={quote} {}", self.quoted(value.span)).unwrap();
+            write!(line, " ={quote} {}", quoted(self.source, value.span)).unwrap();
         }
         if let AttributeKind::Vue(directive) = &attribute.kind {
             write!(line, " vue name={:?}", directive.name.slice(self.source)).unwrap();

@@ -4,12 +4,14 @@
 //! Tree construction is limited to the tag table (`tags.rs`):
 //! void elements, raw text, implicit closing.
 
+use memchr::{memchr, memchr2, memmem};
 use oxc_allocator::{Allocator, ArenaBox, ArenaVec};
 
 use crate::ast::*;
 use crate::diagnostic::{Diagnostic, DiagnosticKind};
-use crate::span::Span;
-use crate::{tags, vue};
+use crate::span::{Span, span};
+use crate::tags::{self, Content, Tag};
+use crate::vue;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Dialect {
@@ -45,7 +47,9 @@ impl<'a> Parser<'a> {
             Dialect::Vue => Rules { html: false, vue: true, sfc: true },
         };
         loop {
-            match Builder::new(self.allocator, self.source, rules, 0, len as usize).run() {
+            let builder =
+                Builder::new(self.allocator, self.source, rules, Context::ROOT, 0, len as usize);
+            match builder.run() {
                 Ok(children) => {
                     return Ok(Root { children, sfc: rules.sfc, span: Span::new(0, len) });
                 }
@@ -59,13 +63,26 @@ impl<'a> Parser<'a> {
 /// What a dialect switches on.
 #[derive(Clone, Copy)]
 struct Rules {
-    /// Tag table lookups are case-insensitive, elements close implicitly,
-    /// and `/>` closes only void and foreign elements.
+    /// `angular-html-parser`'s reading of tags rather than Vue's:
+    /// case-insensitive tag table limited to the HTML namespace, implicit closing,
+    /// `/>` closing only void and foreign elements, `</ name>` as an end tag.
     html: bool,
     /// `{{ }}` and directive names.
     vue: bool,
     /// Root elements are SFC blocks: raw text unless `<template>` in HTML.
     sfc: bool,
+}
+
+/// What the content at the bottom of the stack inherits;
+/// a conditional comment's content starts where the comment is.
+#[derive(Clone, Copy)]
+struct Context {
+    namespace: Namespace,
+    v_pre: bool,
+}
+
+impl Context {
+    const ROOT: Self = Self { namespace: Namespace::Html, v_pre: false };
 }
 
 enum Stop {
@@ -80,36 +97,31 @@ fn error<T>(kind: DiagnosticKind, span: Span) -> PResult<T> {
     Err(Stop::Error(Diagnostic::new(kind, span)))
 }
 
-/// HTML ASCII whitespace.
-fn is_ws(b: u8) -> bool {
-    matches!(b, b'\t' | b'\n' | b'\x0C' | b'\r' | b' ')
-}
-
 fn is_name_end(b: u8) -> bool {
-    is_ws(b) || matches!(b, b'>' | b'<' | b'/' | b'\'' | b'"' | b'=')
+    b.is_ascii_whitespace() || matches!(b, b'>' | b'<' | b'/' | b'\'' | b'"' | b'=')
 }
 
-/// Callers pass offsets inside the source, which `Parser::parse` checked to fit in `u32`.
-#[expect(clippy::cast_possible_truncation)]
-fn span(start: usize, end: usize) -> Span {
-    Span::new(start as u32, end as u32)
+/// Where the leading ASCII whitespace of `bytes` ends and the trailing one starts.
+/// For whitespace-only input they cross (`(len, 0)`): the content is `lead..lead.max(trail)`.
+fn trim(bytes: &[u8]) -> (usize, usize) {
+    (bytes.len() - bytes.trim_ascii_start().len(), bytes.trim_ascii_end().len())
 }
 
 struct Open<'a> {
     element: Element<'a>,
-    /// HTML drops a line break right after the start tag.
-    ignore_lf: bool,
-    /// Inside `v-pre` (this element or an ancestor).
-    v_pre: bool,
+    tag: Tag,
+    /// What the element's children inherit.
+    context: Context,
 }
 
 struct Builder<'a> {
     allocator: &'a Allocator,
     source: &'a str,
+    /// The source up to where this builder stops.
     bytes: &'a [u8],
     rules: Rules,
+    base: Context,
     pos: usize,
-    end: usize,
     stack: Vec<Open<'a>>,
     root: ArenaVec<'a, Node<'a>>,
 }
@@ -119,31 +131,32 @@ impl<'a> Builder<'a> {
         allocator: &'a Allocator,
         source: &'a str,
         rules: Rules,
+        base: Context,
         pos: usize,
         end: usize,
     ) -> Self {
         Self {
             allocator,
             source,
-            bytes: source.as_bytes(),
+            bytes: &source.as_bytes()[..end],
             rules,
+            base,
             pos,
-            end,
             stack: vec![],
             root: ArenaVec::new_in(&allocator),
         }
     }
 
     fn run(mut self) -> PResult<ArenaVec<'a, Node<'a>>> {
-        while self.pos < self.end {
+        while self.pos < self.bytes.len() {
             if self.at_markup(self.pos) {
                 self.markup()?;
             } else {
-                self.text(self.end, true)?;
+                self.text(self.bytes.len(), true)?;
             }
         }
         while let Some(open) = self.stack.pop() {
-            self.close(open, None, self.end);
+            self.close(open, None, self.bytes.len());
         }
         Ok(self.root)
     }
@@ -152,32 +165,34 @@ impl<'a> Builder<'a> {
     // Scanning helpers
 
     fn byte(&self, at: usize) -> Option<u8> {
-        if at < self.end { Some(self.bytes[at]) } else { None }
+        self.bytes.get(at).copied()
     }
 
-    fn skip_ws(&self, mut at: usize) -> usize {
-        while self.byte(at).is_some_and(is_ws) {
-            at += 1;
-        }
-        at
+    /// The first offset from `at` whose byte fails `pred`.
+    fn skip(&self, at: usize, pred: impl Fn(u8) -> bool) -> usize {
+        self.bytes[at..].iter().position(|&b| !pred(b)).map_or(self.bytes.len(), |i| at + i)
     }
 
-    fn name_end(&self, mut at: usize) -> usize {
-        while self.byte(at).is_some_and(|b| !is_name_end(b)) {
-            at += 1;
-        }
-        at
+    fn skip_ws(&self, at: usize) -> usize {
+        self.skip(at, |b| b.is_ascii_whitespace())
+    }
+
+    fn name_end(&self, at: usize) -> usize {
+        self.skip(at, |b| !is_name_end(b))
     }
 
     /// The offset of `pat` in `[from, limit)`.
-    fn find(&self, from: usize, limit: usize, pat: &str) -> Option<usize> {
-        self.source.get(from..limit)?.find(pat).map(|i| from + i)
+    fn find(&self, from: usize, limit: usize, pat: &[u8]) -> Option<usize> {
+        let haystack = &self.bytes[from..limit];
+        match pat {
+            [b] => memchr(*b, haystack),
+            _ => memmem::find(haystack, pat),
+        }
+        .map(|i| from + i)
     }
 
     fn starts_with_ci(&self, at: usize, pat: &str) -> bool {
-        self.bytes[at..self.end]
-            .get(..pat.len())
-            .is_some_and(|b| b.eq_ignore_ascii_case(pat.as_bytes()))
+        self.bytes[at..].get(..pat.len()).is_some_and(|b| b.eq_ignore_ascii_case(pat.as_bytes()))
     }
 
     /// `<` followed by what can start markup; any other `<` is text.
@@ -188,33 +203,41 @@ impl<'a> Builder<'a> {
                 .is_some_and(|b| b.is_ascii_alphabetic() || matches!(b, b'/' | b'!' | b'?'))
     }
 
-    /// The name as the tag table sees it.
-    fn key<'b>(&self, name: &'b str, buf: &'b mut [u8; 16]) -> &'b str {
-        if self.rules.html { tags::lowercase(name, buf) } else { name }
+    /// What the current element's next child inherits.
+    fn context(&self) -> Context {
+        self.stack.last().map_or(self.base, |open| open.context)
     }
 
-    /// The namespace a new child of the current element starts in.
-    fn child_namespace(&self) -> Namespace {
-        self.stack.last().map_or(Namespace::Html, |parent| {
-            let element = &parent.element;
-            if element.namespace == Namespace::Svg
-                && element.name.slice(self.source).eq_ignore_ascii_case("foreignObject")
-            {
-                Namespace::Html
-            } else {
-                element.namespace
+    /// Whether `{{ }}` is an interpolation here.
+    fn interpolates(&self) -> bool {
+        self.rules.vue && !self.context().v_pre
+    }
+
+    fn at_sfc_root(&self) -> bool {
+        self.rules.sfc && self.stack.is_empty()
+    }
+
+    /// The tag table as the dialect reads it: the one place for case and namespace policy.
+    fn tag(&self, name: &str, lowercase: &str, namespace: Namespace) -> Tag {
+        let table = tags::html(lowercase);
+        if self.rules.html {
+            if namespace == Namespace::Html {
+                return table;
             }
-        })
-    }
-
-    /// HTML applies its tag table to the HTML namespace only (SVG and MathML elements are never void);
-    /// Vue looks void tags up by name alone.
-    fn is_void(&self, key: &str, namespace: Namespace) -> bool {
-        (namespace == Namespace::Html || !self.rules.html) && tags::is_void(key)
-    }
-
-    fn in_v_pre(&self) -> bool {
-        self.stack.last().is_some_and(|open| open.v_pre)
+            // `angular-html-parser` reads raw text by name in every namespace, and nothing else of the table.
+            // SVG `<title>` is the exception it declares but its tokenizer misses (DIVERGENCES.md#svg-title-holds-markup).
+            let content = if lowercase == "title" { Content::Normal } else { table.content };
+            return Tag { content, ..Tag::default() };
+        }
+        // Vue: void tags and `pre` by exact name; raw text by any case, in HTML only; no implicit closing.
+        let exact = tags::html(name);
+        let html = namespace == Namespace::Html;
+        Tag {
+            void: exact.void,
+            content: if html { table.content } else { Content::Normal },
+            ignores_first_lf: html && exact.ignores_first_lf,
+            ..Tag::default()
+        }
     }
 
     // ---
@@ -242,29 +265,44 @@ impl<'a> Builder<'a> {
     /// Text from `pos` up to `limit`, or to the next markup when `markup_ends`.
     /// Vue `{{ }}` splits it.
     fn text(&mut self, limit: usize, markup_ends: bool) -> PResult<()> {
-        let interpolate = self.rules.vue && !self.in_v_pre();
+        let interpolate = self.interpolates();
         let mut start = self.pos;
         while self.pos < limit {
-            let b = self.bytes[self.pos];
-            if b == b'<' && markup_ends && self.at_markup(self.pos) {
+            let haystack = &self.bytes[self.pos..limit];
+            let found = match (markup_ends, interpolate) {
+                (true, true) => memchr2(b'<', b'{', haystack),
+                (true, false) => memchr(b'<', haystack),
+                (false, true) => memchr(b'{', haystack),
+                (false, false) => None,
+            };
+            let Some(i) = found else {
+                self.pos = limit;
                 break;
-            }
-            if interpolate && b == b'{' && self.byte(self.pos + 1) == Some(b'{') {
-                let open = self.pos;
-                // Vue closes at the first `}}`, quotes and tags included.
-                let Some(close) = self.find(open + 2, limit, "}}") else {
-                    return error(DiagnosticKind::UnterminatedInterpolation, span(open, open + 2));
-                };
-                self.push_text(start, open);
-                self.push(Node::Interpolation(Interpolation {
-                    span: span(open, close + 2),
-                    expression: span(open + 2, close),
-                }));
-                self.pos = close + 2;
-                start = self.pos;
+            };
+            self.pos += i;
+            if self.bytes[self.pos] == b'<' {
+                if self.at_markup(self.pos) {
+                    break;
+                }
+                self.pos += 1;
                 continue;
             }
-            self.pos += 1;
+            if self.byte(self.pos + 1) != Some(b'{') {
+                self.pos += 1;
+                continue;
+            }
+            let open = self.pos;
+            // Vue closes at the first `}}`, quotes and tags included.
+            let Some(close) = self.find(open + 2, limit, b"}}") else {
+                return error(DiagnosticKind::UnterminatedInterpolation, span(open, open + 2));
+            };
+            self.push_text(start, open);
+            self.push(Node::Interpolation(Interpolation {
+                span: span(open, close + 2),
+                expression: span(open + 2, close),
+            }));
+            self.pos = close + 2;
+            start = self.pos;
         }
         self.push_text(start, self.pos);
         Ok(())
@@ -272,7 +310,7 @@ impl<'a> Builder<'a> {
 
     fn push_text(&mut self, mut start: usize, end: usize) {
         if let Some(open) = self.stack.last_mut()
-            && open.ignore_lf
+            && open.tag.ignores_first_lf
             && open.element.children.is_empty()
             && !open.element.leading_lf
         {
@@ -300,24 +338,13 @@ impl<'a> Builder<'a> {
                 Whitespace::Space
             }
         };
-        let text = match bytes.iter().position(|b| !is_ws(*b)) {
-            None => Text {
-                span: span(start, end),
-                content: span(end, end),
-                leading: kind(bytes),
-                trailing: kind(bytes),
-            },
-            Some(lead) => {
-                let trail = bytes.iter().rposition(|b| !is_ws(*b)).map_or(bytes.len(), |i| i + 1);
-                Text {
-                    span: span(start, end),
-                    content: span(start + lead, start + trail),
-                    leading: kind(&bytes[..lead]),
-                    trailing: kind(&bytes[trail..]),
-                }
-            }
-        };
-        self.push(Node::Text(text));
+        let (lead, trail) = trim(bytes);
+        self.push(Node::Text(Text {
+            span: span(start, end),
+            content: span(start + lead, start + lead.max(trail)),
+            leading: kind(&bytes[..lead]),
+            trailing: kind(&bytes[trail..]),
+        }));
     }
 
     // ---
@@ -336,7 +363,7 @@ impl<'a> Builder<'a> {
             b'/' => self.end_tag(),
             b'!' if self.starts_with_ci(start, "<!--") => self.comment(),
             b'!' if self.starts_with_ci(start, "<![CDATA[") => {
-                let Some(close) = self.find(start + 9, self.end, "]]>") else {
+                let Some(close) = self.find(start + 9, self.bytes.len(), b"]]>") else {
                     return error(DiagnosticKind::UnterminatedCdata, span(start, start + 9));
                 };
                 self.pos = close + 3;
@@ -353,7 +380,7 @@ impl<'a> Builder<'a> {
     fn comment(&mut self) -> PResult<()> {
         let start = self.pos;
         let content_start = start + 4;
-        let Some(close) = self.find(content_start, self.end, "-->") else {
+        let Some(close) = self.find(content_start, self.bytes.len(), b"-->") else {
             return error(DiagnosticKind::UnterminatedComment, span(start, content_start));
         };
         self.pos = close + 3;
@@ -374,8 +401,7 @@ impl<'a> Builder<'a> {
         let base = content.start as usize;
 
         let Some(rest) = text.strip_prefix("[if") else {
-            let endif =
-                text.strip_prefix("<!")?.trim_start_matches(|c: char| c.is_ascii_whitespace());
+            let endif = text.strip_prefix("<!")?.trim_ascii_start();
             return (endif == "[endif]").then_some(Node::ConditionalEnd(ConditionalEnd { span }));
         };
         let close = rest.find(']')?;
@@ -384,20 +410,18 @@ impl<'a> Builder<'a> {
         if after == "<!" {
             return Some(Node::ConditionalStart(ConditionalStart { condition, span }));
         }
-        let data = after
-            .strip_suffix("[endif]")?
-            .trim_end_matches(|c: char| c.is_ascii_whitespace())
-            .strip_suffix("<!")?;
+        let data = after.strip_suffix("[endif]")?.trim_ascii_end().strip_suffix("<!")?;
         let data_start = base + 3 + close + 2;
         let data_end = data_start + data.len();
+        // The content is not at the SFC root, but inherits where the comment is.
         let rules = Rules { sfc: false, ..self.rules };
-        let children =
-            Builder::new(self.allocator, self.source, rules, data_start, data_end).run().ok();
+        let builder =
+            Builder::new(self.allocator, self.source, rules, self.context(), data_start, data_end);
         Some(Node::ConditionalComment(ArenaBox::new_in(
             ConditionalComment {
                 condition,
                 content: self::span(data_start, data_end),
-                children,
+                children: builder.run().ok(),
                 span,
             },
             &self.allocator,
@@ -407,7 +431,7 @@ impl<'a> Builder<'a> {
     /// `<!x>` / `<?x>`: data up to the next `>`.
     fn bogus_comment(&mut self, prefix: usize) -> PResult<()> {
         let start = self.pos;
-        let Some(close) = self.find(start + prefix, self.end, ">") else {
+        let Some(close) = self.find(start + prefix, self.bytes.len(), b">") else {
             return error(DiagnosticKind::UnterminatedComment, span(start, start + prefix));
         };
         self.pos = close + 1;
@@ -421,17 +445,14 @@ impl<'a> Builder<'a> {
 
     fn doctype(&mut self) -> PResult<()> {
         let start = self.pos;
-        let Some(close) = self.find(start + 9, self.end, ">") else {
-            return error(DiagnosticKind::UnterminatedDocType, span(start, start + 9));
+        let value_from = start + 9;
+        let Some(close) = self.find(value_from, self.bytes.len(), b">") else {
+            return error(DiagnosticKind::UnterminatedDocType, span(start, value_from));
         };
         self.pos = close + 1;
-        let raw = &self.source[start + 9..close];
-        let value_start = start
-            + 9
-            + (raw.len() - raw.trim_start_matches(|c: char| c.is_ascii_whitespace()).len());
-        let value_end = start + 9 + raw.trim_end_matches(|c: char| c.is_ascii_whitespace()).len();
-        let value = span(value_start, value_end.max(value_start));
-        if self.rules.sfc && self.stack.is_empty() && value.slice(self.source) == "html" {
+        let (lead, trail) = trim(&self.bytes[value_from..close]);
+        let value = span(value_from + lead, value_from + lead.max(trail));
+        if self.at_sfc_root() && value.slice(self.source) == "html" {
             return Err(Stop::Html);
         }
         self.push(Node::DocType(DocType { span: span(start, self.pos), value }));
@@ -451,7 +472,7 @@ impl<'a> Builder<'a> {
         let name = &self.source[name_start..name_end];
 
         let mut buf = [0; 16];
-        if self.is_void(self.key(name, &mut buf), self.child_namespace()) {
+        if self.tag(name, tags::lowercase(name, &mut buf), self.context().namespace).void {
             return error(DiagnosticKind::VoidEndTag, tag);
         }
         // Every dialect so far matches end tags case-insensitively.
@@ -464,17 +485,11 @@ impl<'a> Builder<'a> {
         };
         // An element whose `/>` was ignored (`<my-el />`) has no end tag to wait for;
         // the ancestor's end tag closes it, as in browsers.
-        let implicitly_closable = |open: &Open<'_>| {
-            let mut buf = [0; 16];
-            self.rules.html
-                && (open.element.self_closing
-                    || open.element.namespace == Namespace::Html
-                        && tags::closed_by_parent(tags::lowercase(
-                            open.element.name.slice(self.source),
-                            &mut buf,
-                        )))
-        };
-        if !self.stack[index + 1..].iter().all(implicitly_closable) {
+        // (Only HTML rules leave such an element open.)
+        if !self.stack[index + 1..]
+            .iter()
+            .all(|open| open.element.self_closing || open.tag.closed_by_parent)
+        {
             return error(DiagnosticKind::UnexpectedEndTag, tag);
         }
         while self.stack.len() > index {
@@ -490,7 +505,7 @@ impl<'a> Builder<'a> {
         let name_end = self.name_end(start + 1);
         let name = span(start + 1, name_end);
         let name_str = name.slice(self.source);
-        if self.rules.sfc && self.stack.is_empty() && name_str.eq_ignore_ascii_case("html") {
+        if self.at_sfc_root() && name_str.eq_ignore_ascii_case("html") {
             return Err(Stop::Html);
         }
 
@@ -522,33 +537,21 @@ impl<'a> Builder<'a> {
         self.pos = at;
 
         let mut buf = [0; 16];
-        let key = self.key(name_str, &mut buf);
+        let lowercase = tags::lowercase(name_str, &mut buf);
+        let key = if self.rules.html { lowercase } else { name_str };
 
-        if self.rules.html
-            && let Some(parent) = self.stack.last()
-            && parent.element.namespace == Namespace::Html
-        {
-            let mut parent_buf = [0; 16];
-            let parent_key =
-                tags::lowercase(parent.element.name.slice(self.source), &mut parent_buf);
-            if tags::closed_by_child(parent_key, key) {
-                let open = self.stack.pop().expect("parent exists");
-                self.close(open, None, start);
-            }
+        if let Some(open) = self.stack.pop_if(|parent| parent.tag.closed_by.contains(&key)) {
+            self.close(open, None, start);
         }
 
-        let namespace = match key {
-            "svg" => Namespace::Svg,
-            "math" => Namespace::MathMl,
-            _ => self.child_namespace(),
-        };
-        let html = namespace == Namespace::Html;
-        let void = self.is_void(key, namespace);
-        let closes_now = void || (self_closing && (!self.rules.html || !html));
-        let ignore_lf = html && tags::ignores_first_lf(key);
+        let inherited = self.context();
+        let namespace = tags::namespace(key, inherited.namespace);
+        let tag = self.tag(name_str, lowercase, namespace);
+        let closes_now =
+            tag.void || (self_closing && (!self.rules.html || namespace != Namespace::Html));
 
         let v_pre = self.rules.vue
-            && (self.in_v_pre() || attributes.iter().any(|a| a.name.slice(self.source) == "v-pre"));
+            && (inherited.v_pre || attributes.iter().any(|a| a.name.slice(self.source) == "v-pre"));
         if self.rules.vue && !v_pre {
             for attribute in &mut attributes {
                 if let Some(directive) = vue::directive(self.allocator, self.source, attribute.name)
@@ -559,19 +562,7 @@ impl<'a> Builder<'a> {
             }
         }
 
-        let content = if closes_now {
-            tags::Content::Normal
-        } else if self.rules.sfc && self.stack.is_empty() {
-            if name_str == "template" && !has_non_html_lang(self.source, &attributes) {
-                tags::Content::Normal
-            } else {
-                tags::Content::Raw
-            }
-        } else {
-            let mut lower_buf = [0; 16];
-            tags::content(tags::lowercase(name_str, &mut lower_buf))
-        };
-
+        let sfc_block = self.at_sfc_root();
         let tag_span = span(start, at);
         let open = Open {
             element: Element {
@@ -585,18 +576,28 @@ impl<'a> Builder<'a> {
                 end_tag: None,
                 span: tag_span,
             },
-            ignore_lf,
-            v_pre,
+            tag,
+            context: Context { namespace: tags::children_namespace(name_str, namespace), v_pre },
         };
         if closes_now {
             self.close(open, None, at);
             return Ok(());
         }
+
+        let content = if sfc_block {
+            if name_str == "template" && !has_non_html_lang(self.source, &open.element.attributes) {
+                Content::Normal
+            } else {
+                Content::Raw
+            }
+        } else {
+            tag.content
+        };
         self.stack.push(open);
         match content {
-            tags::Content::Normal => Ok(()),
-            tags::Content::Raw => self.raw_text(tag_span, name_str, false),
-            tags::Content::Escapable => self.raw_text(tag_span, name_str, true),
+            Content::Normal => Ok(()),
+            Content::Raw => self.raw_text(tag_span, name_str, false),
+            Content::Escapable => self.raw_text(tag_span, name_str, true),
         }
     }
 
@@ -604,46 +605,47 @@ impl<'a> Builder<'a> {
         // The first character is always part of the name, `=` included (as in browsers).
         let name_end = self.name_end(start + 1);
         let name = span(start, name_end);
-        let mut end = name_end;
-        let mut value = None;
-
         let eq = self.skip_ws(name_end);
-        if self.byte(eq) == Some(b'=') {
-            let value_start = self.skip_ws(eq + 1);
-            let (quote, pat) = match self.byte(value_start) {
-                Some(b'"') => (Quote::Double, "\""),
-                Some(b'\'') => (Quote::Single, "'"),
-                _ => (Quote::None, ""),
-            };
-            if quote == Quote::None {
-                // Browsers (and Vue) end an unquoted value at whitespace or `>` only:
-                // `href=/a/b` and `src=a.png/` keep their slashes.
-                let mut value_end = value_start;
-                while self.byte(value_end).is_some_and(|b| !is_ws(b) && b != b'>') {
-                    value_end += 1;
-                }
-                value = Some(AttributeValue { span: span(value_start, value_end), quote });
-                end = value_end;
-            } else {
-                let Some(close) = self.find(value_start + 1, self.end, pat) else {
-                    return error(
-                        DiagnosticKind::UnterminatedAttributeValue,
-                        span(value_start, self.end),
-                    );
-                };
-                value = Some(AttributeValue { span: span(value_start + 1, close), quote });
-                end = close + 1;
-            }
+        if self.byte(eq) != Some(b'=') {
+            return Ok(Attribute {
+                name,
+                value: None,
+                kind: AttributeKind::Plain,
+                span: span(start, name_end),
+            });
         }
-        Ok(Attribute { name, value, kind: AttributeKind::Plain, span: span(start, end) })
+
+        let value_start = self.skip_ws(eq + 1);
+        let (value, end) = if let Some(q @ (b'"' | b'\'')) = self.byte(value_start) {
+            let Some(close) = self.find(value_start + 1, self.bytes.len(), &[q]) else {
+                return error(
+                    DiagnosticKind::UnterminatedAttributeValue,
+                    span(value_start, self.bytes.len()),
+                );
+            };
+            let quote = if q == b'"' { Quote::Double } else { Quote::Single };
+            (AttributeValue { span: span(value_start + 1, close), quote }, close + 1)
+        } else {
+            // Browsers (and Vue) end an unquoted value at whitespace or `>` only:
+            // `href=/a/b` and `src=a.png/` keep their slashes.
+            let value_end = self.skip(value_start, |b| !b.is_ascii_whitespace() && b != b'>');
+            (AttributeValue { span: span(value_start, value_end), quote: Quote::None }, value_end)
+        };
+        Ok(Attribute {
+            name,
+            value: Some(value),
+            kind: AttributeKind::Plain,
+            span: span(start, end),
+        })
     }
 
     /// Content up to `</name>` (case-insensitive) as one text, `{{ }}` split when `escapable`.
     fn raw_text(&mut self, start_tag: Span, name: &str, escapable: bool) -> PResult<()> {
         let content_start = self.pos;
+        let finder = memmem::Finder::new(b"</");
         let mut from = content_start;
         let (close_start, close_end) = loop {
-            let Some(lt) = self.find(from, self.end, "</") else {
+            let Some(lt) = finder.find(&self.bytes[from..]).map(|i| from + i) else {
                 return error(DiagnosticKind::UnterminatedRawText, start_tag);
             };
             let name_start = self.skip_ws(lt + 2);
@@ -655,7 +657,7 @@ impl<'a> Builder<'a> {
             }
             from = lt + 2;
         };
-        if escapable {
+        if escapable && self.interpolates() {
             self.text(close_start, false)?;
         } else {
             self.push_text(content_start, close_start);

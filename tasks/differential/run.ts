@@ -39,9 +39,6 @@ class Rng {
   int(lo: number, hi: number): number {
     return lo + Math.floor(this.random() * (hi - lo + 1));
   }
-  soup(items: readonly string[], n: number): string {
-    return Array.from({ length: n }, () => items[this.int(0, items.length - 1)]).join("");
-  }
 }
 
 const TEXT = ["a", "foo bar", " ", "  ", "\n", "\r\n", "\t", "é", "<", ">", "&amp;", "&", '"', "'", "=", "/", "{", "}"];
@@ -70,7 +67,7 @@ const VUE_TOKENS = [
   "<C v-bind:[k].camel=\"v\" .p=\"v\" @[e]=\"h\" v-on:keyup.enter.prevent=\"g\">",
   "<div v-pre>", "<div a=b c>", "<div v-model.trim='m'>",
   "<pre>", "<pre>\n", "<textarea>\n{{ t }}</textarea>", "<title>{{ t }} <b></title>",
-  "<script>a < b</script>", "<style>a>b{}</style>", "<svg>",
+  "<script>a < b</script>", "<style>a>b{}</style>", "<svg>", "<svg><style>a<b</style></svg>",
   "<!-- c -->", "{{ a }}", "{{ a<b }}", "{{ '}}' }}", "{{", "}}", "{{ <div> }}",
 ];
 
@@ -81,12 +78,17 @@ function stripQuotes(value: string): string {
   return /^(["']).*\1$/s.test(value) ? value.slice(1, -1) : value;
 }
 
-/** The line break `pre` / `textarea` / `listing` drop: strip it from the first text, flag the element. */
-function leadingLf(name: string, children: unknown[][]): boolean {
+const LEADING_LF = /^(\r\n|\n|\r)/;
+const IGNORES_FIRST_LF = new Set(["pre", "textarea", "listing"]);
+const VOID = new Set("area,base,br,col,embed,hr,img,input,link,meta,param,source,track,wbr".split(","));
+const VOID_TAG = `<(?:${[...VOID].join("|")})\\b[^<>]*(?<!/)>`;
+
+/** The line break `pre` / `textarea` / `listing` drop: strip it from the first text. */
+function leadingLf(children: unknown[][]): boolean {
   const first = children[0];
-  if (!["pre", "textarea", "listing"].includes(name) || first?.[0] !== "t") return false;
+  if (first?.[0] !== "t") return false;
   const text = first[1] as string;
-  const lf = /^(\r\n|\n|\r)/.exec(text);
+  const lf = LEADING_LF.exec(text);
   if (!lf) return false;
   const rest = text.slice(lf[0].length);
   if (rest === "") children.shift();
@@ -101,18 +103,15 @@ function htmlOracle(source: string): Sig {
   const nodes = (nodes: any[]): unknown[][] => nodes.map(node);
   // angular-html-parser drops a text that was only the ignored line break;
   // its start tag's end tells whether there was one.
-  const lfAfter = (el: any) => /^(\r\n|\n|\r)/.test(source.slice(el.startSourceSpan.end.offset));
+  const lfAfter = (el: any) => LEADING_LF.test(source.slice(el.startSourceSpan.end.offset));
   function node(n: any): unknown[] {
     switch (n.kind) {
       case "element": {
         const name = slice(n.nameSpan);
         const children = nodes(n.children);
         const prefix = name.includes(":") ? "" : n.name.match(/^:(\w+):/)?.[1];
-        let lf = !prefix && !n.isSelfClosing && !n.isVoid && leadingLf(name.toLowerCase(), children);
-        if (!lf && !prefix && ["pre", "textarea", "listing"].includes(name.toLowerCase()) && !n.isSelfClosing) {
-          const first = children[0];
-          lf = lfAfter(n) && (first === undefined || first[0] !== "t" || !/^(\r\n|\n|\r)/.test(slice(n.children[0].sourceSpan)));
-        }
+        const lfTag = !prefix && !n.isSelfClosing && IGNORES_FIRST_LF.has(name.toLowerCase());
+        const lf = lfTag && (leadingLf(children) || lfAfter(n));
         let flags = n.isSelfClosing ? "/" : "";
         if (n.endSourceSpan !== null && !n.isSelfClosing) flags += "e";
         if (lf) flags += "lf";
@@ -148,7 +147,6 @@ function mergeTexts(nodes: unknown[][]): unknown[][] {
   return out;
 }
 
-const VUE_VOID = new Set("area,base,br,col,embed,hr,img,input,link,meta,param,source,track,wbr".split(","));
 
 function vueOracle(source: string): Sig {
   const errors: any[] = [];
@@ -169,9 +167,9 @@ function vueOracle(source: string): Sig {
     switch (n.type) {
       case 1: {
         const children = nodes(n.children);
-        const lf = n.ns === 0 && (n.tag === "pre" || n.tag === "textarea") && leadingLf(n.tag, children);
+        const lf = n.ns === 0 && (n.tag === "pre" || n.tag === "textarea") && leadingLf(children);
         let flags = n.isSelfClosing ? "/" : "";
-        if (!n.isSelfClosing && !VUE_VOID.has(n.tag)) flags += "e";
+        if (!n.isSelfClosing && !VOID.has(n.tag)) flags += "e";
         if (lf) flags += "lf";
         const attrs = n.props.map((p: any) => {
           // `v-pre` itself stays a directive in Vue; we keep everything under `v-pre` plain.
@@ -231,18 +229,18 @@ function soup(tokens: readonly string[], n: number): string {
       continue;
     }
     const name = /^<([a-zA-Z][^\s/>]*)[^<]*?(?<!\/)>$/.exec(token)?.[1];
-    if (name && !VUE_VOID.has(name.toLowerCase())) open.push(name);
+    if (name && !VOID.has(name.toLowerCase())) open.push(name);
     out += token;
   }
   while (open.length > 0 && rng.random() < 0.9) out += `</${open.pop()}>`;
   return out;
 }
 
-const corpus = Array.from({ length: count }, () =>
-  dialect === "html"
-    ? soup([...HTML_TOKENS, ...Array(15).fill("CLOSE")], rng.int(1, 30))
-    : `<template>${soup([...VUE_TOKENS, ...Array(15).fill("CLOSE")], rng.int(1, 30))}</template>\n`,
-);
+const tokens = [...(dialect === "html" ? HTML_TOKENS : VUE_TOKENS), ...Array(15).fill("CLOSE")];
+const corpus = Array.from({ length: count }, () => {
+  const body = soup(tokens, rng.int(1, 30));
+  return dialect === "html" ? body : `<template>${body}</template>\n`;
+});
 
 /** Mismatch shapes documented in DIVERGENCES.md, counted instead of failing. */
 const QUIRKS: Record<string, RegExp> = dialect === "vue" ? {
@@ -252,10 +250,15 @@ const QUIRKS: Record<string, RegExp> = dialect === "vue" ? {
   "</ whitespace": /<\/[ \t\n\f\r]/,
 } : {
   // angular-html-parser does not close a void element before a doctype.
-  "doctype after void": /<(?:area|base|br|col|embed|hr|img|input|link|meta|param|source|track|wbr)\b[^<>]*(?<!\/)><!doctype/i,
+  "doctype after void": new RegExp(`${VOID_TAG}<!doctype`, "i"),
   // ... nor before a start tag, which then cannot close the void element's parent implicitly.
   "implicit close after void":
-    /<(?:area|base|br|col|embed|hr|img|input|link|meta|param|source|track|wbr)\b[^<>]*(?<!\/)><(?:address|article|aside|blockquote|div|dl|fieldset|footer|form|h[1-6]|header|hgroup|hr|main|nav|ol|p|pre|section|table|ul|tbody|tfoot|tr|td|th|li|dt|dd|rb|rt|rtc|rp|optgroup|option)\b/i,
+    new RegExp(
+      `${VOID_TAG}<(?:address|article|aside|blockquote|div|dl|fieldset|footer|form|h[1-6]|header|hgroup|hr|main|nav|ol|p|pre|section|table|ul|tbody|tfoot|tr|td|th|li|dt|dd|rb|rt|rtc|rp|optgroup|option)\\b`,
+      "i",
+    ),
+  // Its tokenizer cannot see the namespace, so SVG `<title>` is raw text there, against its own tag table.
+  "svg title": /<svg\b(?:(?!<\/svg>)[^])*<title/i,
 };
 
 const oracle = dialect === "html" ? htmlOracle : vueOracle;
@@ -301,19 +304,21 @@ corpus.forEach((source, i) => {
   else if (aError) kind = "oursError";
   else kind = JSON.stringify(a) === JSON.stringify(b) ? "same" : "mismatch";
   if (kind === "oursError" || kind === "mismatch") {
-    const quirk = Object.keys(QUIRKS).find((name) => QUIRKS[name].test(source));
+    const quirk = process.env.NO_QUIRKS ? undefined : Object.keys(QUIRKS).find((name) => QUIRKS[name].test(source));
     if (quirk) kind = `quirk: ${quirk}`;
+    else failures.push(`--- ${kind} #${i}\n${JSON.stringify(source)}\nours:   ${JSON.stringify(a)}\noracle: ${JSON.stringify(b)}`);
   }
   tally[kind] = (tally[kind] ?? 0) + 1;
-  if (kind === "oursError" || kind === "mismatch") {
-    failures.push(`--- ${kind} #${i}\n${JSON.stringify(source)}\nours:   ${JSON.stringify(a)}\noracle: ${JSON.stringify(b)}`);
-  }
 });
 
 console.log(failures.slice(0, 10).join("\n"));
 if (process.env.ERRORS) {
   const messages: Record<string, number> = {};
-  for (const sig of [...mine, ...theirs]) if (typeof sig === "string") messages[sig.replace(/ at \d+.*| ".*/, "")] = (messages[sig.replace(/ at \d+.*| ".*/, "")] ?? 0) + 1;
+  for (const sig of [...mine, ...theirs]) {
+    if (typeof sig !== "string") continue;
+    const key = sig.replace(/ at \d+.*| ".*/, "");
+    messages[key] = (messages[key] ?? 0) + 1;
+  }
   console.log(messages);
 }
 console.log(`${dialect} count=${count} seed=${seed}`, tally);

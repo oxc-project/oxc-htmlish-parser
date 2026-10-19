@@ -1,11 +1,13 @@
 //! The tag table: the only HTML tree-construction knowledge the parser has.
 //!
-//! Names are matched as given; callers lowercase them where the dialect is case-insensitive.
-//! In HTML the table applies to HTML-namespace elements only, raw text aside (as in `angular-html-parser`).
+//! Lookups take lowercase names; the parser's `Builder::tag` applies each dialect's case and namespace policy on top.
 //! Implicit closing follows `angular-html-parser` (`html_tags.ts`), not WHATWG.
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+use crate::ast::Namespace;
+
+#[derive(Clone, Copy, Default, PartialEq, Eq)]
 pub enum Content {
+    #[default]
     Normal,
     /// `script` / `style`: no markup until the end tag.
     Raw,
@@ -13,103 +15,90 @@ pub enum Content {
     Escapable,
 }
 
-pub fn is_void(name: &str) -> bool {
-    matches!(
-        name,
-        "area"
-            | "base"
-            | "br"
-            | "col"
-            | "embed"
-            | "hr"
-            | "img"
-            | "input"
-            | "link"
-            | "meta"
-            | "param"
-            | "source"
-            | "track"
-            | "wbr"
-    )
+/// What the table says about one element.
+#[derive(Clone, Copy, Default)]
+pub struct Tag {
+    pub void: bool,
+    pub content: Content,
+    /// HTML drops a line break right after the start tag.
+    pub ignores_first_lf: bool,
+    /// An ancestor's end tag may close it implicitly.
+    pub closed_by_parent: bool,
+    /// Start tags that close it when opened right inside it.
+    pub closed_by: &'static [&'static str],
 }
 
-/// `lowercase` is the lowercased name: content types are case-insensitive in every dialect.
-/// Namespaces do not matter (as in `angular-html-parser`, whose tokenizer cannot see them): SVG `<title>` is raw text too.
-pub fn content(lowercase: &str) -> Content {
+pub fn html(lowercase: &str) -> Tag {
+    const P_CLOSERS: &[&str] = &[
+        "address",
+        "article",
+        "aside",
+        "blockquote",
+        "div",
+        "dl",
+        "fieldset",
+        "footer",
+        "form",
+        "h1",
+        "h2",
+        "h3",
+        "h4",
+        "h5",
+        "h6",
+        "header",
+        "hgroup",
+        "hr",
+        "main",
+        "nav",
+        "ol",
+        "p",
+        "pre",
+        "section",
+        "table",
+        "ul",
+    ];
+    const RUBY: &[&str] = &["rb", "rt", "rtc", "rp"];
+    let closes =
+        |closed_by_parent, closed_by| Tag { closed_by_parent, closed_by, ..Tag::default() };
     match lowercase {
-        "script" | "style" => Content::Raw,
-        "textarea" | "title" => Content::Escapable,
-        _ => Content::Normal,
+        "area" | "base" | "br" | "col" | "embed" | "hr" | "img" | "input" | "link" | "meta"
+        | "param" | "source" | "track" | "wbr" => Tag { void: true, ..Tag::default() },
+        "script" | "style" => Tag { content: Content::Raw, ..Tag::default() },
+        "textarea" => Tag { content: Content::Escapable, ignores_first_lf: true, ..Tag::default() },
+        "title" => Tag { content: Content::Escapable, ..Tag::default() },
+        "pre" | "listing" => Tag { ignores_first_lf: true, ..Tag::default() },
+        "p" => closes(true, P_CLOSERS),
+        "thead" => closes(false, &["tbody", "tfoot"]),
+        "tbody" => closes(true, &["tbody", "tfoot"]),
+        "tfoot" => closes(true, &["tbody"]),
+        "tr" => closes(true, &["tr"]),
+        "td" | "th" => closes(true, &["td", "th"]),
+        "li" => closes(true, &["li"]),
+        "dt" => closes(false, &["dt", "dd"]),
+        "dd" => closes(true, &["dt", "dd"]),
+        "rb" | "rt" | "rp" => closes(true, RUBY),
+        "rtc" => closes(true, &["rb", "rtc", "rp"]),
+        "optgroup" => closes(true, &["optgroup"]),
+        "option" => closes(true, &["option", "optgroup"]),
+        _ => Tag::default(),
     }
 }
 
-pub fn ignores_first_lf(name: &str) -> bool {
-    matches!(name, "pre" | "textarea" | "listing")
+/// The namespace an element named `key` opens in, given the one its parent's children inherit.
+pub fn namespace(key: &str, inherited: Namespace) -> Namespace {
+    match key {
+        "svg" => Namespace::Svg,
+        "math" => Namespace::MathMl,
+        _ => inherited,
+    }
 }
 
-/// Whether an end tag of an ancestor may close this element implicitly.
-pub fn closed_by_parent(name: &str) -> bool {
-    matches!(
-        name,
-        "p" | "tbody"
-            | "tfoot"
-            | "tr"
-            | "td"
-            | "th"
-            | "li"
-            | "dd"
-            | "rb"
-            | "rt"
-            | "rtc"
-            | "rp"
-            | "optgroup"
-            | "option"
-    )
-}
-
-/// Whether opening `child` right inside `parent` closes `parent`.
-pub fn closed_by_child(parent: &str, child: &str) -> bool {
-    match parent {
-        "p" => matches!(
-            child,
-            "address"
-                | "article"
-                | "aside"
-                | "blockquote"
-                | "div"
-                | "dl"
-                | "fieldset"
-                | "footer"
-                | "form"
-                | "h1"
-                | "h2"
-                | "h3"
-                | "h4"
-                | "h5"
-                | "h6"
-                | "header"
-                | "hgroup"
-                | "hr"
-                | "main"
-                | "nav"
-                | "ol"
-                | "p"
-                | "pre"
-                | "section"
-                | "table"
-                | "ul"
-        ),
-        "thead" | "tbody" => matches!(child, "tbody" | "tfoot"),
-        "tfoot" => child == "tbody",
-        "tr" => child == "tr",
-        "td" | "th" => matches!(child, "td" | "th"),
-        "li" => child == "li",
-        "dt" | "dd" => matches!(child, "dt" | "dd"),
-        "rb" | "rt" | "rp" => matches!(child, "rb" | "rt" | "rtc" | "rp"),
-        "rtc" => matches!(child, "rb" | "rtc" | "rp"),
-        "optgroup" => child == "optgroup",
-        "option" => matches!(child, "option" | "optgroup"),
-        _ => false,
+/// The namespace an element's children inherit: `foreignObject` holds HTML again.
+pub fn children_namespace(name: &str, namespace: Namespace) -> Namespace {
+    if namespace == Namespace::Svg && name.eq_ignore_ascii_case("foreignObject") {
+        Namespace::Html
+    } else {
+        namespace
     }
 }
 

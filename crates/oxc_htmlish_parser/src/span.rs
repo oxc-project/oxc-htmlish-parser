@@ -1,3 +1,9 @@
+/// A span from `usize` offsets inside the source, which `Parser::parse` checked to fit in `u32`.
+#[expect(clippy::cast_possible_truncation)]
+pub fn span(start: usize, end: usize) -> Span {
+    Span::new(start as u32, end as u32)
+}
+
 /// A byte range of the source, 0-based.
 ///
 /// Offsets are `u32` (matching oxc convention);

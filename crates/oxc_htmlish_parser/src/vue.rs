@@ -3,7 +3,7 @@
 use oxc_allocator::{Allocator, ArenaVec};
 
 use crate::ast::{VueArgument, VueDirective};
-use crate::span::Span;
+use crate::span::{Span, span};
 
 /// `None` for plain attributes and malformed directive names.
 pub fn directive<'a>(
@@ -12,10 +12,8 @@ pub fn directive<'a>(
     name: Span,
 ) -> Option<VueDirective<'a>> {
     let s = name.slice(source).as_bytes();
-    let at = |start: usize, end: usize| {
-        #[expect(clippy::cast_possible_truncation)] // inside `name`
-        Span::new(name.start + start as u32, name.start + end as u32)
-    };
+    let base = name.start as usize;
+    let at = |start: usize, end: usize| span(base + start, base + end);
     let until_dot =
         |from: usize| s[from..].iter().position(|&b| b == b'.').map_or(s.len(), |i| from + i);
 
