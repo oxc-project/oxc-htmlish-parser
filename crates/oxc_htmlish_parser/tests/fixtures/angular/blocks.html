@@ -1,0 +1,30 @@
+<ul>
+  @for (item of items; track item.id; let i = $index) {
+    <li>{{ item.name }}</li>
+  } @empty {
+    <li>none</li>
+  }
+</ul>
+@if (a > b) {
+  <p>{{ '}}' }}</p>
+} @else   if (b) {
+  <span>b</span>
+} @else {
+  c
+}
+@switch (mode) {
+  @case ('a')
+  @case ('b') {
+    <p>ab
+  }
+  @default never;
+}
+<p>a@if(x){b}c a@b.com</p>
+@defer (on viewport; prefetch on idle) {
+  <x-y />
+} @placeholder (minimum 500ms) {
+  <p>(loading)</p>
+}
+<div>@if (a) {<nz-progress [x]="y" />} @else {<app-c1/>}</div>
+<p>{{ a // it's }}</p>
+@if (f("a;b)") ; c) {x}

@@ -41,6 +41,13 @@ pub enum DiagnosticKind {
     UnexpectedEndTag,
     /// `</br>`.
     VoidEndTag,
+    /// Angular: `@if (a)` without `{`, or parameters without `)`.
+    IncompleteBlock,
+    /// Angular: a `}` with no open block to close,
+    /// or one that would close an element whose end tag cannot be omitted.
+    UnexpectedBlockClose,
+    /// Angular: a block without its `}`.
+    UnclosedBlock,
 }
 
 impl Display for Diagnostic {
@@ -58,6 +65,9 @@ impl Display for Diagnostic {
             DiagnosticKind::UnexpectedCharacterInTag => "unexpected character in tag",
             DiagnosticKind::UnexpectedEndTag => "unexpected end tag",
             DiagnosticKind::VoidEndTag => "void elements do not have end tags",
+            DiagnosticKind::IncompleteBlock => "incomplete block",
+            DiagnosticKind::UnexpectedBlockClose => "unexpected block close",
+            DiagnosticKind::UnclosedBlock => "unclosed block",
         };
         write!(f, "{message} at {}..{}", self.span.start, self.span.end)
     }

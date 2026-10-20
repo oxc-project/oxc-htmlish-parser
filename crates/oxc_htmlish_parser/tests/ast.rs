@@ -1,6 +1,6 @@
 //! AST snapshots: one compact tree per fixture, spans and facts included.
 //!
-//! `fixtures/html/*.html` parse as HTML, `fixtures/vue/*.vue` as Vue.
+//! `fixtures/html/*.html` parse as HTML, `fixtures/angular/*.html` as Angular, `fixtures/vue/*.vue` as Vue.
 //! A fixture that fails to parse snapshots its diagnostic.
 //! Review with `cargo insta review` after an intentional AST change.
 
@@ -111,6 +111,15 @@ impl Printer<'_, '_> {
             NodeKind::ConditionalEnd => format!("ConditionalEnd {}", q(node.span)),
             NodeKind::DocType(n) => format!("DocType value={}", q(n.value)),
             NodeKind::Cdata => format!("Cdata {}", q(node.span)),
+            NodeKind::Block(b) => {
+                let parameters: Vec<_> = b.parameters.iter().map(|p| q(*p)).collect();
+                let close = b.close.map_or("no_body".to_string(), |c| format!("close={}", q(c)));
+                format!(
+                    "Block name={} parameters={parameters:?} open={} {close}",
+                    q(b.name),
+                    q(b.open)
+                )
+            }
         };
         self.line(&head);
         if let NodeKind::Element(el) = &node.kind {
@@ -155,6 +164,7 @@ fn ast_snapshots() {
         let source = fs::read_to_string(path).unwrap();
         let dialect = match path.extension().and_then(|e| e.to_str()) {
             Some("vue") => Dialect::Vue,
+            _ if path.parent().is_some_and(|p| p.ends_with("angular")) => Dialect::Angular,
             _ => Dialect::Html,
         };
         let allocator = Allocator::default();
@@ -187,6 +197,7 @@ fn check(root: &Root<'_>, id: NodeId) {
             Span::new(el.start_tag.end, el.end_tag.map_or(parent.span.end, |tag| tag.span.start))
         }
         NodeKind::ConditionalComment(n) => n.content,
+        NodeKind::Block(b) => Span::new(b.open.end, b.close.map_or(parent.span.end, |c| c.start)),
         _ => parent.span,
     };
     let mut at = inner.start;

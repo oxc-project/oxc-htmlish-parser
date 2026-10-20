@@ -8,6 +8,8 @@ It is the parsing layer for oxc's htmlish formatter (`oxc_formatter_htmlish`).
 Parse behavior targets each dialect's own parser, not the spec.
 
 - html: `angular-html-parser` (what Prettier parses with), with Prettier's options
+- angular: `angular-html-parser` with Prettier's angular options (blocks, `{{ }}`, `/>` on every element).
+  Only control flow blocks and `{{ }}` so far; ICU expressions and `@let` are still text
 - vue: `@vue/compiler-core`
 - Where Prettier errors on input the dialect accepts (`<DIV></div>`, unknown entities, `{{ a<b }}` in Vue), that is a bug to fix here.
 - Truly broken structure (unmatched end tag, unterminated start tag) is an error, as in Prettier; the parse stops at the first one.
@@ -54,7 +56,7 @@ Every drop is an entry in `DIVERGENCES.md`, with a fixture and (if the different
 
 First run: `npm i` in `tasks/differential`.
 
-- `tests/fixtures/html/*.html` parse as HTML, `tests/fixtures/vue/*.vue` as Vue; one compact tree per fixture.
+- `tests/fixtures/html/*.html` parse as HTML, `tests/fixtures/angular/*.html` as Angular, `tests/fixtures/vue/*.vue` as Vue; one compact tree per fixture.
 - Add a fixture when a change touches structure or facts.
 - The differential compares a signature (`tasks/sig/src/main.rs`, mirrored in `run.ts`):
   names, attributes, Vue directive parts, end-tag presence, raw text and comment contents.

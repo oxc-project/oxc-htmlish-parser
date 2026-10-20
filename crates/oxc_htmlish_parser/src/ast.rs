@@ -91,6 +91,8 @@ pub enum NodeKind<'a> {
     ConditionalEnd,
     DocType(DocType),
     Cdata,
+    /// An Angular control flow block (`@if (a) { … }`); its content is the node's children.
+    Block(ArenaBox<'a, Block<'a>>),
 }
 
 #[derive(Debug)]
@@ -246,6 +248,20 @@ pub struct ConditionalComment {
 pub struct ConditionalStart {
     /// Between `[if` and `]`.
     pub condition: Span,
+}
+
+#[derive(Debug)]
+pub struct Block<'a> {
+    /// After `@`, as written (`if`, `else if`, `else   if`).
+    pub name: Span,
+    /// Between the parentheses, split at `;` outside quotes and parentheses, each trimmed.
+    /// Empty without parentheses.
+    pub parameters: ArenaVec<'a, Span>,
+    /// From `@` through the `{`, or through the parameters (or `;`) for a block without a body.
+    pub open: Span,
+    /// The `}`; `None` for a block without a body
+    /// (`@case (a)` right before another case, `@default never;`).
+    pub close: Option<Span>,
 }
 
 #[derive(Clone, Copy, Debug)]

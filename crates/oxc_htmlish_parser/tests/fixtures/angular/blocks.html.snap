@@ -1,0 +1,77 @@
+---
+source: crates/oxc_htmlish_parser/tests/ast.rs
+---
+Root sfc=false
+  Element [1..3] "ul" Html end_tag=[125..130] "</ul>"
+    Text [4..7] "\n  " (nl|nl)
+    Block name=[8..11] "for" parameters=["[13..26] \"item of items\"", "[28..41] \"track item.id\"", "[43..57] \"let i = $index\""] open=[7..60] "@for (item of items; track item.id; let i = $index) {" close=[92..93] "}"
+      Text [60..65] "\n    " (nl|nl)
+      Element [66..68] "li" Html end_tag=[84..89] "</li>"
+        Interpolation expression=[71..82] " item.name "
+      Text [89..92] "\n  " (nl|nl)
+    Text [93..94] " " (sp|sp)
+    Block name=[95..100] "empty" parameters=[] open=[94..102] "@empty {" close=[123..124] "}"
+      Text [102..107] "\n    " (nl|nl)
+      Element [108..110] "li" Html end_tag=[115..120] "</li>"
+        Text [111..115] "none" (-|-) content=[111..115] "none"
+      Text [120..123] "\n  " (nl|nl)
+    Text [124..125] "\n" (nl|nl)
+  Text [130..131] "\n" (nl|nl)
+  Block name=[132..134] "if" parameters=["[136..141] \"a > b\""] open=[131..144] "@if (a > b) {" close=[165..166] "}"
+    Text [144..147] "\n  " (nl|nl)
+    Element [148..149] "p" Html end_tag=[160..164] "</p>"
+      Interpolation expression=[152..158] " '}}' "
+    Text [164..165] "\n" (nl|nl)
+  Text [166..167] " " (sp|sp)
+  Block name=[168..177] "else   if" parameters=["[179..180] \"b\""] open=[167..183] "@else   if (b) {" close=[201..202] "}"
+    Text [183..186] "\n  " (nl|nl)
+    Element [187..191] "span" Html end_tag=[193..200] "</span>"
+      Text [192..193] "b" (-|-) content=[192..193] "b"
+    Text [200..201] "\n" (nl|nl)
+  Text [202..203] " " (sp|sp)
+  Block name=[204..208] "else" parameters=[] open=[203..210] "@else {" close=[215..216] "}"
+    Text [210..215] "\n  c\n" (nl|nl) content=[213..214] "c"
+  Text [216..217] "\n" (nl|nl)
+  Block name=[218..224] "switch" parameters=["[226..230] \"mode\""] open=[217..233] "@switch (mode) {" close=[296..297] "}"
+    Text [233..236] "\n  " (nl|nl)
+    Block name=[237..241] "case" parameters=["[243..246] \"'a'\""] open=[236..247] "@case ('a')" no_body
+    Text [247..250] "\n  " (nl|nl)
+    Block name=[251..255] "case" parameters=["[257..260] \"'b'\""] open=[250..263] "@case ('b') {" close=[276..277] "}"
+      Text [263..268] "\n    " (nl|nl)
+      Element [269..270] "p" Html no_end_tag span_end=276
+        Text [271..276] "ab\n  " (-|nl) content=[271..273] "ab"
+    Text [277..280] "\n  " (nl|nl)
+    Block name=[281..294] "default never" parameters=[] open=[280..295] "@default never;" no_body
+    Text [295..296] "\n" (nl|nl)
+  Text [297..298] "\n" (nl|nl)
+  Element [299..300] "p" Html end_tag=[320..324] "</p>"
+    Text [301..302] "a" (-|-) content=[301..302] "a"
+    Block name=[303..305] "if" parameters=["[306..307] \"x\""] open=[302..309] "@if(x){" close=[310..311] "}"
+      Text [309..310] "b" (-|-) content=[309..310] "b"
+    Text [311..320] "c a@b.com" (-|-) content=[311..320] "c a@b.com"
+  Text [324..325] "\n" (nl|nl)
+  Block name=[326..331] "defer" parameters=["[333..344] \"on viewport\"", "[346..362] \"prefetch on idle\""] open=[325..365] "@defer (on viewport; prefetch on idle) {" close=[376..377] "}"
+    Text [365..368] "\n  " (nl|nl)
+    Element [369..372] "x-y" Html self_closing no_end_tag span_end=375
+    Text [375..376] "\n" (nl|nl)
+  Text [377..378] " " (sp|sp)
+  Block name=[379..390] "placeholder" parameters=["[392..405] \"minimum 500ms\""] open=[378..408] "@placeholder (minimum 500ms) {" close=[428..429] "}"
+    Text [408..411] "\n  " (nl|nl)
+    Element [412..413] "p" Html end_tag=[423..427] "</p>"
+      Text [414..423] "(loading)" (-|-) content=[414..423] "(loading)"
+    Text [427..428] "\n" (nl|nl)
+  Text [429..430] "\n" (nl|nl)
+  Element [431..434] "div" Html end_tag=[486..492] "</div>"
+    Block name=[436..438] "if" parameters=["[440..441] \"a\""] open=[435..444] "@if (a) {" close=[467..468] "}"
+      Element [445..456] "nz-progress" Html self_closing no_end_tag span_end=467
+        @[457..460] "[x]" =" [462..463] "y"
+    Text [468..469] " " (sp|sp)
+    Block name=[470..474] "else" parameters=[] open=[469..476] "@else {" close=[485..486] "}"
+      Element [477..483] "app-c1" Html self_closing no_end_tag span_end=485
+  Text [492..493] "\n" (nl|nl)
+  Element [494..495] "p" Html end_tag=[511..515] "</p>"
+    Interpolation expression=[498..509] " a // it's "
+  Text [515..516] "\n" (nl|nl)
+  Block name=[517..519] "if" parameters=["[521..530] \"f(\\\"a;b)\\\")\"", "[533..534] \"c\""] open=[516..537] "@if (f(\"a;b)\") ; c) {" close=[538..539] "}"
+    Text [537..538] "x" (-|-) content=[537..538] "x"
+  Text [539..540] "\n" (nl|nl)

@@ -56,6 +56,10 @@ fn node(source: &str, root: &Root<'_>, id: NodeId) -> Value {
         }
         NodeKind::DocType(_) => raw("d"),
         NodeKind::Cdata => raw("x"),
+        NodeKind::Block(b) => {
+            let parameters: Vec<&str> = b.parameters.iter().map(|p| p.slice(source)).collect();
+            json!(["b", b.name.slice(source), parameters, children(source, root, id)])
+        }
     }
 }
 
