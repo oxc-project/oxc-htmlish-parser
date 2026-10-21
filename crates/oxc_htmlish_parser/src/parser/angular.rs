@@ -1,12 +1,8 @@
 //! Angular: `{{ }}` closed outside string literals, and control flow blocks (`@if (a) { … }`).
 
-use oxc_allocator::{ArenaBox, ArenaVec};
+use oxc_allocator::ArenaBox;
 
-use super::{Builder, Open, PResult, error, trim};
-use crate::ast::{Block, NodeKind};
-use crate::diagnostic::DiagnosticKind;
-use crate::span::{Span, span};
-use crate::tags::Tag;
+use super::*;
 
 /// The block names `angular-html-parser` starts a block at, by prefix (`@iffy` is a block named `iffy`).
 const BLOCK_NAMES: [&[u8]; 13] = [

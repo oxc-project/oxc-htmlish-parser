@@ -31,7 +31,7 @@ Every drop is an entry in `DIVERGENCES.md`, with a fixture and (if the different
 
 ## Scope
 
-- No WHATWG tree construction: only the tag table in `src/tags.rs` (void, raw text, implicit closing).
+- No WHATWG tree construction: only the tag table in `src/parser/tags.rs` (void, raw text, implicit closing).
   Omitted start tags (`<tbody>`) are never inserted.
 - No cooked values: spans into the original source; entities are never decoded.
 - Facts that need no formatting option belong here (whitespace around text, how a tag was written, directive parts, `pre`'s ignored first line break);
@@ -41,11 +41,12 @@ Every drop is an entry in `DIVERGENCES.md`, with a fixture and (if the different
 
 ## Architecture
 
-- `src/parser/mod.rs`: one pass over the bytes builds the tree; there is no token stream.
-  `Dialect` maps to private `Rules` flags; a Vue file with a root `<html>` / `<!doctype html>` restarts with HTML rules.
-- `src/tags.rs`: the tag table.
-- `src/parser/angular.rs`: Angular's `{{ }}` end and control flow blocks, on the same builder.
-- `src/vue.rs`: Vue directive name splitting.
+- `src/parser/`: one pass over the bytes builds the tree; there is no token stream.
+  - `mod.rs`: the entry and the builder's core (scanning and tree helpers).
+    `Dialect` maps to private `Rules` flags; a Vue file with a root `<html>` / `<!doctype html>` restarts with HTML rules.
+  - `text.rs`, `markup.rs` (comments, CDATA, doctype), `element.rs` (tags, attributes, raw text): the builder by construct.
+  - `angular.rs`: Angular's `{{ }}` end and control flow blocks.
+  - `tags.rs`: the tag table. `vue.rs`: Vue directive name splitting.
 - `src/ast.rs`: the AST, every node in one list linked by `NodeId` (parent, next sibling, children),
   so the formatter walks up and down and keys its tables by `NodeId`.
   Elements carry the tag table's verdict (`key`, `void`, `content`, `ignores_first_lf`) and the end tag's name as written.

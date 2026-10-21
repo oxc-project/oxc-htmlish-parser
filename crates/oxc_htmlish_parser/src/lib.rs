@@ -20,8 +20,6 @@ pub mod ast;
 mod diagnostic;
 mod parser;
 mod span;
-mod tags;
-mod vue;
 
 pub use diagnostic::{Diagnostic, DiagnosticKind};
 pub use oxc_allocator::Allocator;
