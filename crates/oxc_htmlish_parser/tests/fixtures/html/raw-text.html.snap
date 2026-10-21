@@ -30,3 +30,6 @@ Root sfc=false
   Element [236..239] "pre" Html ignores_first_lf end_tag=[247..253] "</pre>"
     Text [240..247] "{{ x }}" (-|-) content=[240..247] "{{ x }}"
   Text [253..254] "\n" (nl|nl)
+  Element [255..261] "script" Html raw end_tag=[274..283] "</script>"
+    Text [262..274] "a</ script>b" (-|-) content=[262..274] "a</ script>b"
+  Text [283..284] "\n" (nl|nl)

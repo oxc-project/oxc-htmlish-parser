@@ -125,7 +125,7 @@ pub struct Element<'a> {
 pub struct EndTag {
     /// `</name>`.
     pub span: Span,
-    /// The name as written, which may differ in case from the start tag's.
+    /// The name as written, which may differ in case from the start tag's; the `/` of htm's `<//>`.
     pub name: Span,
 }
 

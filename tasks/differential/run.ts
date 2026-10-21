@@ -244,7 +244,7 @@ const corpus = Array.from({ length: count }, () => {
 
 /** Mismatch shapes documented in DIVERGENCES.md, counted instead of failing. */
 const QUIRKS: Record<string, RegExp> = dialect === "vue" ? {
-  // Vue reads `<` as part of a tag name (`<a<C />`); we reject it, as Prettier does.
+  // Vue reads `<` as part of a tag name (`<a<C />`); we reject it in every dialect.
   "< in start tag": /<[a-zA-Z][^\s/>]*</,
   // Vue skips whitespace after `</` in a bogus comment's content.
   "</ whitespace": /<\/[ \t\n\f\r]/,

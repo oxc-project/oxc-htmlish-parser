@@ -5,4 +5,6 @@
   <Transition>x</transition>
   <div />
   <MyInput>not void</MyInput>
+  <!-->a-->
+  <textarea>a</ textarea>b</textarea>
 </template>

@@ -631,7 +631,7 @@ impl<'a> Builder<'a> {
             }
             b'/' => self.end_tag(),
             b'!' if self.starts_with_ci(start, "<!--") => self.comment(),
-            b'!' if self.starts_with_ci(start, "<![CDATA[") => {
+            b'!' if self.bytes[start..].starts_with(b"<![CDATA[") => {
                 let Some(close) = self.find(start + 9, self.bytes.len(), b"]]>") else {
                     return error(DiagnosticKind::UnterminatedCdata, span(start, start + 9));
                 };
@@ -649,10 +649,18 @@ impl<'a> Builder<'a> {
     fn comment(&mut self) -> PResult<()> {
         let start = self.pos;
         let content_start = start + 4;
-        let Some(close) = self.find(content_start, self.bytes.len(), b"-->") else {
-            return error(DiagnosticKind::UnterminatedComment, span(start, content_start));
+        // `<!-->` and `<!--->` are empty comments, as in the HTML tokenizer (DIVERGENCES.md#a-comment-may-close-right-after-its-opening).
+        let (close, end) = match &self.bytes[content_start..] {
+            [b'>', ..] => (content_start, content_start + 1),
+            [b'-', b'>', ..] => (content_start, content_start + 2),
+            _ => {
+                let Some(close) = self.find(content_start, self.bytes.len(), b"-->") else {
+                    return error(DiagnosticKind::UnterminatedComment, span(start, content_start));
+                };
+                (close, close + 3)
+            }
         };
-        self.pos = close + 3;
+        self.pos = end;
         let span = span(start, self.pos);
         let content = self::span(content_start, close);
         if !self.conditional_comment(span, content) {
@@ -734,8 +742,15 @@ impl<'a> Builder<'a> {
 
     fn end_tag(&mut self) -> PResult<()> {
         let start = self.pos;
-        let name_start = self.skip_ws(start + 2);
-        let name_end = self.name_end(name_start);
+        // htm's `<//>` closes the innermost element; its name is the `/` (Prettier's `allowHtmComponentClosingTags`:
+        // HTML only, a Vue file read as HTML included).
+        let htm = self.rules.html && !self.rules.angular && self.byte(start + 2) == Some(b'/');
+        let (name_start, name_end) = if htm {
+            (start + 2, start + 3)
+        } else {
+            let name_start = self.skip_ws(start + 2);
+            (name_start, self.name_end(name_start))
+        };
         let gt = self.skip_ws(name_end);
         if self.byte(gt) != Some(b'>') {
             return error(DiagnosticKind::UnterminatedEndTag, span(start, gt));
@@ -749,9 +764,12 @@ impl<'a> Builder<'a> {
             return error(DiagnosticKind::VoidEndTag, tag.span);
         }
         // Every dialect so far matches end tags case-insensitively.
-        let Some(index) =
+        let index = if htm {
+            self.stack.len().checked_sub(1)
+        } else {
             self.stack.iter().rposition(|open| !open.block && open.name.eq_ignore_ascii_case(name))
-        else {
+        };
+        let Some(index) = index else {
             return error(DiagnosticKind::UnexpectedEndTag, tag.span);
         };
         if !self.close_omitted_above(index, start) {
@@ -928,7 +946,8 @@ impl<'a> Builder<'a> {
             let Some(lt) = finder.find(&self.bytes[from..]).map(|i| from + i) else {
                 return error(DiagnosticKind::UnterminatedRawText, start_tag);
             };
-            let name_start = self.skip_ws(lt + 2);
+            // As in the HTML tokenizer, the name follows `</` right away (DIVERGENCES.md#raw-text-closes-only-where-the-name-follows-the-slash).
+            let name_start = lt + 2;
             if self.starts_with_ci(name_start, name) {
                 let gt = self.skip_ws(name_start + name.len());
                 if self.byte(gt) == Some(b'>') {
@@ -986,6 +1005,9 @@ mod tests {
             ("<template>{{ a</template>", Dialect::Vue, UnterminatedInterpolation, 10),
             ("<template><p><div></p></template>", Dialect::Vue, UnexpectedEndTag, 18),
             ("<docs>a", Dialect::Vue, UnterminatedRawText, 0),
+            ("<a<C />", Dialect::Html, UnterminatedStartTag, 0),
+            ("<template><a<C /></template>", Dialect::Vue, UnterminatedStartTag, 10),
+            ("a<//>", Dialect::Html, UnexpectedEndTag, 1),
         ] {
             let allocator = Allocator::default();
             let diagnostic = Parser::new(&allocator, source, dialect).parse().unwrap_err();

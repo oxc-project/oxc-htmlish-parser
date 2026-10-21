@@ -2,37 +2,15 @@
 
 The parse-behavior oracles:
 
-- html: `angular-html-parser` 10.13, with the options Prettier passes
+- html and angular: `angular-html-parser` 10.13, with the options Prettier passes for each
 - vue: `@vue/compiler-core` (Prettier reads Vue through `angular-html-parser` too; where they differ, Vue wins)
 
 Each entry is a place where we deliberately do not match, with the input that shows it.
 Where the oracle errors and we parse, Prettier fails on the file and nothing can depend on it.
 `runner:` names the shape `tasks/differential/run.ts` exempts; entries without one are never generated there, fixtures pin them.
+Entries are grouped by the dialects they apply to.
 
-## HTML
-
-### `/>` on non-void HTML elements is ignored
-
-Prettier passes `canSelfClose: true`, so every element self-closes.
-Browsers ignore the `/` except on void and foreign (SVG / MathML) elements, and so do we.
-The written `/>` is kept as `Element::self_closing`.
-
-```html
-<div />after</div>
-<!-- Prettier: <div/> then text "after", then an unexpected </div> error -->
-<!-- ours: div containing "after" -->
-```
-
-### An element whose `/>` was ignored closes on an ancestor's end tag
-
-`angular-html-parser` lets an ancestor's end tag close only the `closedByParent` set (`p`, `li`, `td`, ...).
-Since the previous entry leaves `<my-el />` open, that set alone would make the common shape below an error;
-browsers close it there.
-
-```html
-<div><my-el /></div>
-<!-- ours: my-el closes at </div>, without an end tag -->
-```
+## HTML and Angular
 
 ### Unquoted attribute values end at whitespace or `>` only
 
@@ -104,6 +82,65 @@ The HTML tokenizer has no namespace prefixes: both are unknown HTML elements, wi
 `<a =b>` is an attribute named `=b`, as in browsers;
 `angular-html-parser` reads an empty name with the value `b`.
 
+### Raw text closes only where the name follows the slash
+
+`angular-html-parser` allows whitespace between `</` and the name of the end tag that closes raw text (`</ script>`), as it does in any end tag.
+The HTML tokenizer and Vue close raw text only at `</` followed right away by the name, so `</ script>` inside a script is content.
+
+```html
+<script>const s = "</ script>";</script>
+<!-- angular-html-parser: the script closes at </ script>, then an unexpected </script> error; ours (browsers, Vue): one script -->
+```
+
+After the name, only whitespace may precede the `>`: `</script foo>` is content, as in `angular-html-parser` (Vue reports an error there).
+
+### A comment may close right after its opening
+
+`<!-->` and `<!--->` are empty comments in the HTML tokenizer and Vue; `angular-html-parser` reads on to the next `-->`.
+
+```html
+<!-->a-->
+<!-- angular-html-parser: one comment holding ">a"; ours (browsers, Vue): an empty comment, then the text "a-->" -->
+```
+
+## HTML
+
+### `/>` on non-void HTML elements is ignored
+
+Prettier passes `canSelfClose: true`, so every element self-closes.
+Browsers ignore the `/` except on void and foreign (SVG / MathML) elements, and so do we.
+The written `/>` is kept as `Element::self_closing`.
+
+```html
+<div />after</div>
+<!-- Prettier: <div/> then text "after", then an unexpected </div> error -->
+<!-- ours: div containing "after" -->
+```
+
+### An element whose `/>` was ignored closes on an ancestor's end tag
+
+`angular-html-parser` lets an ancestor's end tag close only the `closedByParent` set (`p`, `li`, `td`, ...).
+Since the previous entry leaves `<my-el />` open, that set alone would make the common shape below an error;
+browsers close it there.
+
+```html
+<div><my-el /></div>
+<!-- ours: my-el closes at </div>, without an end tag -->
+```
+
+## Angular
+
+### A block without a body ends at its parameters
+
+`angular-html-parser` reads the whitespace after the parameters into a block's start (it may precede the `{`),
+so a fallthrough `@case` without a body takes the whitespace up to the next `@case` into its span.
+Every other span ends at the construct's last delimiter (`>`, `{`, `;`, `)`), and the whitespace after it is a text.
+
+```html
+@switch (a) { @case (1) @case (2) {x} }
+<!-- angular-html-parser: "@case (1) ", then "@case (2) {x}"; ours: "@case (1)", the text " ", then "@case (2) {x}" -->
+```
+
 ## Vue
 
 ### `{{ }}` closes at the first `}}`, tags included
@@ -119,7 +156,10 @@ Prettier's Vue options keep the HTML implicit-close table and match case-sensiti
 
 ### A `<` inside a start tag is an error
 
-Vue reads it as part of the tag name (`<a<C />` is an element named `a<C`); we reject it, as Prettier does.
+Vue reads a `<` in a tag name as part of the name, as the HTML tokenizer does: `<a<C />` is an element named `a<C`.
+No element or component has such a name; the shape is a start tag left unterminated before the next one.
+We read it so in every dialect, rather than follow a tokenizer by-product no valid template uses (AGENTS.md "The one rule").
+Vue already rejects a `<` where an attribute name starts or inside one.
 `runner: < in start tag`
 
 ### `</` without a name is a bogus comment

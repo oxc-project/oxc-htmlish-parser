@@ -27,3 +27,22 @@ Root sfc=false
     @[207..208] "d" = [210..211] "e"
     Text [212..213] "x" (-|-) content=[212..213] "x"
   Text [217..218] "\n" (nl|nl)
+  Comment content=[222..222] ""
+  Text [223..228] "a-->\n" (-|nl) content=[223..227] "a-->"
+  Comment content=[232..232] ""
+  Text [234..235] "\n" (nl|nl)
+  Comment bogus content=[237..249] "[cdata[ x ]]"
+  Text [250..251] "\n" (nl|nl)
+  Element [252..255] "div" Html end_tag=[264..270] "</div>"
+    Element [257..258] "p" Html end_tag=[260..264] "<//>" end_name=[262..263] "/"
+      Text [259..260] "a" (-|-) content=[259..260] "a"
+  Text [270..271] "\n" (nl|nl)
+  Element [272..273] "a" Html end_tag=[278..282] "</a>"
+    @[274..276] "=b"
+    Text [277..278] "x" (-|-) content=[277..278] "x"
+  Text [282..283] "\n" (nl|nl)
+  Element [284..285] "i" Html end_tag=[296..300] "</i>"
+    @[286..287] "a" =" [289..290] "1"
+    @[291..294] "\u{a0}b"
+    Text [295..296] "x" (-|-) content=[295..296] "x"
+  Text [300..301] "\n" (nl|nl)
