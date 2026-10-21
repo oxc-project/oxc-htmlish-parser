@@ -71,6 +71,9 @@ impl Printer<'_, '_> {
                         if tag.name.slice(self.source) != el.name.slice(self.source) {
                             write!(head, " end_name={}", q(tag.name)).unwrap();
                         }
+                        if let Some(ignored) = tag.ignored {
+                            write!(head, " ignored={}", q(ignored)).unwrap();
+                        }
                     }
                     None => write!(head, " no_end_tag span_end={}", node.span.end).unwrap(),
                 }

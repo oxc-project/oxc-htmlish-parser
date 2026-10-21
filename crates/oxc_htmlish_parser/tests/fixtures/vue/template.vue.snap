@@ -2,7 +2,7 @@
 source: crates/oxc_htmlish_parser/tests/ast.rs
 ---
 Root sfc=true
-  Element [1..9] "template" Html end_tag=[222..233] "</template>"
+  Element [1..9] "template" Html end_tag=[275..286] "</template>"
     Text [10..13] "\n  " (nl|nl)
     Interpolation expression=[15..20] " a<b "
     Text [22..23] " " (sp|sp)
@@ -27,5 +27,13 @@ Root sfc=true
     Text [179..186] "a-->\n  " (-|nl) content=[179..183] "a-->"
     Element [187..195] "textarea" Html escapable ignores_first_lf end_tag=[210..221] "</textarea>"
       Text [196..210] "a</ textarea>b" (-|-) content=[196..210] "a</ textarea>b"
-    Text [221..222] "\n" (nl|nl)
-  Text [233..234] "\n" (nl|nl)
+    Text [221..224] "\n  " (nl|nl)
+    Element [225..228] "a<C" Html self_closing no_end_tag span_end=231
+    Text [231..234] "\n  " (nl|nl)
+    Element [235..238] "div" Html end_tag=[247..253] "</div>"
+      @[239..242] ":<a" =" [244..245] "b" vue name=":" arg="<a"
+    Text [253..256] "\n  " (nl|nl)
+    Element [257..261] "span" Html end_tag=[263..274] "</span foo>" ignored=[270..273] "foo"
+      Text [262..263] "a" (-|-) content=[262..263] "a"
+    Text [274..275] "\n" (nl|nl)
+  Text [286..287] "\n" (nl|nl)

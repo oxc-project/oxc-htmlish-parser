@@ -11,6 +11,16 @@ Where the oracle errors and we parse, Prettier fails on the file and nothing can
 entries without one are never generated there, fixtures pin them.
 Entries are grouped by the dialects they apply to.
 
+## All dialects
+
+### Quotes, `<` and `=` are name characters
+
+In tag names, attribute names and Vue directive arguments, as in the HTML tokenizer:
+`<p=e>` is an element named `p=e`, `<a<C />` one named `a<C`, and `<div <span>` a `div` with an attribute named `<span`.
+`angular-html-parser` reports these (or splits off an attribute without a name), and Vue reports a quote or `<` in a plain attribute name;
+no valid template uses them, and reading them as browsers do keeps every dialect on one rule.
+`runner: punctuation in a name`
+
 ## HTML and Angular
 
 ### Unquoted attribute values end at whitespace or `>` only
@@ -95,7 +105,7 @@ The HTML tokenizer and Vue close raw text only at `</` followed right away by th
 <!-- angular-html-parser: the script closes at </ script>, then an unexpected </script> error; ours (browsers, Vue): one script -->
 ```
 
-After the name, only whitespace may precede the `>`: `</script foo>` is content, as in `angular-html-parser` (Vue reports an error there).
+The end tag then runs to its first `>`, as any end tag does (`</script foo>` closes the script).
 `runner: raw text end after whitespace`
 
 ### A comment may close right after its opening
@@ -107,6 +117,11 @@ After the name, only whitespace may precede the `>`: `</script foo>` is content,
 <!-- angular-html-parser: one comment holding ">a"; ours (browsers, Vue): an empty comment, then the text "a-->" -->
 ```
 `runner: empty comment`
+
+### An end tag runs to its first `>`
+
+As in the HTML tokenizer (and Vue), what follows the name up to the `>` is ignored: `</div foo>` closes the `div`.
+`angular-html-parser` reports it.
 
 ## HTML
 
@@ -134,6 +149,13 @@ browsers close it there.
 <!-- ours: my-el closes at </div>, without an end tag -->
 ```
 
+### Bracketed attribute names end at `>`
+
+`angular-html-parser` reads an attribute name opened with `[` while its brackets are open, `>` included (`[class.[&>svg]:w-4]`),
+which Angular templates rely on for Tailwind's arbitrary variants; we read it so in Angular only.
+In HTML the `>` ends the tag, as in browsers.
+`runner: bracketed attribute name`
+
 ## Angular
 
 ### A block without a body ends at its parameters
@@ -148,6 +170,13 @@ Every other span ends at the construct's last delimiter (`>`, `{`, `;`, `)`), an
 ```
 `runner: fallthrough case`
 
+### An unterminated `{{` is an error
+
+Angular reads a `{{` without its `}}` before the next tag or the end of the input as text (kept for backward compatibility).
+No template relies on it (Angular escapes a literal `{{` as `{{ '{{' }}`), so it is an error, as in Vue;
+a tag ends the search even inside a string, as in Angular.
+`runner: unterminated interpolation`
+
 ## Vue
 
 ### `{{ }}` closes at the first `}}`, tags included
@@ -160,14 +189,6 @@ Vue's tokenizer only looks for `}}`; so do we (`{{ '}}' }}` closes inside the st
 
 Vue has no implicit end tags (`<p><div></div></p>` nests), and matches `</transition>` to `<Transition>`.
 Prettier's Vue options keep the HTML implicit-close table and match case-sensitively.
-
-### A `<` inside a start tag is an error
-
-Vue reads a `<` in a tag name as part of the name, as the HTML tokenizer does: `<a<C />` is an element named `a<C`.
-No element or component has such a name; the shape is a start tag left unterminated before the next one.
-We read it so in every dialect, rather than follow a tokenizer by-product no valid template uses (AGENTS.md "The one rule").
-Vue already rejects a `<` where an attribute name starts or inside one.
-`runner: < in start tag`
 
 ### `</` without a name is a bogus comment
 
@@ -195,5 +216,25 @@ a broken name keeps its source as written, with no part to format.
 
 ### Bogus comments are kept
 
-Vue drops what `<!` or `<?` opens without a comment or CDATA (`<!x>`, `<?x?>`); we keep it as a comment, as all content.
-`run.ts` drops them from our signature.
+What `<!` or `<?` opens without a comment or CDATA is a bogus comment up to its `>`, as in the HTML tokenizer (`<!x>`, `<?x?>`, `<!- c -->`);
+we keep it as a comment, as all content.
+Vue drops it, reads some as text (`<!- c -->`, `<! />`), and reads `<!>` on to a later `>`.
+`run.ts` drops the ones Vue drops from our signature.
+`runner: bogus comment`
+
+### A `/` that no `>` follows in a start tag is an error
+
+`<a / b>` and `<C a="b"/ c>` are reported, as in `angular-html-parser`; Vue and browsers ignore the `/`.
+`runner: / in start tag`
+
+### `</br>` is an error
+
+As in `angular-html-parser`; Vue reads it as `<br>`, as HTML tree construction does, which we do not do.
+`runner: </br>`
+
+### `{{ }}` in RCDATA stays inside it
+
+In `<title>` and `<textarea>`, `<{{ t }}` holds the text `<` and an interpolation, as anywhere else in them,
+and an interpolation without its `}}` before the end tag is an error.
+Vue's tokenizer misses an interpolation right after a `<` there, and reads an unterminated one on past the end tag.
+`runner: {{ }} in RCDATA`

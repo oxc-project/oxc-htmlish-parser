@@ -146,8 +146,14 @@ fn error<T>(kind: DiagnosticKind, span: Span) -> PResult<T> {
     Err(Stop::Error(Diagnostic::new(kind, span)))
 }
 
-fn is_name_end(b: u8) -> bool {
-    b.is_ascii_whitespace() || matches!(b, b'>' | b'<' | b'/' | b'\'' | b'"' | b'=')
+/// Where a tag name ends, as in the HTML tokenizer: quotes, `<` and `=` are part of it.
+fn is_tag_name_end(b: u8) -> bool {
+    b.is_ascii_whitespace() || matches!(b, b'>' | b'/')
+}
+
+/// Where an attribute name ends, past its first character: as a tag name, or at `=`.
+fn is_attribute_name_end(b: u8) -> bool {
+    is_tag_name_end(b) || b == b'='
 }
 
 /// Where the leading ASCII whitespace of `bytes` ends and the trailing one starts.
@@ -254,7 +260,7 @@ impl<'a> Builder<'a> {
     }
 
     /// The first offset from `at` whose byte fails `pred`.
-    fn skip(&self, at: usize, pred: impl Fn(u8) -> bool) -> usize {
+    fn skip(&self, at: usize, mut pred: impl FnMut(u8) -> bool) -> usize {
         self.bytes[at..].iter().position(|&b| !pred(b)).map_or(self.bytes.len(), |i| at + i)
     }
 
@@ -262,8 +268,8 @@ impl<'a> Builder<'a> {
         self.skip(at, |b| b.is_ascii_whitespace())
     }
 
-    fn name_end(&self, at: usize) -> usize {
-        self.skip(at, |b| !is_name_end(b))
+    fn tag_name_end(&self, at: usize) -> usize {
+        self.skip(at, |b| !is_tag_name_end(b))
     }
 
     /// The offset of `pat` in `[from, limit)`.
@@ -395,10 +401,10 @@ mod tests {
             ("<![CDATA[ a", Dialect::Html, UnterminatedCdata, 0),
             ("<!doctype html", Dialect::Html, UnterminatedDocType, 0),
             ("<div", Dialect::Html, UnterminatedStartTag, 0),
-            ("<div <span>", Dialect::Html, UnterminatedStartTag, 0),
             ("</div", Dialect::Html, UnterminatedEndTag, 0),
+            ("<p>{{ a</p>", Dialect::Angular, UnterminatedInterpolation, 3),
+            ("{{ '<b>' }}", Dialect::Angular, UnterminatedInterpolation, 0),
             ("<a b='c>", Dialect::Html, UnterminatedAttributeValue, 5),
-            ("<a \"b\">", Dialect::Html, UnexpectedCharacterInTag, 3),
             ("<a / b>", Dialect::Html, UnexpectedCharacterInTag, 3),
             ("<script>a", Dialect::Html, UnterminatedRawText, 0),
             ("</div>", Dialect::Html, UnexpectedEndTag, 0),
@@ -407,8 +413,6 @@ mod tests {
             ("<template>{{ a</template>", Dialect::Vue, UnterminatedInterpolation, 10),
             ("<template><p><div></p></template>", Dialect::Vue, UnexpectedEndTag, 18),
             ("<docs>a", Dialect::Vue, UnterminatedRawText, 0),
-            ("<a<C />", Dialect::Html, UnterminatedStartTag, 0),
-            ("<template><a<C /></template>", Dialect::Vue, UnterminatedStartTag, 10),
             ("a<//>", Dialect::Html, UnexpectedEndTag, 1),
         ] {
             let allocator = Allocator::default();

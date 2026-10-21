@@ -34,7 +34,7 @@ pub enum DiagnosticKind {
     UnterminatedInterpolation,
     /// A raw text element (`<script>`, `<style>`, a Vue SFC block, …) without its end tag.
     UnterminatedRawText,
-    /// A quote or `/` where an attribute name should start.
+    /// A `/` that no `>` follows in a start tag.
     UnexpectedCharacterInTag,
     /// An end tag with no open element to close,
     /// or one that would close an element whose end tag cannot be omitted.

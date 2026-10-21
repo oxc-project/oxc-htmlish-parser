@@ -127,6 +127,8 @@ pub struct EndTag {
     pub span: Span,
     /// The name as written, which may differ in case from the start tag's; the `/` of htm's `<//>`.
     pub name: Span,
+    /// What follows the name before the `>`, trimmed, which HTML ignores (`foo` of `</div foo>`).
+    pub ignored: Option<Span>,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]

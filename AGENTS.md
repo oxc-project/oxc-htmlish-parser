@@ -14,7 +14,8 @@ Parse behavior targets each dialect's own parser, not the spec.
 - Where Prettier errors on valid input the dialect accepts (`<DIV></div>`, unknown entities, `{{ a<b }}` in Vue), that is a bug to fix here.
 - Dialects share one reading of the source; a dialect reads a shape its own way only where valid code in it depends on that reading
   (`{{ a<b }}` and `</Transition>` in Vue, `/>` on any element in Angular).
-  A shape a dialect accepts only as a by-product of its tokenizer, with no valid use, follows the shared rule (`<a<C />` is an error everywhere).
+  A shape a dialect accepts only as a by-product of its tokenizer, with no valid use, follows the shared rule
+  (an unterminated `{{` is an error in Angular as in Vue, though Angular renders it as text).
   This is our decision: following every such by-product would multiply per-dialect branches for no template that works.
 - Truly broken structure (unmatched end tag, unterminated start tag) is an error, as in Prettier; the parse stops at the first one.
 

@@ -7,4 +7,7 @@
   <MyInput>not void</MyInput>
   <!-->a-->
   <textarea>a</ textarea>b</textarea>
+  <a<C />
+  <div :<a="b"></div>
+  <span>a</span foo>
 </template>

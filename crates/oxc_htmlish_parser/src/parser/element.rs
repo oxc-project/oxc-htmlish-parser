@@ -13,14 +13,18 @@ impl<'a> Builder<'a> {
             (start + 2, start + 3)
         } else {
             let name_start = self.skip_ws(start + 2);
-            (name_start, self.name_end(name_start))
+            (name_start, self.tag_name_end(name_start))
         };
-        let gt = self.skip_ws(name_end);
-        if self.byte(gt) != Some(b'>') {
-            return error(DiagnosticKind::UnterminatedEndTag, span(start, gt));
-        }
+        // As in the HTML tokenizer, the tag runs to its first `>`; what follows the name is ignored (DIVERGENCES.md#an-end-tag-runs-to-its-first-).
+        let Some(gt) = self.find(name_end, self.bytes.len(), b">") else {
+            return error(DiagnosticKind::UnterminatedEndTag, span(start, self.bytes.len()));
+        };
         self.pos = gt + 1;
-        let tag = EndTag { span: span(start, self.pos), name: span(name_start, name_end) };
+        let tag = EndTag {
+            span: span(start, self.pos),
+            name: span(name_start, name_end),
+            ignored: self.ignored(name_end, gt),
+        };
         let name = &self.source[name_start..name_end];
 
         let mut buf = [0; 16];
@@ -46,7 +50,7 @@ impl<'a> Builder<'a> {
 
     pub(super) fn start_tag(&mut self) -> PResult<()> {
         let start = self.pos;
-        let name_end = self.name_end(start + 1);
+        let name_end = self.tag_name_end(start + 1);
         let name = span(start + 1, name_end);
         let name_str = name.slice(self.source);
         if self.at_sfc_root() && name_str.eq_ignore_ascii_case("html") {
@@ -57,9 +61,7 @@ impl<'a> Builder<'a> {
         let mut at = self.skip_ws(name_end);
         let self_closing = loop {
             match self.byte(at) {
-                None | Some(b'<') => {
-                    return error(DiagnosticKind::UnterminatedStartTag, span(start, at));
-                }
+                None => return error(DiagnosticKind::UnterminatedStartTag, span(start, at)),
                 Some(b'>') => {
                     at += 1;
                     break false;
@@ -68,7 +70,7 @@ impl<'a> Builder<'a> {
                     at += 2;
                     break true;
                 }
-                Some(b'/' | b'"' | b'\'') => {
+                Some(b'/') => {
                     return error(DiagnosticKind::UnexpectedCharacterInTag, span(at, at + 1));
                 }
                 Some(_) => {
@@ -162,8 +164,13 @@ impl<'a> Builder<'a> {
     }
 
     fn attribute(&self, start: usize) -> PResult<Attribute<'a>> {
-        // The first character is always part of the name, `=` included (as in browsers).
-        let name_end = self.name_end(start + 1);
+        // The first character is always part of the name, `=` included;
+        // quotes and `<` are part of it anywhere (as in browsers, DIVERGENCES.md#quotes--and--are-name-characters).
+        let name_end = if self.rules.angular && self.bytes[start] == b'[' {
+            self.bracketed_name_end(start)
+        } else {
+            self.skip(start + 1, |b| !is_attribute_name_end(b))
+        };
         let name = span(start, name_end);
         let eq = self.skip_ws(name_end);
         if self.byte(eq) != Some(b'=') {
@@ -208,13 +215,17 @@ impl<'a> Builder<'a> {
             let Some(lt) = finder.find(&self.bytes[from..]).map(|i| from + i) else {
                 return error(DiagnosticKind::UnterminatedRawText, start_tag);
             };
-            // As in the HTML tokenizer, the name follows `</` right away (DIVERGENCES.md#raw-text-closes-only-where-the-name-follows-the-slash).
+            // As in the HTML tokenizer, the name follows `</` right away (DIVERGENCES.md#raw-text-closes-only-where-the-name-follows-the-slash),
+            // and the tag ends as any end tag does.
             let name_start = lt + 2;
-            if self.starts_with_ci(name_start, name) {
-                let gt = self.skip_ws(name_start + name.len());
-                if self.byte(gt) == Some(b'>') {
-                    break (lt, name_start, gt + 1);
-                }
+            if self.starts_with_ci(name_start, name)
+                && self.byte(name_start + name.len()).is_some_and(is_tag_name_end)
+            {
+                // Without a `>` here, no later end tag has one either.
+                let Some(gt) = self.find(name_start + name.len(), self.bytes.len(), b">") else {
+                    return error(DiagnosticKind::UnterminatedRawText, start_tag);
+                };
+                break (lt, name_start, gt + 1);
             }
             from = lt + 2;
         };
@@ -225,12 +236,20 @@ impl<'a> Builder<'a> {
         }
         self.pos = close_end;
         let open = self.stack.pop().expect("pushed by start_tag");
+        let name_end = name_start + name.len();
         let end_tag = EndTag {
             span: span(close_start, close_end),
-            name: span(name_start, name_start + name.len()),
+            name: span(name_start, name_end),
+            ignored: self.ignored(name_end, close_end - 1),
         };
         self.close(&open, Some(end_tag), close_start);
         Ok(())
+    }
+
+    /// `[from, gt)` trimmed, when anything is left.
+    fn ignored(&self, from: usize, gt: usize) -> Option<Span> {
+        let (lead, trail) = trim(&self.bytes[from..gt]);
+        (lead < trail).then(|| span(from + lead, from + trail))
     }
 }
 

@@ -36,30 +36,47 @@ impl<'a> Builder<'a> {
         std::iter::from_fn(move || {
             while at < limit {
                 let i = at;
-                at += 1;
-                match (self.bytes[i], quote) {
-                    (b'\\', _) => at += 1,
-                    (b, Some(q)) if b == q => quote = None,
-                    (_, Some(_)) => {}
-                    (q @ (b'\'' | b'"' | b'`'), None) => quote = Some(q),
-                    _ => return Some(i),
+                let (len, outside) = string_step(self.bytes[i], &mut quote, true);
+                at += len;
+                if outside {
+                    return Some(i);
                 }
             }
             None
         })
     }
 
-    /// The `}}` closing an interpolation, outside string literals;
-    /// after a `//` comment, quotes no longer count.
+    /// The `}}` closing an interpolation, outside string literals; after a `//` comment, quotes no longer count.
+    /// `None` when a tag starts first, even in a string, or the input ends:
+    /// Angular reads the `{{` as text there; we report it (DIVERGENCES.md#an-unterminated--is-an-error).
     pub(super) fn interpolation_end(&self, from: usize, limit: usize) -> Option<usize> {
-        for at in self.unquoted(from, limit) {
-            match &self.bytes[at..limit] {
-                [b'}', b'}', ..] => return Some(at),
-                [b'/', b'/', ..] => return self.find(at + 2, limit, b"}}"),
-                _ => {}
+        let (mut quote, mut comment) = (None, false);
+        let mut at = from;
+        while at < limit && !self.at_markup(at) {
+            if quote.is_none() {
+                match &self.bytes[at..limit] {
+                    [b'}', b'}', ..] => return Some(at),
+                    [b'/', b'/', ..] => comment = true,
+                    _ => {}
+                }
             }
+            at += string_step(self.bytes[at], &mut quote, !comment).0;
         }
         None
+    }
+
+    /// `[class.[&>svg]:w-4]`: a name opened with `[` runs while its brackets are open, up to a line break
+    /// (Angular's lexer, for Tailwind's arbitrary variants; DIVERGENCES.md#bracketed-attribute-names-end-at-).
+    pub(super) fn bracketed_name_end(&self, start: usize) -> usize {
+        let mut open = 0;
+        self.skip(start, |b| {
+            match b {
+                b'[' => open += 1,
+                b']' => open -= 1,
+                _ => {}
+            }
+            if open > 0 { !matches!(b, b'\n' | b'\r') } else { !is_attribute_name_end(b) }
+        })
     }
 
     /// `@name (parameters) {`, or a block without a body; `pos` is at `@`.
@@ -147,5 +164,24 @@ impl<'a> Builder<'a> {
         }
         self.pos = at + 1;
         Ok(())
+    }
+}
+
+/// One step through Angular expression text: string literals open at `'`, `"` and `` ` `` (when `opens`),
+/// and a `\\` escapes the next byte.
+/// Returns the bytes the step takes, and whether `b` lies outside any string (and is no escape).
+fn string_step(b: u8, quote: &mut Option<u8>, opens: bool) -> (usize, bool) {
+    match (b, *quote) {
+        (b'\\', _) => (2, false),
+        (b, Some(q)) if b == q => {
+            *quote = None;
+            (1, false)
+        }
+        (_, Some(_)) => (1, false),
+        (q @ (b'\'' | b'"' | b'`'), None) if opens => {
+            *quote = Some(q);
+            (1, false)
+        }
+        _ => (1, true),
     }
 }

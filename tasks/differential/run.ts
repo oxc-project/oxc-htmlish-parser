@@ -280,11 +280,33 @@ interface DialectSpec {
   /** Our signature, as the oracle shapes it. */
   normalize: (sig: unknown[]) => unknown[];
   /** Mismatch shapes documented in DIVERGENCES.md (`runner:`), counted instead of failing. */
-  quirks: Record<string, RegExp>;
+  quirks: Record<string, Shape>;
   /** Documented shapes whole-tag tokens never form, exempted in mutated inputs and files only (too broad for all). */
-  mutationQuirks: Record<string, RegExp>;
+  mutationQuirks: Record<string, Shape>;
   /** Constructs not parsed yet (AGENTS.md), counted apart from divergences. */
-  pending?: Record<string, RegExp>;
+  pending?: Record<string, Shape>;
+}
+
+/** A pattern, or a predicate where a regex cannot follow the reading. */
+type Shape = RegExp | ((source: string) => boolean);
+
+/** Whether a `{{` reaches a tag start or the end before its `}}`, outside strings, as `parser/angular.rs` reads it. */
+function unterminatedInterpolation(source: string): boolean {
+  for (let start = source.indexOf("{{"); start !== -1; ) {
+    let [at, quote, comment] = [start + 2, "", false];
+    for (; at < source.length; at++) {
+      const c = source[at];
+      if (c === "<" && /[a-zA-Z/!?]/.test(source[at + 1] ?? "")) break;
+      if (!quote && source.startsWith("}}", at)) break;
+      if (!quote && source.startsWith("//", at)) comment = true;
+      if (c === "\\") at++;
+      else if (c === quote) quote = "";
+      else if (!quote && !comment && "'\"`".includes(c)) quote = c;
+    }
+    if (!source.startsWith("}}", at)) return true;
+    start = source.indexOf("{{", at + 2);
+  }
+  return false;
 }
 
 /** What DIVERGENCES.md documents against `angular-html-parser` (HTML and Angular), as mutations form it. */
@@ -294,6 +316,7 @@ const TAG_MUTATION_QUIRKS: Record<string, RegExp> = {
   "unquoted value with a quote or =": /=[ \t\n\f\r]*[^\s"'>][^\s>]*["'=]/,
   "empty comment": /<!---?>/,
   "raw text end after whitespace": /<\/[ \t\n\f\r]+(?:script|style|textarea|title)\b/i,
+  "punctuation in a name": /<[a-zA-Z][^\s/>]*["'<=]|\s[^\s/>="'<]*["'<]/,
 };
 
 const DIALECTS: Record<string, DialectSpec> = {
@@ -303,7 +326,11 @@ const DIALECTS: Record<string, DialectSpec> = {
     oracle: (source) => angularHtmlParserSig(source, { canSelfClose: true, allowHtmComponentClosingTags: true }),
     normalize: (sig) => mapNodes(sig, bogusAsComment),
     quirks: VOID_QUIRKS,
-    mutationQuirks: TAG_MUTATION_QUIRKS,
+    mutationQuirks: {
+      ...TAG_MUTATION_QUIRKS,
+      // The oracle reads Angular's bracketed attribute names in HTML too.
+      "bracketed attribute name": /\s\[[^\n=]*>/,
+    },
   },
   angular: {
     tokens: ANGULAR_TOKENS,
@@ -317,15 +344,19 @@ const DIALECTS: Record<string, DialectSpec> = {
       }),
     normalize: (sig) =>
       mapNodes(sig, (nodes) =>
-        // The oracle collapses whitespace without a line break in a block name (`else   if`).
+        // The oracle collapses the whitespace without a line break in `else   if` and `default   never`, as Angular does.
         bogusAsComment(mergeTexts(nodes, true)).map((n) =>
-          n[0] === "b" ? ["b", n[1].replace(/[ \t\f]+/g, " "), n[2], n[3]] : n,
+          n[0] === "b"
+            ? ["b", n[1].replace(/^(else|default)[ \t\f]+(if|never)$/, "$1 $2"), n[2], n[3]]
+            : n,
         ),
       ),
     quirks: {
       ...VOID_QUIRKS,
       // angular-html-parser reads the whitespace after a body-less `@case` into its span.
-      "fallthrough case": /@(?:case|default)\b[^{}]*?\)[ \t\n\f\r]+@/,
+      "fallthrough case": /@(?:case|default)\b(?:[^{}@]*?\))?[ \t\n\f\r]+@/,
+      // The oracle reads a `{{` without `}}` before a tag or the end as text; we report it.
+      "unterminated interpolation": unterminatedInterpolation,
     },
     mutationQuirks: TAG_MUTATION_QUIRKS,
     pending: {
@@ -342,16 +373,22 @@ const DIALECTS: Record<string, DialectSpec> = {
     normalize: (sig) =>
       vueNormalize(mapNodes(sig, (nodes) => mergeTexts(bogusAsComment(nodes.filter((n) => n[0] !== "bc" || n[2] === "</"))))),
     quirks: {
-      // Vue reads `<` as part of a tag name (`<a<C />`); we reject it in every dialect.
-      "< in start tag": /<[a-zA-Z][^\s/>]*</,
       // Vue skips whitespace after `</` in a bogus comment's content.
       "</ whitespace": /<\/[ \t\n\f\r]/,
     },
     mutationQuirks: {
       // A directive name without its argument (`v-slot:`, a lone `:`) is a plain attribute.
-      "directive without argument": /[\s"'](?:v-[\w-]+:|[:@#.])(?=[\s=>/"'])/,
+      "directive without argument": /[\s"'](?:v-[^\s=>/:]+:|[:@#.])(?=[\s=>/"'])/,
       // A root `<html>` or `<!doctype html>` makes the file HTML, as Prettier reads it.
       "html page": /<html\b|<!doctype\s+html\b/i,
+      // Vue ignores a `/` in a start tag that no `>` follows; we report it.
+      "/ in start tag": /<[a-zA-Z](?:[^>"']|"[^"]*"|'[^']*')*?\/(?!>)/,
+      // Vue reads `</br>` as `<br>`, as HTML tree construction does; we report it.
+      "</br>": /<\/br\b/i,
+      // Vue drops a bogus comment `<!` opens, or reads it as text or on to a later `>`.
+      "bogus comment": /<!(?!--|\[CDATA\[)/i,
+      // Vue misses an interpolation right after a `<` in RCDATA, and reads an unterminated one past its end.
+      "{{ }} in RCDATA": /<(title|textarea)\b[^>]*>(?:(?!<\/\1)[^])*?(?:<\{\{|\{\{(?:(?!\}\})[^])*?<\/\1)/i,
     },
   },
 };
@@ -461,8 +498,11 @@ const mine = ours(dialect, corpus).map((sig) => (typeof sig === "string" ? sig :
 
 const looseQuirks = { ...spec.quirks, ...spec.mutationQuirks };
 /** The first shape of `table` that `source` has. */
-const matchShape = (table: Record<string, RegExp>, source: string) =>
-  Object.keys(table).find((name) => table[name].test(source));
+const matchShape = (table: Record<string, Shape>, source: string) =>
+  Object.keys(table).find((name) => {
+    const shape = table[name];
+    return typeof shape === "function" ? shape(source) : shape.test(source);
+  });
 
 const tally: Record<string, number> = { same: 0, bothError: 0, lenient: 0, oursError: 0, mismatch: 0 };
 const failures: string[] = [];
