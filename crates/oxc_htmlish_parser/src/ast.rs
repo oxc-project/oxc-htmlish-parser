@@ -9,7 +9,7 @@
 //! - Formatter policy (CSS display, whitespace sensitivity) stays out.
 //!
 //! Dialect constructs that are not parsed yet slot in as new [`NodeKind`] / [`AttributeKind`] variants:
-//! Angular control flow blocks, `@let` and ICU;
+//! Angular `@let` and ICU;
 //! Svelte `{expr}` tags and blocks;
 //! Astro `{expr}` holding htmlish chunks.
 

@@ -4,9 +4,12 @@ use oxc_htmlish_parser::{Allocator, Dialect, Parser};
 fn main() {
     let path = std::env::args().nth(1).expect("usage: parse <file>");
     let source = std::fs::read_to_string(&path).expect("failed to read file");
+    // `*.component.html` reads as Angular, as in oxc's formatter example.
     let dialect =
         if std::path::Path::new(&path).extension().is_some_and(|e| e.eq_ignore_ascii_case("vue")) {
             Dialect::Vue
+        } else if path.ends_with(".component.html") {
+            Dialect::Angular
         } else {
             Dialect::Html
         };

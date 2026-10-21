@@ -8,7 +8,7 @@ description = "A loose, span-faithful parser for HTML and HTML-based template la
 repository = "https://github.com/oxc-project/oxc-htmlish-parser"
 license = "MIT"
 readme = "../../README.md"
-keywords = ["parser", "html", "vue"]
+keywords = ["parser", "html", "vue", "angular"]
 categories = ["parser-implementations", "text-processing"]
 exclude = ["/tests"]
 

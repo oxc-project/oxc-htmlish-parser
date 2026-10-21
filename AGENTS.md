@@ -41,9 +41,10 @@ Every drop is an entry in `DIVERGENCES.md`, with a fixture and (if the different
 
 ## Architecture
 
-- `src/parser.rs`: one pass over the bytes builds the tree; there is no token stream.
+- `src/parser/mod.rs`: one pass over the bytes builds the tree; there is no token stream.
   `Dialect` maps to private `Rules` flags; a Vue file with a root `<html>` / `<!doctype html>` restarts with HTML rules.
 - `src/tags.rs`: the tag table.
+- `src/parser/angular.rs`: Angular's `{{ }}` end and control flow blocks, on the same builder.
 - `src/vue.rs`: Vue directive name splitting.
 - `src/ast.rs`: the AST, every node in one list linked by `NodeId` (parent, next sibling, children),
   so the formatter walks up and down and keys its tables by `NodeId`.
@@ -54,7 +55,7 @@ Every drop is an entry in `DIVERGENCES.md`, with a fixture and (if the different
 
 | Command | Covers |
 | --- | --- |
-| `cargo test` | error table (`src/parser.rs`), AST snapshots + span nesting (`tests/ast.rs`) |
+| `cargo test` | error table (`src/parser/mod.rs`), AST snapshots + span nesting (`tests/ast.rs`) |
 | `cargo insta review` | accept snapshot changes after an intentional AST change |
 | `just differential <html\|vue> [count] [seed]` | structural fuzz against the oracles (`angular-html-parser`, `@vue/compiler-dom`) |
 

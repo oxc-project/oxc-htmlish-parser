@@ -13,6 +13,8 @@ use crate::span::{Span, span};
 use crate::tags::{self, Tag};
 use crate::vue;
 
+mod angular;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Dialect {
     Html,
@@ -46,9 +48,19 @@ impl<'a> Parser<'a> {
             return Err(Diagnostic::new(DiagnosticKind::SourceTooLong, Span::empty(0)));
         }
         let mut rules = match self.dialect {
-            Dialect::Html => Rules { html: true, vue: false, sfc: false, angular: false },
-            Dialect::Vue => Rules { html: false, vue: true, sfc: true, angular: false },
-            Dialect::Angular => Rules { html: true, vue: false, sfc: false, angular: true },
+            Dialect::Html => Rules::HTML,
+            Dialect::Vue => Rules {
+                html: false,
+                vue: true,
+                sfc: true,
+                angular: false,
+                self_close_any: true,
+                htm_closing: false,
+            },
+            // Angular's compiler rejects `<div/>`, but no valid template depends on reading it otherwise.
+            Dialect::Angular => {
+                Rules { angular: true, self_close_any: true, htm_closing: false, ..Rules::HTML }
+            }
         };
         let mut nodes = ArenaVec::with_capacity_in(self.source.len() / 16 + 1, &self.allocator);
         nodes.push(Node {
@@ -70,7 +82,7 @@ impl<'a> Parser<'a> {
                     nodes.truncate(1);
                     nodes[0].first_child = None;
                     nodes[0].last_child = None;
-                    rules = Rules { html: true, sfc: false, ..rules };
+                    rules = Rules { vue: true, ..Rules::HTML };
                 }
             }
         }
@@ -81,8 +93,7 @@ impl<'a> Parser<'a> {
 #[derive(Clone, Copy)]
 struct Rules {
     /// `angular-html-parser`'s reading of tags rather than Vue's:
-    /// case-insensitive tag table limited to the HTML namespace, implicit closing,
-    /// `/>` closing only void and foreign elements, `</ name>` as an end tag.
+    /// case-insensitive tag table limited to the HTML namespace, implicit closing, `</ name>` as an end tag.
     html: bool,
     /// `{{ }}` and directive names.
     vue: bool,
@@ -90,6 +101,21 @@ struct Rules {
     sfc: bool,
     /// `{{ }}` (closed outside quotes) and control flow blocks.
     angular: bool,
+    /// `/>` closes every element (Prettier's `canSelfClose`); otherwise only void and foreign ones, as in browsers.
+    self_close_any: bool,
+    /// `<//>` closes the innermost element (Prettier's `allowHtmComponentClosingTags`).
+    htm_closing: bool,
+}
+
+impl Rules {
+    const HTML: Self = Self {
+        html: true,
+        vue: false,
+        sfc: false,
+        angular: false,
+        self_close_any: false,
+        htm_closing: true,
+    };
 }
 
 /// What the content at the bottom of the stack inherits;
@@ -125,23 +151,6 @@ fn is_name_end(b: u8) -> bool {
 fn trim(bytes: &[u8]) -> (usize, usize) {
     (bytes.len() - bytes.trim_ascii_start().len(), bytes.trim_ascii_end().len())
 }
-
-/// The block names `angular-html-parser` starts a block at, by prefix (`@iffy` is a block named `iffy`).
-const BLOCK_NAMES: [&[u8]; 13] = [
-    b"if",
-    b"else",
-    b"for",
-    b"switch",
-    b"case",
-    b"default",
-    b"empty",
-    b"defer",
-    b"placeholder",
-    b"loading",
-    b"boundary",
-    b"error",
-    b"content",
-];
 
 /// An element (or an Angular block) whose end has not been seen yet.
 struct Open<'a> {
@@ -285,33 +294,6 @@ impl<'a> Builder<'a> {
         (self.rules.vue || self.rules.angular) && !self.context().v_pre
     }
 
-    /// An Angular block starts at `at`.
-    fn at_block(&self, at: usize) -> bool {
-        self.byte(at) == Some(b'@')
-            && BLOCK_NAMES.iter().any(|name| self.bytes[at + 1..].starts_with(name))
-    }
-
-    /// The offsets in `[from, limit)` outside string literals, as Angular expressions read them:
-    /// `'`, `"` and `` ` `` open one, and a `\` skips the next byte.
-    fn unquoted(&self, from: usize, limit: usize) -> impl Iterator<Item = usize> + '_ {
-        let mut quote = None;
-        let mut at = from;
-        std::iter::from_fn(move || {
-            while at < limit {
-                let i = at;
-                at += 1;
-                match (self.bytes[i], quote) {
-                    (b'\\', _) => at += 1,
-                    (b, Some(q)) if b == q => quote = None,
-                    (_, Some(_)) => {}
-                    (q @ (b'\'' | b'"' | b'`'), None) => quote = Some(q),
-                    _ => return Some(i),
-                }
-            }
-            None
-        })
-    }
-
     fn at_sfc_root(&self) -> bool {
         self.rules.sfc && self.stack.is_empty()
     }
@@ -376,6 +358,23 @@ impl<'a> Builder<'a> {
         let node = &mut self.nodes[open.id.index()];
         let end = end_tag.map_or(at, |tag| tag.span.end as usize);
         node.span = span(node.span.start as usize, end);
+    }
+
+    /// Closes the open elements above `stack[index]` at `at`, when each may go without an end tag
+    /// (closed by its parent, or a `/>` HTML ignored: `<my-el />`, closed as in browsers);
+    /// `false`, closing none, when one may not.
+    fn close_omitted_above(&mut self, index: usize, at: usize) -> bool {
+        let omittable = self.stack[index + 1..].iter().all(|open| {
+            open.tag.closed_by_parent
+                || matches!(&self.nodes[open.id.index()].kind, NodeKind::Element(el) if el.self_closing)
+        });
+        if omittable {
+            while self.stack.len() > index + 1 {
+                let open = self.stack.pop().expect("index < len");
+                self.close(&open, None, at);
+            }
+        }
+        omittable
     }
 
     // ---
@@ -454,126 +453,6 @@ impl<'a> Builder<'a> {
         }
         self.push_text(start, self.pos);
         Ok(())
-    }
-
-    /// Angular: the `}}` closing an interpolation, outside string literals;
-    /// after a `//` comment, quotes no longer count.
-    fn interpolation_end(&self, from: usize, limit: usize) -> Option<usize> {
-        for at in self.unquoted(from, limit) {
-            match &self.bytes[at..limit] {
-                [b'}', b'}', ..] => return Some(at),
-                [b'/', b'/', ..] => return self.find(at + 2, limit, b"}}"),
-                _ => {}
-            }
-        }
-        None
-    }
-
-    // ---
-    // Angular blocks
-
-    /// `@name (parameters) {`, or a block without a body; `pos` is at `@`.
-    fn block_start(&mut self) -> PResult<()> {
-        let start = self.pos;
-        // The name may hold whitespace after its first character (`else if`).
-        let name_start = start + 1;
-        let mut at = self.skip(name_start, |b| {
-            b.is_ascii_alphanumeric() || b == b'_' || b.is_ascii_whitespace()
-        });
-        let name_end = name_start + trim(&self.bytes[name_start..at]).1;
-        let mut parameters = ArenaVec::new_in(&self.allocator);
-        let mut open_end = name_end;
-        if self.byte(at) == Some(b'(') {
-            at = self.block_parameters(at + 1, &mut parameters)?;
-            open_end = at;
-            at = self.skip_ws(at);
-        }
-        let name = &self.source[name_start..name_end];
-        let body = self.byte(at) == Some(b'{');
-        // `@default never;` has no body; cases fall through to the next one without one.
-        let never = name.split_ascii_whitespace().eq(["default", "never"])
-            && !name.contains('\n')
-            && self.byte(at) == Some(b';');
-        if body || never {
-            open_end = at + 1;
-        } else if !(matches!(name, "case" | "default") && self.at_block(at)) {
-            return error(DiagnosticKind::IncompleteBlock, span(start, open_end));
-        }
-        let block = Block {
-            name: span(name_start, name_end),
-            parameters,
-            open: span(start, open_end),
-            close: None,
-        };
-        let id = self
-            .push(NodeKind::Block(ArenaBox::new_in(block, &self.allocator)), span(start, open_end));
-        self.pos = open_end;
-        if body {
-            let context = self.context();
-            self.stack.push(Open { id, name: "", block: true, tag: Tag::default(), context });
-        }
-        Ok(())
-    }
-
-    /// The parameters after `(`, up to the `)`, which the returned offset follows.
-    fn block_parameters(&self, from: usize, out: &mut ArenaVec<'a, Span>) -> PResult<usize> {
-        let push = |start: usize, end: usize, out: &mut ArenaVec<'a, Span>| {
-            let (lead, trail) = trim(&self.bytes[start..end]);
-            if lead < trail {
-                out.push(span(start + lead, start + trail));
-            }
-        };
-        let (mut param_start, mut depth) = (from, 0);
-        for at in self.unquoted(from, self.bytes.len()) {
-            match self.bytes[at] {
-                b'(' => depth += 1,
-                b')' if depth > 0 => depth -= 1,
-                b')' => {
-                    push(param_start, at, out);
-                    return Ok(at + 1);
-                }
-                b';' => {
-                    push(param_start, at, out);
-                    param_start = at + 1;
-                }
-                _ => {}
-            }
-        }
-        error(DiagnosticKind::IncompleteBlock, span(from - 1, self.bytes.len()))
-    }
-
-    /// `}`: closes the innermost block, and the elements in it whose end tag may be omitted.
-    fn block_close(&mut self) -> PResult<()> {
-        let at = self.pos;
-        let index = self.stack.iter().rposition(|open| open.block);
-        if !index.is_some_and(|index| self.close_omitted_above(index, at)) {
-            return error(DiagnosticKind::UnexpectedBlockClose, span(at, at + 1));
-        }
-        let open = self.stack.pop().expect("the block is on the stack");
-        let node = &mut self.nodes[open.id.index()];
-        node.span = span(node.span.start as usize, at + 1);
-        if let NodeKind::Block(block) = &mut node.kind {
-            block.close = Some(span(at, at + 1));
-        }
-        self.pos = at + 1;
-        Ok(())
-    }
-
-    /// Closes the open elements above `stack[index]` at `at`, when each may go without an end tag
-    /// (closed by its parent, or a `/>` HTML ignored: `<my-el />`, closed as in browsers);
-    /// `false`, closing none, when one may not.
-    fn close_omitted_above(&mut self, index: usize, at: usize) -> bool {
-        let omittable = self.stack[index + 1..].iter().all(|open| {
-            open.tag.closed_by_parent
-                || matches!(&self.nodes[open.id.index()].kind, NodeKind::Element(el) if el.self_closing)
-        });
-        if omittable {
-            while self.stack.len() > index + 1 {
-                let open = self.stack.pop().expect("index < len");
-                self.close(&open, None, at);
-            }
-        }
-        omittable
     }
 
     fn push_text(&mut self, mut start: usize, end: usize) {
@@ -742,9 +621,8 @@ impl<'a> Builder<'a> {
 
     fn end_tag(&mut self) -> PResult<()> {
         let start = self.pos;
-        // htm's `<//>` closes the innermost element; its name is the `/` (Prettier's `allowHtmComponentClosingTags`:
-        // HTML only, a Vue file read as HTML included).
-        let htm = self.rules.html && !self.rules.angular && self.byte(start + 2) == Some(b'/');
+        // htm's `<//>` closes the innermost element; its name is the `/`.
+        let htm = self.rules.htm_closing && self.byte(start + 2) == Some(b'/');
         let (name_start, name_end) = if htm {
             (start + 2, start + 3)
         } else {
@@ -836,10 +714,8 @@ impl<'a> Builder<'a> {
         let inherited = self.context();
         let namespace = tags::namespace(key, inherited.namespace);
         let tag = self.tag(name_str, lowercase, namespace);
-        // Angular: `/>` closes every element (Prettier's `canSelfClose`; Angular's compiler would reject `<div/>`).
         let closes_now = tag.void
-            || (self_closing
-                && (!self.rules.html || self.rules.angular || namespace != Namespace::Html));
+            || (self_closing && (self.rules.self_close_any || namespace != Namespace::Html));
 
         let v_pre = self.rules.vue
             && (inherited.v_pre || attributes.iter().any(|a| a.name.slice(self.source) == "v-pre"));
