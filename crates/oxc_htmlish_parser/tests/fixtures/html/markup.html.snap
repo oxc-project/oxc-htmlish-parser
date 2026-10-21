@@ -49,18 +49,18 @@ Root sfc=false
   Element [302..305] "p=e" Html end_tag=[307..313] "</p=e>"
     Text [306..307] "x" (-|-) content=[306..307] "x"
   Text [313..314] "\n" (nl|nl)
-  Element [315..318] "div" Html end_tag=[330..336] "</div>"
-    @[319..322] "a\"b" = [323..324] "1"
-    @[325..328] "\"c\""
-    Text [329..330] "x" (-|-) content=[329..330] "x"
-  Text [336..337] "\n" (nl|nl)
-  Element [338..341] "div" Html end_tag=[349..355] "</div>"
-    @[342..347] "<span"
-    Text [348..349] "x" (-|-) content=[348..349] "x"
-  Text [355..356] "\n" (nl|nl)
-  Element [357..360] "div" Html end_tag=[362..372] "</div foo>" ignored=[368..371] "foo"
-    Text [361..362] "a" (-|-) content=[361..362] "a"
-  Text [372..374] "b\n" (-|nl) content=[372..373] "b"
-  Element [375..381] "script" Html raw end_tag=[383..396] "</script foo>" ignored=[392..395] "foo"
-    Text [382..383] "a" (-|-) content=[382..383] "a"
-  Text [396..398] "b\n" (-|nl) content=[396..397] "b"
+  Element [315..318] "div" Html end_tag=[326..332] "</div>"
+    @[319..324] "<span"
+    Text [325..326] "x" (-|-) content=[325..326] "x"
+  Text [332..333] "\n" (nl|nl)
+  Element [334..335] "p" Html end_tag=[343..347] "</p>"
+    Text [336..337] "a" (-|-) content=[336..337] "a"
+    Comment bogus content=[339..341] " p"
+    Text [342..343] "b" (-|-) content=[342..343] "b"
+  Text [347..348] "\n" (nl|nl)
+  Element [349..352] "div" Html end_tag=[354..364] "</div foo>" ignored=[360..363] "foo"
+    Text [353..354] "a" (-|-) content=[353..354] "a"
+  Text [364..366] "b\n" (-|nl) content=[364..365] "b"
+  Element [367..373] "script" Html raw end_tag=[375..388] "</script foo>" ignored=[384..387] "foo"
+    Text [374..375] "a" (-|-) content=[374..375] "a"
+  Text [388..390] "b\n" (-|nl) content=[388..389] "b"

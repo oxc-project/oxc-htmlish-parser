@@ -18,7 +18,8 @@ Parse behavior targets each dialect's own parser, not the spec.
   (an unterminated `{{` is an error in Angular as in Vue, though Angular renders it as text).
   This is our decision: following every such by-product would multiply per-dialect branches for no template that works.
 - The shared rule is the HTML tokenizer's reading (names, comments, end tags, raw text ends),
-  unless that reading would drop what the user wrote: then the shape is an error (`<a / b>`, whose `/` a printer cannot keep).
+  unless that reading would drop or alter what the user wrote: then the shape is an error
+  (`<a / b>`, whose `/` a printer cannot keep; a quote in an attribute name, a template expression a printer would re-space).
   This is our decision too: one reading every dialect already knows, and a parse error leaves the source as written.
 - Truly broken structure (unmatched end tag, unterminated start tag) is an error, as in Prettier; the parse stops at the first one.
 

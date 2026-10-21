@@ -13,13 +13,29 @@ Entries are grouped by the dialects they apply to.
 
 ## All dialects
 
-### Quotes, `<` and `=` are name characters
+### `<` and `=` are name characters
 
-In tag names, attribute names and Vue directive arguments, as in the HTML tokenizer:
+In tag names, attribute names and Vue directive arguments, as in the HTML tokenizer (quotes too, in tag names):
 `<p=e>` is an element named `p=e`, `<a<C />` one named `a<C`, and `<div <span>` a `div` with an attribute named `<span`.
-`angular-html-parser` reports these (or splits off an attribute without a name), and Vue reports a quote or `<` in a plain attribute name;
+`angular-html-parser` reports these (or splits off an attribute without a name), and Vue reports a `<` in a plain attribute name;
 no valid template uses them, and reading them as browsers do keeps every dialect on one rule.
 `runner: punctuation in a name`
+
+### Quotes in attribute names are an error
+
+The HTML tokenizer reads `<a b"c>` as an attribute named `b"c`.
+Such a name is almost always a template's expression nesting the quotes of a value (`content="{{ f("-") }}"`, in Nunjucks or Askama files):
+read as browsers do, the printer would re-space what follows the cut value, changing the expression.
+We report it, as `angular-html-parser` and Vue (in a plain attribute name) do.
+Angular's bracketed names may hold quotes (DIVERGENCES.md#bracketed-attribute-names-end-at-).
+`runner: punctuation in a name`
+
+### `</` without a name right after it is a bogus comment
+
+As in the HTML tokenizer and Vue (`</ div>`, `</3>`); htm's `<//>` aside, in HTML.
+`angular-html-parser` reads `</ div >` as an end tag.
+Vue's comment content skips the whitespace after `</`; ours is the raw data.
+`runner: </ whitespace`
 
 ## HTML and Angular
 
@@ -189,12 +205,6 @@ Vue's tokenizer only looks for `}}`; so do we (`{{ '}}' }}` closes inside the st
 
 Vue has no implicit end tags (`<p><div></div></p>` nests), and matches `</transition>` to `<Transition>`.
 Prettier's Vue options keep the HTML implicit-close table and match case-sensitively.
-
-### `</` without a name is a bogus comment
-
-As in Vue and browsers (`</ x>`, `</3>`).
-Vue's comment content skips the whitespace after `</`; ours is the raw data.
-`runner: </ whitespace`
 
 ### `v-pre`
 

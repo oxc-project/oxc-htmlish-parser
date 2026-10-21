@@ -9,12 +9,8 @@ impl<'a> Builder<'a> {
         let start = self.pos;
         // htm's `<//>` closes the innermost element; its name is the `/`.
         let htm = self.rules.htm_closing && self.byte(start + 2) == Some(b'/');
-        let (name_start, name_end) = if htm {
-            (start + 2, start + 3)
-        } else {
-            let name_start = self.skip_ws(start + 2);
-            (name_start, self.tag_name_end(name_start))
-        };
+        let name_start = start + 2;
+        let name_end = if htm { start + 3 } else { self.tag_name_end(name_start) };
         // As in the HTML tokenizer, the tag runs to its first `>`; what follows the name is ignored (DIVERGENCES.md#an-end-tag-runs-to-its-first-).
         let Some(gt) = self.find(name_end, self.bytes.len(), b">") else {
             return error(DiagnosticKind::UnterminatedEndTag, span(start, self.bytes.len()));
@@ -70,7 +66,9 @@ impl<'a> Builder<'a> {
                     at += 2;
                     break true;
                 }
-                Some(b'/') => {
+                // A quote where an attribute name starts is a template's expression leaking out of a value
+                // (`content="{{ f("-") }}"`): a printer would re-space it (DIVERGENCES.md#quotes-in-attribute-names-are-an-error).
+                Some(b'/' | b'"' | b'\'') => {
                     return error(DiagnosticKind::UnexpectedCharacterInTag, span(at, at + 1));
                 }
                 Some(_) => {
@@ -164,8 +162,8 @@ impl<'a> Builder<'a> {
     }
 
     fn attribute(&self, start: usize) -> PResult<Attribute<'a>> {
-        // The first character is always part of the name, `=` included;
-        // quotes and `<` are part of it anywhere (as in browsers, DIVERGENCES.md#quotes--and--are-name-characters).
+        // The first character is always part of the name, `=` included, and `<` anywhere (as in browsers,
+        // DIVERGENCES.md#-and--are-name-characters); a quote ends it, to be reported.
         let name_end = if self.rules.angular && self.bytes[start] == b'[' {
             self.bracketed_name_end(start)
         } else {

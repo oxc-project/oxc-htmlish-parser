@@ -261,6 +261,8 @@ const bogusAsComment = (nodes: any[]) => nodes.map((n) => (n[0] === "bc" ? ["c",
 // Dialects
 
 const VOID_QUIRKS: Record<string, RegExp> = {
+  // `</` without a name right after it is a bogus comment; angular-html-parser reads `</ div >` as an end tag.
+  "</ whitespace": /<\/[ \t\n\f\r]/,
   // angular-html-parser does not close a void element before a doctype.
   "doctype after void": new RegExp(`${VOID_TAG}<!doctype`, "i"),
   // ... nor before a start tag, which then cannot close the void element's parent implicitly.
@@ -377,6 +379,8 @@ const DIALECTS: Record<string, DialectSpec> = {
       "</ whitespace": /<\/[ \t\n\f\r]/,
     },
     mutationQuirks: {
+      // Vue reads a quote in a directive name; we report it.
+      "punctuation in a name": /(?:"[^"]*"|'[^']*'|\s[^\s/>="']*)["']/,
       // A directive name without its argument (`v-slot:`, a lone `:`) is a plain attribute.
       "directive without argument": /[\s"'](?:v-[^\s=>/:]+:|[:@#.])(?=[\s=>/"'])/,
       // A root `<html>` or `<!doctype html>` makes the file HTML, as Prettier reads it.

@@ -8,10 +8,11 @@ impl Builder<'_> {
     pub(super) fn markup(&mut self) -> PResult<()> {
         let start = self.pos;
         match self.bytes[start + 1] {
-            // Vue (as browsers) reads `</` without a name as a bogus comment;
-            // `angular-html-parser` skips whitespace before the name (`</ div >`).
-            b'/' if !self.rules.html
-                && self.byte(start + 2).is_some_and(|b| !b.is_ascii_alphabetic() && b != b'>') =>
+            // As in the HTML tokenizer, `</` without a name right after it is a bogus comment (`</ div>`);
+            // htm's `<//>` aside (DIVERGENCES.md#-without-a-name-right-after-it-is-a-bogus-comment).
+            b'/' if self.byte(start + 2).is_some_and(|b| {
+                !b.is_ascii_alphabetic() && b != b'>' && !(b == b'/' && self.rules.htm_closing)
+            }) =>
             {
                 self.bogus_comment(2)
             }

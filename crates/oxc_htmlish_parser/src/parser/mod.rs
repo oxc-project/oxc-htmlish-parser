@@ -97,7 +97,7 @@ impl<'a> Parser<'a> {
 #[derive(Clone, Copy)]
 struct Rules {
     /// `angular-html-parser`'s reading of tags rather than Vue's:
-    /// case-insensitive tag table limited to the HTML namespace, implicit closing, `</ name>` as an end tag.
+    /// case-insensitive tag table limited to the HTML namespace, implicit closing.
     html: bool,
     /// `{{ }}` and directive names.
     vue: bool,
@@ -151,9 +151,9 @@ fn is_tag_name_end(b: u8) -> bool {
     b.is_ascii_whitespace() || matches!(b, b'>' | b'/')
 }
 
-/// Where an attribute name ends, past its first character: as a tag name, or at `=`.
+/// Where an attribute name ends, past its first character: as a tag name, at `=`, or at a quote (an error then).
 fn is_attribute_name_end(b: u8) -> bool {
-    is_tag_name_end(b) || b == b'='
+    is_tag_name_end(b) || matches!(b, b'=' | b'"' | b'\'')
 }
 
 /// Where the leading ASCII whitespace of `bytes` ends and the trailing one starts.
@@ -406,6 +406,9 @@ mod tests {
             ("{{ '<b>' }}", Dialect::Angular, UnterminatedInterpolation, 0),
             ("<a b='c>", Dialect::Html, UnterminatedAttributeValue, 5),
             ("<a / b>", Dialect::Html, UnexpectedCharacterInTag, 3),
+            ("<a \"b\">", Dialect::Html, UnexpectedCharacterInTag, 3),
+            ("<a b\"c=1>", Dialect::Html, UnexpectedCharacterInTag, 4),
+            ("<a b=\"c(\"d\")\">", Dialect::Html, UnexpectedCharacterInTag, 10),
             ("<script>a", Dialect::Html, UnterminatedRawText, 0),
             ("</div>", Dialect::Html, UnexpectedEndTag, 0),
             ("<div><span></div>", Dialect::Html, UnexpectedEndTag, 11),
