@@ -17,6 +17,9 @@ Parse behavior targets each dialect's own parser, not the spec.
   A shape a dialect accepts only as a by-product of its tokenizer, with no valid use, follows the shared rule
   (an unterminated `{{` is an error in Angular as in Vue, though Angular renders it as text).
   This is our decision: following every such by-product would multiply per-dialect branches for no template that works.
+- The shared rule is the HTML tokenizer's reading (names, comments, end tags, raw text ends),
+  unless that reading would drop what the user wrote: then the shape is an error (`<a / b>`, whose `/` a printer cannot keep).
+  This is our decision too: one reading every dialect already knows, and a parse error leaves the source as written.
 - Truly broken structure (unmatched end tag, unterminated start tag) is an error, as in Prettier; the parse stops at the first one.
 
 An oracle difference is never matched by reflex.
@@ -28,7 +31,7 @@ Before changing the parser either way, decide it in order:
    Intent is backed by a test, a declared table entry, an issue or explicit code: keep.
    Accident is a by-product of the machinery (a lookup that misses, a token left on a stack) with an unambiguous reading under the norm: drop.
 
-Every drop is an entry in `DIVERGENCES.md`, with a fixture and (if the differential generates the shape) a `QUIRKS` exemption.
+Every drop is an entry in `DIVERGENCES.md`, with a fixture and (if the differential generates the shape) a `quirks` exemption in `run.ts`.
 
 ## Scope
 
