@@ -1,20 +1,24 @@
 // Differential fuzz against each dialect's parse-behavior oracle.
 //
-// - html: angular-html-parser, with the options Prettier passes
+// - html / angular: angular-html-parser, with the options Prettier passes for each
 // - vue: @vue/compiler-dom in SFC mode
 //
-// Generates a deterministic corpus of markup-token soups, reduces each to a
-// structural signature on both sides (ours from `tasks/sig`'s `sig-batch`), and
-// reports where they differ. Failures are a tree mismatch, or an error from us
-// on input the oracle accepts; the reverse (the oracle rejects, we parse) is
-// counted as lenient, as DIVERGENCES.md allows.
+// Reduces each input to a structural signature on both sides (ours from `tasks/sig`'s `sig-batch`),
+// and reports where they differ. Failures are a tree mismatch, an error from us on input the oracle accepts,
+// an AST invariant we break (`tests/check`), or an oracle throwing (a node kind the signature does not know);
+// the oracle's error where we parse is counted as lenient, as DIVERGENCES.md allows.
 //
-// Tokens are whole tags on purpose: shapes documented in DIVERGENCES.md (`/>` on
-// non-void HTML elements, unquoted values with `/`, `foreignObject`) are never
-// generated, the fixtures pin them instead.
+// Inputs are a deterministic corpus of markup-token soups, half of them mutated byte-wise
+// (an inserted, deleted or replaced `<`, `>`, `/`, quote, ...) so that broken tag internals come up too,
+// or real files with `--files`.
+// Whole-tag tokens never hold the shapes DIVERGENCES.md documents (`/>` on non-void HTML elements,
+// unquoted values with `/`, `foreignObject`); a mutation may form one, which `mutationQuirks` then exempts.
 //
-// Usage: node tasks/differential/run.ts <html|vue> [count] [seed]
+// Usage:
+//   node tasks/differential/run.ts <html|vue|angular> [count] [seed]
+//   node tasks/differential/run.ts <html|vue|angular> --files <file>...
 import { spawnSync } from "node:child_process";
+import fs from "node:fs";
 import path from "node:path";
 import { parse as parseVue } from "@vue/compiler-dom";
 import { parseHtml } from "angular-html-parser";
@@ -23,6 +27,9 @@ const ROOT = path.resolve(import.meta.dirname, "../..");
 const BIN = path.join(ROOT, "target/debug/sig-batch");
 
 type Sig = unknown[] | string;
+
+/** A node kind the signature does not know: the harness, not the input, needs fixing. */
+class UnknownNode extends Error {}
 
 /** mulberry32: `Math.random` is unseedable, and the corpus must be reproducible. */
 class Rng {
@@ -71,6 +78,15 @@ const VUE_TOKENS = [
   "<!-- c -->", "{{ a }}", "{{ a<b }}", "{{ '}}' }}", "{{", "}}", "{{ <div> }}",
 ];
 
+const ANGULAR_TOKENS = [
+  ...TEXT,
+  "<div>", "<span>", "<p>", "<ul>", "<li>", "<my-cmp>", "<my-cmp />", "<div />", "<br>", "<pre>", "<pre>\n",
+  "<div [a]=\"b\" (c)=\"d()\" *ngIf=\"e\" #f>", "<!-- c -->",
+  "{{ a }}", "{{ '}}' }}", "{{ a // b }}", "a@b.com",
+  "@if (a) {", "@else if (b) {", "@else {", "@for (i of xs; track i) {", "@empty {",
+  "@switch (a) {", "@case (1)", "@case (2) {", "@default {", "@defer (on idle) {", "@placeholder {",
+];
+
 // ---
 // Oracle signatures, the shape `tasks/sig/src/main.rs` documents.
 
@@ -96,8 +112,9 @@ function leadingLf(children: unknown[][]): boolean {
   return true;
 }
 
-function htmlOracle(source: string): Sig {
-  const { rootNodes, errors } = parseHtml(source, { canSelfClose: true, allowHtmComponentClosingTags: true });
+/** `angular-html-parser`, with the options Prettier passes for `html` or `angular`. */
+function angularHtmlParserSig(source: string, options: object): Sig {
+  const { rootNodes, errors } = parseHtml(source, options);
   if (errors.length > 0) return `error: ${errors[0].msg}`;
   const slice = (span: any) => source.slice(span.start.offset, span.end.offset);
   const nodes = (nodes: any[]): unknown[][] => nodes.map(node);
@@ -128,21 +145,31 @@ function htmlOracle(source: string): Sig {
         return ["d", slice(n.sourceSpan)];
       case "cdata":
         return ["x", slice(n.sourceSpan)];
+      // Not parsed yet (AGENTS.md): text on our side.
+      case "letDeclaration":
+      case "expansion":
+        return ["t", slice(n.sourceSpan)];
+      case "block":
+        // Our parameters are trimmed (`Block::parameters`).
+        return ["b", n.name, n.parameters.map((p: any) => p.expression.replace(/^[ \t\n\f\r]+|[ \t\n\f\r]+$/g, "")), nodes(n.children)];
       default:
-        throw new Error(`unexpected node ${n.kind}`);
+        throw new UnknownNode(`unexpected node ${n.kind}`);
     }
   }
-  return mergeTexts(nodes(rootNodes));
+  return mapNodes(nodes(rootNodes), mergeTexts);
 }
 
-/** angular-html-parser splits escapable raw text at entities; a text is a text. */
-function mergeTexts(nodes: unknown[][]): unknown[][] {
+/**
+ * angular-html-parser splits escapable raw text at entities, and keeps `{{ }}` inside its text;
+ * a run of texts (and, with `interpolations`, interpolations) is one text.
+ */
+function mergeTexts(nodes: unknown[][], interpolations = false): unknown[][] {
   const out: unknown[][] = [];
   for (const n of nodes) {
     const last = out.at(-1);
-    if (n[0] === "t" && last?.[0] === "t") last[1] = (last[1] as string) + (n[1] as string);
-    else out.push(n);
-    if (n[0] === "el") n[4] = mergeTexts(n[4] as unknown[][]);
+    const text = n[0] === "t" || (interpolations && n[0] === "i");
+    if (text && last?.[0] === "t") last[1] = (last[1] as string) + (n[1] as string);
+    else out.push(text ? ["t", n[1]] : n);
   }
   return out;
 }
@@ -190,10 +217,184 @@ function vueOracle(source: string): Sig {
       case 5:
         return ["i", n.loc.source];
       default:
-        throw new Error(`unexpected node type ${n.type}`);
+        throw new UnknownNode(`unexpected node type ${n.type}`);
     }
   }
   return nodes(ast.children);
+}
+
+/**
+ * What Vue's parser drops even with `whitespace: "preserve"`:
+ * whitespace-only text as the first or last child (outside `pre` and raw text), and the `v-pre` prop.
+ */
+function vueNormalize(nodes: any[], keepEdges = false, svg = false, vPre = false, root = true): any[] {
+  const blank = (n: any) => n[0] === "t" && /^[ \t\n\f\r]*$/.test(n[1]);
+  const out = nodes.filter((n, i) => keepEdges || !blank(n) || (i > 0 && i < nodes.length - 1));
+  for (const n of out) {
+    if (n[0] !== "el") continue;
+    // Only the outermost `v-pre` is a directive; nested ones are plain attributes Vue keeps.
+    const opensVPre = !vPre && n[3].some((a: any) => a[0] === "v-pre");
+    if (opensVPre) n[3] = n[3].filter((a: any) => a[0] !== "v-pre");
+    // `pre` and raw text are HTML-only in Vue (`<textarea>` in SVG is an element like any other).
+    const inSvg = n[1] === "foreignObject" ? false : svg || n[1] === "svg";
+    // A root block is raw text, unless it is a `<template>` in HTML.
+    const htmlTemplate = n[1] === "template" && !n[3].some((a: any) => a[0] === "lang" && !["", "html", null].includes(a[1]));
+    const raw = (root && !htmlTemplate) || (!svg && ["pre", "textarea", "title", "script", "style"].includes(n[1]));
+    n[4] = vueNormalize(n[4], keepEdges || raw, inSvg, vPre || opensVPre, false);
+  }
+  return out;
+}
+
+/** Rewrites every node list of a signature, children first. */
+function mapNodes(nodes: any[], f: (nodes: any[]) => any[]): any[] {
+  for (const n of nodes) {
+    if (n[0] === "el") n[4] = mapNodes(n[4], f);
+    if (n[0] === "b") n[3] = mapNodes(n[3], f);
+  }
+  return f(nodes);
+}
+
+/** `angular-html-parser` has no bogus comment kind. */
+const bogusAsComment = (nodes: any[]) => nodes.map((n) => (n[0] === "bc" ? ["c", n[1]] : n));
+
+// ---
+// Dialects
+
+const VOID_QUIRKS: Record<string, RegExp> = {
+  // angular-html-parser does not close a void element before a doctype.
+  "doctype after void": new RegExp(`${VOID_TAG}<!doctype`, "i"),
+  // ... nor before a start tag, which then cannot close the void element's parent implicitly.
+  "implicit close after void": new RegExp(
+    `${VOID_TAG}<(?:address|article|aside|blockquote|div|dl|fieldset|footer|form|h[1-6]|header|hgroup|hr|main|nav|ol|p|pre|section|table|ul|tbody|tfoot|tr|td|th|li|dt|dd|rb|rt|rtc|rp|optgroup|option)\\b`,
+    "i",
+  ),
+  // Its tokenizer cannot see the namespace, so SVG `<title>` is raw text there, against its own tag table.
+  "svg title": /<svg\b(?:(?!<\/svg>)[^])*<title/i,
+};
+
+interface DialectSpec {
+  tokens: readonly string[];
+  /** The soup as a file of the dialect. */
+  wrap: (body: string) => string;
+  oracle: (source: string) => Sig;
+  /** Our signature, as the oracle shapes it. */
+  normalize: (sig: unknown[]) => unknown[];
+  /** Mismatch shapes documented in DIVERGENCES.md (`runner:`), counted instead of failing. */
+  quirks: Record<string, RegExp>;
+  /** Documented shapes whole-tag tokens never form, exempted in mutated inputs and files only (too broad for all). */
+  mutationQuirks: Record<string, RegExp>;
+  /** Constructs not parsed yet (AGENTS.md), counted apart from divergences. */
+  pending?: Record<string, RegExp>;
+}
+
+/** What DIVERGENCES.md documents against `angular-html-parser` (HTML and Angular), as mutations form it. */
+const TAG_MUTATION_QUIRKS: Record<string, RegExp> = {
+  "/> on non-void": new RegExp(`<(?!(?:${[...VOID].join("|")})[\\s/>])[a-zA-Z][^\\s/>]*(?:\\s[^<>]*)?/>`, "i"),
+  "= starts an attribute name": /<[a-zA-Z][^<>]*[\s"']=/,
+  "unquoted value with a quote or =": /=[ \t\n\f\r]*[^\s"'>][^\s>]*["'=]/,
+  "empty comment": /<!---?>/,
+  "raw text end after whitespace": /<\/[ \t\n\f\r]+(?:script|style|textarea|title)\b/i,
+};
+
+const DIALECTS: Record<string, DialectSpec> = {
+  html: {
+    tokens: HTML_TOKENS,
+    wrap: (body) => body,
+    oracle: (source) => angularHtmlParserSig(source, { canSelfClose: true, allowHtmComponentClosingTags: true }),
+    normalize: (sig) => mapNodes(sig, bogusAsComment),
+    quirks: VOID_QUIRKS,
+    mutationQuirks: TAG_MUTATION_QUIRKS,
+  },
+  angular: {
+    tokens: ANGULAR_TOKENS,
+    wrap: (body) => body,
+    oracle: (source) =>
+      angularHtmlParserSig(source, {
+        canSelfClose: true,
+        tokenizeAngularBlocks: true,
+        tokenizeAngularLetDeclaration: true,
+        allowStartTagComments: true,
+      }),
+    normalize: (sig) =>
+      mapNodes(sig, (nodes) =>
+        // The oracle collapses whitespace without a line break in a block name (`else   if`).
+        bogusAsComment(mergeTexts(nodes, true)).map((n) =>
+          n[0] === "b" ? ["b", n[1].replace(/[ \t\f]+/g, " "), n[2], n[3]] : n,
+        ),
+      ),
+    quirks: {
+      ...VOID_QUIRKS,
+      // angular-html-parser reads the whitespace after a body-less `@case` into its span.
+      "fallthrough case": /@(?:case|default)\b[^{}]*?\)[ \t\n\f\r]+@/,
+    },
+    mutationQuirks: TAG_MUTATION_QUIRKS,
+    pending: {
+      "@let": /@let\s/,
+      ICU: /\{[^{}]*,\s*(?:plural|select|selectordinal)\s*,/,
+      "start-tag comment": /<[a-zA-Z][^<>]*(?:\/\/|\/\*)/,
+    },
+  },
+  vue: {
+    tokens: VUE_TOKENS,
+    wrap: (body) => `<template>${body}</template>\n`,
+    oracle: vueOracle,
+    // Vue drops the bogus comments a `<!` or `<?` opens; we keep them, as all content.
+    normalize: (sig) =>
+      vueNormalize(mapNodes(sig, (nodes) => mergeTexts(bogusAsComment(nodes.filter((n) => n[0] !== "bc" || n[2] === "</"))))),
+    quirks: {
+      // Vue reads `<` as part of a tag name (`<a<C />`); we reject it in every dialect.
+      "< in start tag": /<[a-zA-Z][^\s/>]*</,
+      // Vue skips whitespace after `</` in a bogus comment's content.
+      "</ whitespace": /<\/[ \t\n\f\r]/,
+    },
+    mutationQuirks: {
+      // A directive name without its argument (`v-slot:`, a lone `:`) is a plain attribute.
+      "directive without argument": /[\s"'](?:v-[\w-]+:|[:@#.])(?=[\s=>/"'])/,
+      // A root `<html>` or `<!doctype html>` makes the file HTML, as Prettier reads it.
+      "html page": /<html\b|<!doctype\s+html\b/i,
+    },
+  },
+};
+
+// ---
+// Inputs
+
+/**
+ * A soup where `CLOSE` closes the latest open tag (or block) of the soup itself,
+ * so most inputs nest instead of failing on stray end tags.
+ */
+function soup(rng: Rng, tokens: readonly string[], n: number): string {
+  const open: string[] = [];
+  let out = "";
+  const close = (name: string) => (name === "}" ? "}" : `</${name}>`);
+  for (let i = 0; i < n; i++) {
+    const token = tokens[rng.int(0, tokens.length - 1)];
+    if (token === "CLOSE") {
+      const name = open.pop();
+      if (name) out += close(name);
+      continue;
+    }
+    const name = /^<([a-zA-Z][^\s/>]*)[^<]*?(?<!\/)>$/.exec(token)?.[1];
+    if (name && !VOID.has(name.toLowerCase())) open.push(name);
+    if (token.endsWith("{") && token.startsWith("@")) open.push("}");
+    out += token;
+  }
+  while (open.length > 0 && rng.random() < 0.9) out += close(open.pop()!);
+  return out;
+}
+
+const MUTATIONS = ["<", ">", "/", "-", "!", "=", '"', "'", " ", "\n", "{", "}", "@"];
+
+/** One to three byte edits: insert, delete or replace a character markup is made of. */
+function mutate(rng: Rng, source: string): string {
+  let out = source;
+  for (let k = rng.int(1, 3); k > 0; k--) {
+    const at = rng.int(0, out.length);
+    const c = MUTATIONS[rng.int(0, MUTATIONS.length - 1)];
+    const rest = rng.int(0, 2) === 0 ? out.slice(at) : out.slice(at + 1);
+    out = out.slice(0, at) + (rng.int(0, 2) === 0 ? "" : c) + rest;
+  }
+  return out;
 }
 
 // ---
@@ -206,91 +407,62 @@ function ours(dialect: string, inputs: string[]): Sig[] {
   return JSON.parse(r.stdout);
 }
 
-const [dialect, countArg, seedArg] = process.argv.slice(2);
-if (dialect !== "html" && dialect !== "vue") {
-  console.error("usage: node tasks/differential/run.ts <html|vue> [count] [seed]");
+/** The two signatures around where they first differ. */
+function firstDiff(a: string, b: string): string {
+  let i = 0;
+  while (i < a.length && a[i] === b[i]) i++;
+  const around = (s: string) => s.slice(Math.max(0, i - 60), i + 60);
+  return `ours:   …${around(a)}…\noracle: …${around(b)}…`;
+}
+
+const [dialect, ...rest] = process.argv.slice(2);
+const spec = DIALECTS[dialect];
+if (!spec) {
+  console.error(`usage: node tasks/differential/run.ts <${Object.keys(DIALECTS).join("|")}> [count] [seed] | --files <file>...`);
   process.exit(1);
 }
-const count = Number(countArg ?? 5000);
-const seed = Number(seedArg ?? 0);
-const rng = new Rng(seed);
-/**
- * A soup where `CLOSE` closes the latest open tag of the soup itself,
- * so most inputs nest instead of failing on stray end tags.
- */
-function soup(tokens: readonly string[], n: number): string {
-  const open: string[] = [];
-  let out = "";
-  for (let i = 0; i < n; i++) {
-    const token = tokens[rng.int(0, tokens.length - 1)];
-    if (token === "CLOSE") {
-      const name = open.pop();
-      if (name) out += `</${name}>`;
-      continue;
-    }
-    const name = /^<([a-zA-Z][^\s/>]*)[^<]*?(?<!\/)>$/.exec(token)?.[1];
-    if (name && !VOID.has(name.toLowerCase())) open.push(name);
-    out += token;
-  }
-  while (open.length > 0 && rng.random() < 0.9) out += `</${open.pop()}>`;
-  return out;
+
+let corpus: string[];
+/** A file name, or the generated input's index (its source printed with a failure). */
+let label: (i: number) => string;
+/** Whether every quirk applies: mutated inputs and files are not limited to whole-tag tokens. */
+let loose: boolean[];
+let header: string;
+if (rest[0] === "--files") {
+  const files = rest.slice(1);
+  corpus = files.map((file) => fs.readFileSync(file, "utf8"));
+  label = (i) => files[i];
+  loose = corpus.map(() => true);
+  header = `${dialect} files=${files.length}`;
+} else {
+  const count = Number(rest[0] ?? 5000);
+  const seed = Number(rest[1] ?? 0);
+  const rng = new Rng(seed);
+  const tokens = [...spec.tokens, ...Array(15).fill("CLOSE")];
+  loose = [];
+  corpus = Array.from({ length: count }, (_, i) => {
+    const body = soup(rng, tokens, rng.int(1, 30));
+    loose[i] = rng.random() < 0.5;
+    return spec.wrap(loose[i] ? mutate(rng, body) : body);
+  });
+  label = (i) => `#${i} ${JSON.stringify(corpus[i])}`;
+  header = `${dialect} count=${count} seed=${seed}`;
 }
 
-const tokens = [...(dialect === "html" ? HTML_TOKENS : VUE_TOKENS), ...Array(15).fill("CLOSE")];
-const corpus = Array.from({ length: count }, () => {
-  const body = soup(tokens, rng.int(1, 30));
-  return dialect === "html" ? body : `<template>${body}</template>\n`;
-});
-
-/** Mismatch shapes documented in DIVERGENCES.md, counted instead of failing. */
-const QUIRKS: Record<string, RegExp> = dialect === "vue" ? {
-  // Vue reads `<` as part of a tag name (`<a<C />`); we reject it in every dialect.
-  "< in start tag": /<[a-zA-Z][^\s/>]*</,
-  // Vue skips whitespace after `</` in a bogus comment's content.
-  "</ whitespace": /<\/[ \t\n\f\r]/,
-} : {
-  // angular-html-parser does not close a void element before a doctype.
-  "doctype after void": new RegExp(`${VOID_TAG}<!doctype`, "i"),
-  // ... nor before a start tag, which then cannot close the void element's parent implicitly.
-  "implicit close after void":
-    new RegExp(
-      `${VOID_TAG}<(?:address|article|aside|blockquote|div|dl|fieldset|footer|form|h[1-6]|header|hgroup|hr|main|nav|ol|p|pre|section|table|ul|tbody|tfoot|tr|td|th|li|dt|dd|rb|rt|rtc|rp|optgroup|option)\\b`,
-      "i",
-    ),
-  // Its tokenizer cannot see the namespace, so SVG `<title>` is raw text there, against its own tag table.
-  "svg title": /<svg\b(?:(?!<\/svg>)[^])*<title/i,
-};
-
-const oracle = dialect === "html" ? htmlOracle : vueOracle;
-const theirs = corpus.map((source) => {
+const theirs = corpus.map((source): Sig => {
   try {
-    return oracle(source);
+    return spec.oracle(source);
   } catch (e) {
-    return `error: oracle threw ${e}`;
+    // The oracle crashing on its own (angular-html-parser on an unterminated CDATA) fails Prettier too.
+    return e instanceof UnknownNode ? `threw: ${e.message}` : `error: oracle crashed: ${e}`;
   }
 });
-/**
- * What Vue's parser drops even with `whitespace: "preserve"`:
- * whitespace-only text as the first or last child (outside `pre` and raw text), and the `v-pre` prop.
- */
-function vueNormalize(nodes: any[], keepEdges = false, svg = false, vPre = false): any[] {
-  const blank = (n: any) => n[0] === "t" && /^[ \t\n\f\r]*$/.test(n[1]);
-  const out = nodes.filter((n, i) => keepEdges || !blank(n) || (i > 0 && i < nodes.length - 1));
-  for (const n of out) {
-    if (n[0] !== "el") continue;
-    // Only the outermost `v-pre` is a directive; nested ones are plain attributes Vue keeps.
-    const opensVPre = !vPre && n[3].some((a: any) => a[0] === "v-pre");
-    if (opensVPre) n[3] = n[3].filter((a: any) => a[0] !== "v-pre");
-    // `pre` and raw text are HTML-only in Vue (`<textarea>` in SVG is an element like any other).
-    const inSvg = n[1] === "foreignObject" ? false : svg || n[1] === "svg";
-    const raw = !svg && ["pre", "textarea", "title", "script", "style"].includes(n[1]);
-    n[4] = vueNormalize(n[4], keepEdges || raw, inSvg, vPre || opensVPre);
-  }
-  return out;
-}
-const mine = ours(dialect, corpus).map((sig) =>
-  dialect === "vue" && typeof sig !== "string" ? vueNormalize(sig) : sig,
-);
+const mine = ours(dialect, corpus).map((sig) => (typeof sig === "string" ? sig : spec.normalize(sig)));
+
+const looseQuirks = { ...spec.quirks, ...spec.mutationQuirks };
+/** The first shape of `table` that `source` has. */
+const matchShape = (table: Record<string, RegExp>, source: string) =>
+  Object.keys(table).find((name) => table[name].test(source));
 
 const tally: Record<string, number> = { same: 0, bothError: 0, lenient: 0, oursError: 0, mismatch: 0 };
 const failures: string[] = [];
@@ -299,19 +471,27 @@ corpus.forEach((source, i) => {
   const aError = typeof a === "string";
   const bError = typeof b === "string";
   let kind: string;
-  if (aError && bError) kind = "bothError";
+  if (aError && a.startsWith("invariant: ")) kind = "invariant";
+  else if (bError && b.startsWith("threw: ")) kind = "oracleThrew";
+  else if (aError && bError) kind = "bothError";
   else if (bError) kind = "lenient";
   else if (aError) kind = "oursError";
   else kind = JSON.stringify(a) === JSON.stringify(b) ? "same" : "mismatch";
   if (kind === "oursError" || kind === "mismatch") {
-    const quirk = process.env.NO_QUIRKS ? undefined : Object.keys(QUIRKS).find((name) => QUIRKS[name].test(source));
-    if (quirk) kind = `quirk: ${quirk}`;
-    else failures.push(`--- ${kind} #${i}\n${JSON.stringify(source)}\nours:   ${JSON.stringify(a)}\noracle: ${JSON.stringify(b)}`);
+    const pending = matchShape(spec.pending ?? {}, source);
+    const quirk = process.env.NO_QUIRKS ? undefined : matchShape(loose[i] ? looseQuirks : spec.quirks, source);
+    if (pending) kind = `pending: ${pending}`;
+    else if (quirk) kind = `quirk: ${quirk}`;
+  }
+  if (["oursError", "mismatch", "invariant", "oracleThrew"].includes(kind)) {
+    const detail = kind === "mismatch" ? firstDiff(JSON.stringify(a), JSON.stringify(b)) : `ours:   ${JSON.stringify(a)}\noracle: ${JSON.stringify(b)}`;
+    failures.push(`--- ${kind} ${label(i)}\n${detail}`);
   }
   tally[kind] = (tally[kind] ?? 0) + 1;
 });
 
-console.log(failures.slice(0, 10).join("\n"));
+// `ALL=1` prints every failure, not the first ten.
+console.log((process.env.ALL ? failures : failures.slice(0, 10)).join("\n"));
 if (process.env.ERRORS) {
   const messages: Record<string, number> = {};
   for (const sig of [...mine, ...theirs]) {
@@ -321,5 +501,5 @@ if (process.env.ERRORS) {
   }
   console.log(messages);
 }
-console.log(`${dialect} count=${count} seed=${seed}`, tally);
+console.log(header, tally);
 process.exit(failures.length > 0 ? 1 : 0);

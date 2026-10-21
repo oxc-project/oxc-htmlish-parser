@@ -1,11 +1,16 @@
-//! `sig-batch <html|vue>`: reads a JSON array of sources on stdin, prints a JSON array with,
-//! per source, its structural signature or the error message as a string.
+//! `sig-batch <html|vue|angular>`: reads a JSON array of sources on stdin, prints a JSON array with,
+//! per source, its structural signature, the error message as a string,
+//! or `"invariant: …"` when the AST breaks one (`tests/check`).
 //! The subprocess bridge for `tasks/differential/run.ts`, which builds the same shape from the oracle.
 //!
 //! - element: `["el", name, flags, attrs, children]`, flags from `/` (written `/>`), `e` (end tag), `lf` (ignored first line break)
 //! - attribute: `[name, value | null]`, plus `dir, arg | null, dynamic, modifiers` for a Vue directive
 //! - `["t" | "i" | "d" | "x", raw]`: text, interpolation, doctype, CDATA
-//! - `["c", content]`: comment of any kind, without its delimiters
+//! - `["c", content]`: comment, without its delimiters; `["bc", content, opening]` a bogus one (`<!x>`, `<?x>`, `</ x>`)
+//! - `["b", name, parameters, children]`: Angular block
+
+#[path = "../../../crates/oxc_htmlish_parser/tests/check/mod.rs"]
+mod check;
 
 use oxc_htmlish_parser::{
     Allocator, Dialect, Parser,
@@ -15,8 +20,10 @@ use serde_json::{Value, json};
 
 fn main() {
     let dialect = match std::env::args().nth(1).as_deref() {
+        Some("html") => Dialect::Html,
         Some("vue") => Dialect::Vue,
-        _ => Dialect::Html,
+        Some("angular") => Dialect::Angular,
+        other => panic!("unknown dialect {other:?}, expected html, vue or angular"),
     };
     let buf = std::io::read_to_string(std::io::stdin()).unwrap();
     let inputs: Vec<String> = serde_json::from_str(&buf).expect("JSON array of strings");
@@ -25,7 +32,10 @@ fn main() {
         .iter()
         .map(|source| {
             let sig = match Parser::new(&allocator, source, dialect).parse() {
-                Ok(root) => children(source, &root, NodeId::DOCUMENT),
+                Ok(root) => match check::check(&root, NodeId::DOCUMENT) {
+                    Ok(()) => children(source, &root, NodeId::DOCUMENT),
+                    Err(broken) => Value::String(format!("invariant: {broken}")),
+                },
                 Err(diagnostic) => Value::String(diagnostic.to_string()),
             };
             allocator.reset();
@@ -47,6 +57,10 @@ fn node(source: &str, root: &Root<'_>, id: NodeId) -> Value {
         NodeKind::Element(el) => element(source, root, id, el),
         NodeKind::Text(_) => raw("t"),
         NodeKind::Interpolation(_) => raw("i"),
+        // A bogus comment keeps how it opened (`<!`, `<?`, `</`): Vue drops some kinds only.
+        NodeKind::Comment(n) if n.bogus => {
+            json!(["bc", n.content.slice(source), &node.span.slice(source)[..2]])
+        }
         NodeKind::Comment(n) => json!(["c", n.content.slice(source)]),
         NodeKind::ConditionalComment(_)
         | NodeKind::ConditionalStart(_)

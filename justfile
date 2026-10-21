@@ -16,3 +16,7 @@ fmt:
 # Requires `npm install` in tasks/differential once, and Node >= 22.18.
 differential dialect count="5000" seed="0":
     node tasks/differential/run.ts {{ dialect }} {{ count }} {{ seed }}
+
+# The differential comparison on real files.
+differential-files dialect +files:
+    node tasks/differential/run.ts {{ dialect }} --files {{ files }}

@@ -7,7 +7,8 @@ The parse-behavior oracles:
 
 Each entry is a place where we deliberately do not match, with the input that shows it.
 Where the oracle errors and we parse, Prettier fails on the file and nothing can depend on it.
-`runner:` names the shape `tasks/differential/run.ts` exempts; entries without one are never generated there, fixtures pin them.
+`runner:` names the shape `tasks/differential/run.ts` exempts (some only in mutated inputs and files, where whole-tag tokens do not limit them);
+entries without one are never generated there, fixtures pin them.
 Entries are grouped by the dialects they apply to.
 
 ## HTML and Angular
@@ -23,6 +24,7 @@ Browsers and Vue do not.
 <img src=a.png/>
 <!-- angular-html-parser: src="a.png", self-closed; ours (browsers): src="a.png/" -->
 ```
+`runner: unquoted value with a quote or =`
 
 ### End tags match case-insensitively
 
@@ -81,6 +83,7 @@ The HTML tokenizer has no namespace prefixes: both are unknown HTML elements, wi
 
 `<a =b>` is an attribute named `=b`, as in browsers;
 `angular-html-parser` reads an empty name with the value `b`.
+`runner: = starts an attribute name`
 
 ### Raw text closes only where the name follows the slash
 
@@ -93,6 +96,7 @@ The HTML tokenizer and Vue close raw text only at `</` followed right away by th
 ```
 
 After the name, only whitespace may precede the `>`: `</script foo>` is content, as in `angular-html-parser` (Vue reports an error there).
+`runner: raw text end after whitespace`
 
 ### A comment may close right after its opening
 
@@ -102,6 +106,7 @@ After the name, only whitespace may precede the `>`: `</script foo>` is content,
 <!-->a-->
 <!-- angular-html-parser: one comment holding ">a"; ours (browsers, Vue): an empty comment, then the text "a-->" -->
 ```
+`runner: empty comment`
 
 ## HTML
 
@@ -116,6 +121,7 @@ The written `/>` is kept as `Element::self_closing`.
 <!-- Prettier: <div/> then text "after", then an unexpected </div> error -->
 <!-- ours: div containing "after" -->
 ```
+`runner: /> on non-void`
 
 ### An element whose `/>` was ignored closes on an ancestor's end tag
 
@@ -140,6 +146,7 @@ Every other span ends at the construct's last delimiter (`>`, `{`, `;`, `)`), an
 @switch (a) { @case (1) @case (2) {x} }
 <!-- angular-html-parser: "@case (1) ", then "@case (2) {x}"; ours: "@case (1)", the text " ", then "@case (2) {x}" -->
 ```
+`runner: fallthrough case`
 
 ## Vue
 
@@ -173,3 +180,20 @@ Vue's comment content skips the whitespace after `</`; ours is the raw data.
 Inside `v-pre`, `{{ }}` is text and directive names are plain attributes,
 including the `v-pre` element's own directives, written before `v-pre` or after.
 Prettier formats both.
+
+### A root `<html>` or `<!doctype html>` makes the file HTML
+
+As Prettier reads a Vue file: it is an HTML page, not an SFC, and parses with HTML rules (`{{ }}` and directives stay Vue).
+Vue reads such a root element as a custom block holding raw text.
+`runner: html page`
+
+### A directive name without its argument is a plain attribute
+
+`v-slot:`, `v-bind:` and a lone `:` / `@` / `#` are attributes, not directives with an empty argument as in Vue:
+a broken name keeps its source as written, with no part to format.
+`runner: directive without argument`
+
+### Bogus comments are kept
+
+Vue drops what `<!` or `<?` opens without a comment or CDATA (`<!x>`, `<?x?>`); we keep it as a comment, as all content.
+`run.ts` drops them from our signature.

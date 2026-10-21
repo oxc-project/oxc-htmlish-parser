@@ -12,6 +12,8 @@ use oxc_htmlish_parser::{
     ast::{Attribute, AttributeKind, Content, NodeId, NodeKind, Quote, Root, Whitespace},
 };
 
+mod check;
+
 struct Printer<'s, 'a> {
     source: &'s str,
     root: &'s Root<'a>,
@@ -170,7 +172,7 @@ fn ast_snapshots() {
         let allocator = Allocator::default();
         let out = match Parser::new(&allocator, &source, dialect).parse() {
             Ok(root) => {
-                check(&root, NodeId::DOCUMENT);
+                check::check(&root, NodeId::DOCUMENT).unwrap();
                 let mut printer =
                     Printer { source: &source, root: &root, out: String::new(), depth: 0 };
                 printer.line(&format!("Root sfc={}", root.sfc));
@@ -181,39 +183,6 @@ fn ast_snapshots() {
         };
         snapshot(path, &out);
     });
-}
-
-/// Links are consistent (`next` chains end at `last_child`); siblings are ordered and disjoint, children and attributes lie inside their parent.
-fn check(root: &Root<'_>, id: NodeId) {
-    let parent = &root[id];
-    let inner = match &parent.kind {
-        NodeKind::Element(el) => {
-            for attribute in &el.attributes {
-                assert!(
-                    el.start_tag.start < attribute.span.start
-                        && attribute.span.end <= el.start_tag.end
-                );
-            }
-            Span::new(el.start_tag.end, el.end_tag.map_or(parent.span.end, |tag| tag.span.start))
-        }
-        NodeKind::ConditionalComment(n) => n.content,
-        NodeKind::Block(b) => Span::new(b.open.end, b.close.map_or(parent.span.end, |c| c.start)),
-        _ => parent.span,
-    };
-    let mut at = inner.start;
-    let mut prev = None;
-    for (child, node) in root.children(id) {
-        assert_eq!(node.parent, Some(id));
-        let span = node.span;
-        assert!(
-            at <= span.start && span.start < span.end && span.end <= inner.end,
-            "{span:?} in {inner:?}"
-        );
-        at = span.end;
-        prev = Some(child);
-        check(root, child);
-    }
-    assert_eq!(parent.last_child, prev);
 }
 
 fn snapshot(path: &Path, out: &str) {
