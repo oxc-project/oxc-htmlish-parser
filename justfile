@@ -20,3 +20,7 @@ differential dialect count="5000" seed="0":
 # The differential comparison on real files.
 differential-files dialect +files:
     node tasks/differential/run.ts {{ dialect }} --files {{ files }}
+
+# What a parser change does to real files: this tree against `rev`, file by file.
+compare dialect rev +files:
+    node tasks/differential/compare.ts {{ dialect }} {{ rev }} {{ files }}

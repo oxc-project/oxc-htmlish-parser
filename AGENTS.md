@@ -65,6 +65,7 @@ Every drop is an entry in `DIVERGENCES.md`, with a fixture and (if the different
 | `cargo insta review` | accept snapshot changes after an intentional AST change |
 | `just differential <html\|vue\|angular> [count] [seed]` | structural fuzz against the oracles (`angular-html-parser`, `@vue/compiler-dom`) |
 | `just differential-files <html\|vue\|angular> <file>...` | the same comparison on real files |
+| `just compare <html\|vue\|angular> <rev> <file>...` | this tree against `<rev>` on real files: what now fails, parses, or reads differently |
 
 First run: `npm i` in `tasks/differential`.
 
@@ -80,3 +81,6 @@ First run: `npm i` in `tasks/differential`.
     mismatches documented in `DIVERGENCES.md` are exempted by shape (`quirks`; `NO_QUIRKS=1` shows them),
     and constructs not parsed yet are counted as `pending`.
   - `ALL=1` prints every failure, `ERRORS=1` the error messages by count.
+- Before committing a change to how a shape is read, run `compare` (`--list <file>` for large corpora) on local repos:
+  a file that parsed and now fails is a regression to explain, and a template language in `.html` (Nunjucks, Askama, ...)
+  shows what a reading does to source a printer must not alter.
