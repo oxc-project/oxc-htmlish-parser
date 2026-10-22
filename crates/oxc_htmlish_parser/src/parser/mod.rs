@@ -55,6 +55,7 @@ impl<'a> Parser<'a> {
             Dialect::Html => Rules::HTML,
             Dialect::Vue => Rules {
                 html: false,
+                whatwg: false,
                 vue: true,
                 sfc: true,
                 angular: false,
@@ -62,9 +63,13 @@ impl<'a> Parser<'a> {
                 htm_closing: false,
             },
             // Angular's compiler rejects `<div/>`, but no valid template depends on reading it otherwise.
-            Dialect::Angular => {
-                Rules { angular: true, self_close_any: true, htm_closing: false, ..Rules::HTML }
-            }
+            Dialect::Angular => Rules {
+                whatwg: false,
+                angular: true,
+                self_close_any: true,
+                htm_closing: false,
+                ..Rules::HTML
+            },
         };
         let mut nodes = ArenaVec::with_capacity_in(self.source.len() / 16 + 1, &self.allocator);
         nodes.push(Node {
@@ -99,6 +104,10 @@ struct Rules {
     /// `angular-html-parser`'s reading of tags rather than Vue's:
     /// case-insensitive tag table limited to the HTML namespace, implicit closing.
     html: bool,
+    /// With `html`: WHATWG's optional end tags, which close through the ancestors whose end tag may go too
+    /// (browsers build the page from the source);
+    /// otherwise `angular-html-parser`'s table, against the direct parent only (Angular's compiler builds it).
+    whatwg: bool,
     /// `{{ }}` and directive names.
     vue: bool,
     /// Root elements are SFC blocks: raw text unless `<template>` in HTML.
@@ -114,6 +123,7 @@ struct Rules {
 impl Rules {
     const HTML: Self = Self {
         html: true,
+        whatwg: true,
         vue: false,
         sfc: false,
         angular: false,
@@ -310,7 +320,7 @@ impl<'a> Builder<'a> {
 
     /// The tag table as the dialect reads it: the one place for case and namespace policy.
     fn tag(&self, name: &str, lowercase: &str, namespace: Namespace) -> Tag {
-        let table = tags::html(lowercase);
+        let table = tags::html(lowercase, self.rules.whatwg);
         if self.rules.html {
             if namespace == Namespace::Html {
                 return table;
@@ -321,7 +331,7 @@ impl<'a> Builder<'a> {
             return Tag { content, ..Tag::default() };
         }
         // Vue: void tags and `pre` by exact name; raw text by any case, in HTML only; no implicit closing.
-        let exact = tags::html(name);
+        let exact = tags::html(name, false);
         let html = namespace == Namespace::Html;
         Tag {
             void: exact.void,
@@ -370,21 +380,29 @@ impl<'a> Builder<'a> {
         node.span = span(node.span.start as usize, end);
     }
 
-    /// Closes the open elements above `stack[index]` at `at`, when each may go without an end tag
-    /// (closed by its parent, or a `/>` HTML ignored: `<my-el />`, closed as in browsers);
-    /// `false`, closing none, when one may not.
+    /// Whether `open` may go without an end tag when its parent's closes it
+    /// (closed by its parent, or a `/>` HTML ignored: `<my-el />`, closed as in browsers).
+    fn omittable(&self, open: &Open<'a>) -> bool {
+        open.tag.closed_by_parent
+            || matches!(&self.nodes[open.id.index()].kind, NodeKind::Element(el) if el.self_closing)
+    }
+
+    /// Closes the open elements above `stack[index]` at `at`, when each is omittable;
+    /// `false`, closing none, when one is not.
     fn close_omitted_above(&mut self, index: usize, at: usize) -> bool {
-        let omittable = self.stack[index + 1..].iter().all(|open| {
-            open.tag.closed_by_parent
-                || matches!(&self.nodes[open.id.index()].kind, NodeKind::Element(el) if el.self_closing)
-        });
+        let omittable = self.stack[index + 1..].iter().all(|open| self.omittable(open));
         if omittable {
-            while self.stack.len() > index + 1 {
-                let open = self.stack.pop().expect("index < len");
-                self.close(&open, None, at);
-            }
+            self.close_down_to(index + 1, at);
         }
         omittable
+    }
+
+    /// Closes the open elements from `stack[len]` up at `at`, without end tags.
+    fn close_down_to(&mut self, len: usize, at: usize) {
+        while self.stack.len() > len {
+            let open = self.stack.pop().expect("len < stack.len()");
+            self.close(&open, None, at);
+        }
     }
 }
 
@@ -410,6 +428,7 @@ mod tests {
             ("<a b\"c=1>", Dialect::Html, UnexpectedCharacterInTag, 4),
             ("<a b=\"c(\"d\")\">", Dialect::Html, UnexpectedCharacterInTag, 10),
             ("<script>a", Dialect::Html, UnterminatedRawText, 0),
+            ("<script><!--<script></script>", Dialect::Html, UnterminatedRawText, 0),
             ("</div>", Dialect::Html, UnexpectedEndTag, 0),
             ("<div><span></div>", Dialect::Html, UnexpectedEndTag, 11),
             ("<br></br>", Dialect::Html, VoidEndTag, 4),

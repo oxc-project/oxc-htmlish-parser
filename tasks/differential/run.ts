@@ -260,16 +260,22 @@ const bogusAsComment = (nodes: any[]) => nodes.map((n) => (n[0] === "bc" ? ["c",
 // ---
 // Dialects
 
+/** `parser/tags.rs`'s implicit closing: the start tags that close an element opened right inside it. */
+const P_CLOSERS = "address article aside blockquote div dl fieldset footer form h1 h2 h3 h4 h5 h6 header hgroup hr main nav ol p pre section table ul";
+const RUBY = "rb rt rtc rp";
+const ANGULAR_CLOSED_BY: Record<string, string> = {
+  p: P_CLOSERS, thead: "tbody tfoot", tbody: "tbody tfoot", tfoot: "tbody", tr: "tr", td: "td th", th: "td th",
+  li: "li", dt: "dt dd", dd: "dt dd", rb: RUBY, rt: RUBY, rp: RUBY, rtc: "rb rtc rp", optgroup: "optgroup", option: "option optgroup",
+};
+const ANGULAR_CLOSERS = [...new Set(Object.values(ANGULAR_CLOSED_BY).join(" ").split(" "))].join("|");
+
 const VOID_QUIRKS: Record<string, RegExp> = {
   // `</` without a name right after it is a bogus comment; angular-html-parser reads `</ div >` as an end tag.
   "</ whitespace": /<\/[ \t\n\f\r]/,
   // angular-html-parser does not close a void element before a doctype.
   "doctype after void": new RegExp(`${VOID_TAG}<!doctype`, "i"),
   // ... nor before a start tag, which then cannot close the void element's parent implicitly.
-  "implicit close after void": new RegExp(
-    `${VOID_TAG}<(?:address|article|aside|blockquote|div|dl|fieldset|footer|form|h[1-6]|header|hgroup|hr|main|nav|ol|p|pre|section|table|ul|tbody|tfoot|tr|td|th|li|dt|dd|rb|rt|rtc|rp|optgroup|option)\\b`,
-    "i",
-  ),
+  "implicit close after void": new RegExp(`${VOID_TAG}<(?:${ANGULAR_CLOSERS})\\b`, "i"),
   // Its tokenizer cannot see the namespace, so SVG `<title>` is raw text there, against its own tag table.
   "svg title": /<svg\b(?:(?!<\/svg>)[^])*<title/i,
 };
@@ -311,8 +317,49 @@ function unterminatedInterpolation(source: string): boolean {
   return false;
 }
 
+const WHATWG_CLOSED_BY: Record<string, string> = {
+  ...ANGULAR_CLOSED_BY,
+  tr: "tr tbody tfoot", optgroup: "optgroup hr", option: "option optgroup hr",
+  caption: "colgroup thead tbody tfoot tr", colgroup: "colgroup thead tbody tfoot tr", head: "body",
+};
+const CLOSED_BY_PARENT = new Set("p tbody tfoot tr td th li dd rb rt rp rtc optgroup option head body caption colgroup".split(" "));
+
+/** Whether a start tag closes other elements under WHATWG's optional end tags (HTML) than under `angular-html-parser`'s table. */
+function whatwgClosing(source: string): boolean {
+  const closes = (whatwg: boolean, el: string, name: string) =>
+    ((whatwg ? WHATWG_CLOSED_BY : ANGULAR_CLOSED_BY)[el] ?? "").split(" ").includes(name);
+  const stack: string[] = [];
+  for (const [, end, raw, selfClosing] of source.matchAll(/<(\/?)([a-zA-Z][^\s/>]*)(?:[^>"']|"[^"]*"|'[^']*')*?(\/?)>/g)) {
+    const name = raw.toLowerCase();
+    if (end) {
+      const i = stack.lastIndexOf(name);
+      if (i !== -1) stack.length = i;
+      continue;
+    }
+    let whatwg = stack.length;
+    for (let i = stack.length - 1; i >= 0; i--) {
+      if (closes(true, stack[i], name)) whatwg = i;
+      if (!CLOSED_BY_PARENT.has(stack[i])) break;
+    }
+    const angular = stack.length > 0 && closes(false, stack.at(-1)!, name) ? stack.length - 1 : stack.length;
+    if (whatwg !== angular) return true;
+    stack.length = whatwg;
+    if (!VOID.has(name) && !selfClosing) stack.push(name);
+  }
+  return false;
+}
+
+/** What DIVERGENCES.md documents for all dialects, as mutations form it. */
+const ALL_MUTATION_QUIRKS: Record<string, RegExp> = {
+  // The oracles close a comment at `-->` only.
+  "--!>": /--!>/,
+  // The oracles end a script at its first `</script>`, even after `<!-- <script`.
+  "script escape": /<script\b[^>]*>(?:(?!<\/script)[^])*?<!--(?:(?!-->)[^])*?<script[\s/>]/i,
+};
+
 /** What DIVERGENCES.md documents against `angular-html-parser` (HTML and Angular), as mutations form it. */
 const TAG_MUTATION_QUIRKS: Record<string, RegExp> = {
+  ...ALL_MUTATION_QUIRKS,
   "/> on non-void": new RegExp(`<(?!(?:${[...VOID].join("|")})[\\s/>])[a-zA-Z][^\\s/>]*(?:\\s[^<>]*)?/>`, "i"),
   "= starts an attribute name": /<[a-zA-Z][^<>]*[\s"']=/,
   "unquoted value with a quote or =": /=[ \t\n\f\r]*[^\s"'>][^\s>]*["'=]/,
@@ -327,7 +374,11 @@ const DIALECTS: Record<string, DialectSpec> = {
     wrap: (body) => body,
     oracle: (source) => angularHtmlParserSig(source, { canSelfClose: true, allowHtmComponentClosingTags: true }),
     normalize: (sig) => mapNodes(sig, bogusAsComment),
-    quirks: VOID_QUIRKS,
+    quirks: {
+      ...VOID_QUIRKS,
+      // Implicit end tags follow WHATWG's optional tags, through omittable ancestors.
+      "WHATWG optional end tags": whatwgClosing,
+    },
     mutationQuirks: {
       ...TAG_MUTATION_QUIRKS,
       // The oracle reads Angular's bracketed attribute names in HTML too.
@@ -379,6 +430,7 @@ const DIALECTS: Record<string, DialectSpec> = {
       "</ whitespace": /<\/[ \t\n\f\r]/,
     },
     mutationQuirks: {
+      ...ALL_MUTATION_QUIRKS,
       // Vue reads a quote in a directive name; we report it.
       "punctuation in a name": /(?:"[^"]*"|'[^']*'|\s[^\s/>="']*)["']/,
       // A directive name without its argument (`v-slot:`, a lone `:`) is a plain attribute.

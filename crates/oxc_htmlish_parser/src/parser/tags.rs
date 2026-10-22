@@ -1,7 +1,8 @@
 //! The tag table: the only HTML tree-construction knowledge the parser has.
 //!
 //! Lookups take lowercase names; the parser's `Builder::tag` applies each dialect's case and namespace policy on top.
-//! Implicit closing follows `angular-html-parser` (`html_tags.ts`), not WHATWG.
+//! Implicit closing follows WHATWG's optional end tags in HTML, where browsers build the page from the source,
+//! and `angular-html-parser` (`html_tags.ts`, Angular's own compiler's) otherwise.
 
 use crate::ast::{Content, Namespace};
 
@@ -18,7 +19,10 @@ pub struct Tag {
     pub closed_by: &'static [&'static str],
 }
 
-pub fn html(lowercase: &str) -> Tag {
+/// `whatwg`: WHATWG's optional end tags; otherwise `angular-html-parser`'s.
+pub fn html(lowercase: &str, whatwg: bool) -> Tag {
+    // WHATWG adds `details`, `dialog`, `figcaption`, `figure`, `menu` and `search`,
+    // which would make a written `</p>` after them an error (`<p><figure></figure></p>`).
     const P_CLOSERS: &[&str] = &[
         "address",
         "article",
@@ -61,6 +65,8 @@ pub fn html(lowercase: &str) -> Tag {
         "thead" => closes(false, &["tbody", "tfoot"]),
         "tbody" => closes(true, &["tbody", "tfoot"]),
         "tfoot" => closes(true, &["tbody"]),
+        // Without the `tbody` WHATWG would insert, a row's group ends with it.
+        "tr" if whatwg => closes(true, &["tr", "tbody", "tfoot"]),
         "tr" => closes(true, &["tr"]),
         "td" | "th" => closes(true, &["td", "th"]),
         "li" => closes(true, &["li"]),
@@ -68,8 +74,17 @@ pub fn html(lowercase: &str) -> Tag {
         "dd" => closes(true, &["dt", "dd"]),
         "rb" | "rt" | "rp" => closes(true, RUBY),
         "rtc" => closes(true, &["rb", "rtc", "rp"]),
+        "optgroup" if whatwg => closes(true, &["optgroup", "hr"]),
         "optgroup" => closes(true, &["optgroup"]),
+        "option" if whatwg => closes(true, &["option", "optgroup", "hr"]),
         "option" => closes(true, &["option", "optgroup"]),
+        // Not at what it cannot hold: pages put elements there before an explicit `</head>`.
+        "head" if whatwg => closes(true, &["body"]),
+        // Closed by what may follow them in a table.
+        "caption" | "colgroup" if whatwg => {
+            closes(true, &["colgroup", "thead", "tbody", "tfoot", "tr"])
+        }
+        "body" if whatwg => closes(true, &[]),
         _ => Tag::default(),
     }
 }

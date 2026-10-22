@@ -33,3 +33,9 @@ Root sfc=false
   Element [255..261] "script" Html raw end_tag=[274..283] "</script>"
     Text [262..274] "a</ script>b" (-|-) content=[262..274] "a</ script>b"
   Text [283..284] "\n" (nl|nl)
+  Element [285..291] "script" Html raw end_tag=[318..327] "</script>"
+    Text [292..318] "<!-- <script></script> -->" (-|-) content=[292..318] "<!-- <script></script> -->"
+  Text [327..328] "\n" (nl|nl)
+  Element [329..335] "script" Html raw end_tag=[341..350] "</script>"
+    Text [336..341] "<!-->" (-|-) content=[336..341] "<!-->"
+  Text [350..351] "\n" (nl|nl)

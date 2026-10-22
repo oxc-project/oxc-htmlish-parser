@@ -15,14 +15,14 @@ Root sfc=false
     Text [44..49] "block" (-|-) content=[44..49] "block"
   Text [55..56] "\n" (nl|nl)
   Element [57..62] "table" Html end_tag=[86..94] "</table>"
-    Element [64..66] "tr" Html no_end_tag span_end=86
+    Element [64..66] "tr" Html no_end_tag span_end=77
       Element [68..70] "td" Html no_end_tag span_end=72
         Text [71..72] "a" (-|-) content=[71..72] "a"
-      Element [73..75] "td" Html no_end_tag span_end=86
+      Element [73..75] "td" Html no_end_tag span_end=77
         Text [76..77] "b" (-|-) content=[76..77] "b"
-        Element [78..80] "tr" Html no_end_tag span_end=86
-          Element [82..84] "td" Html no_end_tag span_end=86
-            Text [85..86] "c" (-|-) content=[85..86] "c"
+    Element [78..80] "tr" Html no_end_tag span_end=86
+      Element [82..84] "td" Html no_end_tag span_end=86
+        Text [85..86] "c" (-|-) content=[85..86] "c"
   Text [94..95] "\n" (nl|nl)
   Element [96..102] "select" Html end_tag=[140..149] "</select>"
     Element [104..110] "option" Html no_end_tag span_end=112
@@ -39,5 +39,49 @@ Root sfc=false
     Element [160..162] "dd" Html no_end_tag span_end=164
       Text [163..164] "d" (-|-) content=[163..164] "d"
   Text [169..170] "\n" (nl|nl)
-  Element [171..174] "div" Html no_end_tag span_end=187
-    Text [175..187] "open at eof\n" (-|nl) content=[175..186] "open at eof"
+  Element [171..172] "p" Html end_tag=[192..196] "</p>"
+    Text [173..174] "a" (-|-) content=[173..174] "a"
+    Element [175..181] "figure" Html end_tag=[183..192] "</figure>"
+      Text [182..183] "f" (-|-) content=[182..183] "f"
+  Text [196..197] "\n" (nl|nl)
+  Element [198..200] "ul" Html end_tag=[215..220] "</ul>"
+    Element [202..204] "li" Html no_end_tag span_end=210
+      Text [205..206] "a" (-|-) content=[205..206] "a"
+      Element [207..208] "p" Html no_end_tag span_end=210
+        Text [209..210] "b" (-|-) content=[209..210] "b"
+    Element [211..213] "li" Html no_end_tag span_end=215
+      Text [214..215] "c" (-|-) content=[214..215] "c"
+  Text [220..221] "\n" (nl|nl)
+  Element [222..227] "table" Html end_tag=[287..295] "</table>"
+    Element [229..236] "caption" Html no_end_tag span_end=238
+      Text [237..238] "c" (-|-) content=[237..238] "c"
+    Element [239..247] "colgroup" Html no_end_tag span_end=253
+      Element [249..252] "col" Html void no_end_tag span_end=253
+    Element [254..256] "tr" Html no_end_tag span_end=262
+      Element [258..260] "td" Html no_end_tag span_end=262
+        Text [261..262] "a" (-|-) content=[261..262] "a"
+    Element [263..265] "tr" Html no_end_tag span_end=271
+      Element [267..269] "td" Html no_end_tag span_end=271
+        Text [270..271] "b" (-|-) content=[270..271] "b"
+    Element [272..277] "tbody" Html no_end_tag span_end=287
+      Element [279..281] "tr" Html no_end_tag span_end=287
+        Element [283..285] "td" Html no_end_tag span_end=287
+          Text [286..287] "c" (-|-) content=[286..287] "c"
+  Text [295..296] "\n" (nl|nl)
+  Element [297..303] "select" Html end_tag=[336..345] "</select>"
+    Element [305..313] "optgroup" Html no_end_tag span_end=323
+      Element [315..321] "option" Html no_end_tag span_end=323
+        Text [322..323] "a" (-|-) content=[322..323] "a"
+    Element [324..326] "hr" Html void no_end_tag span_end=327
+    Element [328..334] "option" Html no_end_tag span_end=336
+      Text [335..336] "b" (-|-) content=[335..336] "b"
+  Text [345..346] "\n" (nl|nl)
+  Element [347..351] "html" Html end_tag=[381..388] "</html>"
+    Element [353..357] "head" Html no_end_tag span_end=374
+      Element [359..364] "title" Html escapable end_tag=[366..374] "</title>"
+        Text [365..366] "t" (-|-) content=[365..366] "t"
+    Element [375..379] "body" Html no_end_tag span_end=381
+      Text [380..381] "x" (-|-) content=[380..381] "x"
+  Text [388..389] "\n" (nl|nl)
+  Element [390..393] "div" Html no_end_tag span_end=406
+    Text [394..406] "open at eof\n" (-|nl) content=[394..405] "open at eof"

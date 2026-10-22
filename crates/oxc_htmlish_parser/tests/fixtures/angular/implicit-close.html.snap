@@ -1,0 +1,25 @@
+---
+source: crates/oxc_htmlish_parser/tests/ast.rs
+---
+Root sfc=false
+  Element [1..4] "div" Html end_tag=[27..33] "</div>"
+    Element [6..7] "p" Html no_end_tag span_end=27
+      Text [8..9] "a" (-|-) content=[8..9] "a"
+      Element [10..16] "figure" Html end_tag=[18..27] "</figure>"
+        Text [17..18] "f" (-|-) content=[17..18] "f"
+  Text [33..34] "\n" (nl|nl)
+  Element [35..40] "table" Html end_tag=[59..67] "</table>"
+    Element [42..44] "tr" Html no_end_tag span_end=59
+      Element [46..48] "td" Html no_end_tag span_end=59
+        Text [49..50] "a" (-|-) content=[49..50] "a"
+        Element [51..53] "tr" Html no_end_tag span_end=59
+          Element [55..57] "td" Html no_end_tag span_end=59
+            Text [58..59] "b" (-|-) content=[58..59] "b"
+  Text [67..68] "\n" (nl|nl)
+  Element [69..75] "select" Html end_tag=[104..113] "</select>"
+    Element [77..83] "option" Html no_end_tag span_end=85
+      Text [84..85] "a" (-|-) content=[84..85] "a"
+    Element [86..94] "optgroup" Html no_end_tag span_end=104
+      Element [96..102] "option" Html no_end_tag span_end=104
+        Text [103..104] "b" (-|-) content=[103..104] "b"
+  Text [113..114] "\n" (nl|nl)

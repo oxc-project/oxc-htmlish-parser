@@ -64,3 +64,5 @@ Root sfc=false
   Element [367..373] "script" Html raw end_tag=[375..388] "</script foo>" ignored=[384..387] "foo"
     Text [374..375] "a" (-|-) content=[374..375] "a"
   Text [388..390] "b\n" (-|nl) content=[388..389] "b"
+  Comment content=[394..397] " a "
+  Text [401..408] " b -->\n" (sp|nl) content=[402..407] "b -->"

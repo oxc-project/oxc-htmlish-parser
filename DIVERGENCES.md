@@ -10,6 +10,7 @@ Where the oracle errors and we parse, Prettier fails on the file and nothing can
 `runner:` names the shape `tasks/differential/run.ts` exempts (some only in mutated inputs and files, where whole-tag tokens do not limit them);
 entries without one are never generated there, fixtures pin them.
 Entries are grouped by the dialects they apply to.
+Where the oracles agree against the HTML tokenizer and we keep their reading, the last section says why.
 
 ## All dialects
 
@@ -36,6 +37,26 @@ As in the HTML tokenizer and Vue (`</ div>`, `</3>`); htm's `<//>` aside, in HTM
 `angular-html-parser` reads `</ div >` as an end tag.
 Vue's comment content skips the whitespace after `</`; ours is the raw data.
 `runner: </ whitespace`
+
+### A comment closes at `--!>` too
+
+As in the HTML tokenizer (and Astro): `<!-- a --!> b -->` is the comment ` a `, then the text ` b -->`.
+`angular-html-parser` and Vue (and Svelte) read on to the next `-->`.
+`--!>` is a parse error no template uses, so every dialect follows the tokenizer, as with `<!-->`.
+`runner: --!>`
+
+### A script holds script end tags inside `<!-- <script>`
+
+In the HTML tokenizer (and Astro), a `<script` after `<!--` in a script hides the next `</script>` (until `-->`):
+
+```html
+<script><!-- document.write("<script src=a.js></script>"); --></script>
+<!-- angular-html-parser, Vue: the script closes inside the string, then an unexpected </script> error; ours (browsers): one script -->
+```
+
+Valid HTML that Prettier errors on, so we read it as browsers do in every dialect.
+Vue SFC blocks are the exception: Vue's SFC parser reads them, not a browser, and they end at their first end tag.
+`runner: script escape`
 
 ## HTML and Angular
 
@@ -172,6 +193,33 @@ which Angular templates rely on for Tailwind's arbitrary variants; we read it so
 In HTML the `>` ends the tag, as in browsers.
 `runner: bracketed attribute name`
 
+### Implicit end tags follow WHATWG's optional tags
+
+Browsers build an HTML page from its source, so an end tag goes where WHATWG lets it be omitted.
+`angular-html-parser`'s table misses some; it is Angular's compiler's, which builds Angular's DOM, so Angular keeps it.
+
+- `tr` also closes at `tbody` and `tfoot` (we insert no `tbody`), `option` and `optgroup` at `hr`;
+  `caption` and `colgroup` close at what may follow them in a table, `body` at its parent's end tag.
+- A start tag closes through the elements above it that may go without an end tag:
+  `<li><p>a<li>`, `<tr><td>a<tr>`; `angular-html-parser` looks at the direct parent only.
+- An ancestor's end tag closes `head` and `body`: `<html><body>x</html>` is an error in `angular-html-parser`.
+
+```html
+<table><tr><td>a<tr><td>b</table>
+<!-- angular-html-parser: the second tr inside the first td; ours (browsers): two rows -->
+```
+
+WHATWG's start tags that close an element the oracle keeps open are not followed where a written end tag would then be an error
+(AGENTS.md: implicit closing adds no error):
+
+- `p` does not close at `details`, `dialog`, `figcaption`, `figure`, `menu` or `search`: `<p><figure></figure></p>` parses.
+- `head` closes only at `<body>`, not at everything it cannot hold:
+  real pages put elements there before an explicit `</head>` (a browser moves them to the body).
+
+So `<p>a<figure>`, and `<head><title>t</title><p>` with both `</head>` and `<body>` omitted,
+read the second element inside the first, though both are valid HTML.
+`runner: WHATWG optional end tags`
+
 ## Angular
 
 ### A block without a body ends at its parameters
@@ -248,3 +296,26 @@ In `<title>` and `<textarea>`, `<{{ t }}` holds the text `<` and an interpolatio
 and an interpolation without its `}}` before the end tag is an error.
 Vue's tokenizer misses an interpolation right after a `<` there, and reads an unterminated one on past the end tag.
 `runner: {{ }} in RCDATA`
+
+## Kept: the oracles over the HTML tokenizer
+
+Not divergences: recorded so that they are not reopened.
+Svelte's and Astro's readings are noted for the dialects to come.
+
+### `xmp`, `iframe`, `noembed`, `noframes`, `noscript` and `plaintext` hold markup
+
+Browsers read their content as raw text (`noscript` only with scripting on).
+None of them holds markup in valid HTML (obsolete, or nothing allowed) but `noscript`, whose markup is what a printer formats.
+Svelte reads markup too; Astro, raw text.
+
+### CDATA is read in HTML content too
+
+Browsers read `<![CDATA[a>b]]>` outside SVG and MathML as a bogus comment up to the first `>`, then text.
+We keep the section whole, as `angular-html-parser` (and Angular's compiler) does:
+the cut would leave the rest as text a printer re-spaces.
+Vue and Svelte report it.
+
+### Duplicate attributes are kept
+
+Browsers drop all but the first, which would drop source.
+`angular-html-parser` and Astro keep them; Vue and Svelte report them.

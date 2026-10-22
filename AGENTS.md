@@ -7,7 +7,7 @@ It is the parsing layer for oxc's htmlish formatter (`oxc_formatter_htmlish`).
 
 Parse behavior targets each dialect's own parser, not the spec.
 
-- html: `angular-html-parser` (what Prettier parses with), with Prettier's options
+- html: `angular-html-parser` (what Prettier parses with), with Prettier's options; implicit end tags follow WHATWG
 - angular: `angular-html-parser` with Prettier's angular options (blocks, `{{ }}`, `/>` on every element).
   Only control flow blocks and `{{ }}` so far; ICU expressions and `@let` are still text
 - vue: `@vue/compiler-core`
@@ -22,22 +22,29 @@ Parse behavior targets each dialect's own parser, not the spec.
   (`<a / b>`, whose `/` a printer cannot keep; a quote in an attribute name, a template expression a printer would re-space).
   This is our decision too: one reading every dialect already knows, and a parse error leaves the source as written.
 - Truly broken structure (unmatched end tag, unterminated start tag) is an error, as in Prettier; the parse stops at the first one.
+- Implicit closing adds no error: an `.html` file is often not what a browser reads as is (a template, a fragment, a page with placeholders),
+  and where an element closes changes the tree, not the source.
+  In HTML, where both readings parse, WHATWG's tree wins; an implicit close the oracle does not make is dropped
+  where it would turn a written end tag into an error (`<p><figure></figure></p>`, `<head><div></div></head>`).
 
 An oracle difference is never matched by reflex.
 Before changing the parser either way, decide it in order:
 
-1. Is there a norm? WHATWG for HTML, the dialect's compiler for the rest.
+1. Is there a norm? What builds the DOM from the source: browsers (WHATWG) for HTML, the dialect's compiler for the rest.
+   `angular-html-parser` forks Angular's compiler, so its tag table is the norm in Angular.
 2. Does the oracle deviate from it?
 3. Is the deviation intent or accident?
    Intent is backed by a test, a declared table entry, an issue or explicit code: keep.
    Accident is a by-product of the machinery (a lookup that misses, a token left on a stack) with an unambiguous reading under the norm: drop.
 
 Every drop is an entry in `DIVERGENCES.md`, with a fixture and (if the differential generates the shape) a `quirks` exemption in `run.ts`.
+A keep against the HTML tokenizer goes in its last section, so that it is not reopened.
 
 ## Scope
 
-- No WHATWG tree construction: only the tag table in `src/parser/tags.rs` (void, raw text, implicit closing).
-  Omitted start tags (`<tbody>`) are never inserted.
+- No WHATWG tree construction: only the tag table in `src/parser/tags.rs` (void, raw text, implicit end tags:
+  WHATWG's optional tags in HTML, Angular's compiler's in Angular, none in Vue).
+  Omitted start tags (`<tbody>`) are never inserted, and broken structure (misnested or stray tags) is an error, not repaired.
 - No cooked values: spans into the original source; entities are never decoded.
 - Facts that need no formatting option belong here (whitespace around text, how a tag was written, directive parts, `pre`'s ignored first line break);
   formatter policy (CSS display, whitespace sensitivity) does not.
@@ -51,7 +58,7 @@ Every drop is an entry in `DIVERGENCES.md`, with a fixture and (if the different
     `Dialect` maps to private `Rules` flags; a Vue file with a root `<html>` / `<!doctype html>` restarts with HTML rules.
   - `text.rs`, `markup.rs` (comments, CDATA, doctype), `element.rs` (tags, attributes, raw text): the builder by construct.
   - `angular.rs`: Angular's `{{ }}` end and control flow blocks.
-  - `tags.rs`: the tag table. `vue.rs`: Vue directive name splitting.
+  - `tags.rs`: the tag table, WHATWG's or `angular-html-parser`'s. `vue.rs`: Vue directive name splitting.
 - `src/ast.rs`: the AST, every node in one list linked by `NodeId` (parent, next sibling, children),
   so the formatter walks up and down and keys its tables by `NodeId`.
   Elements carry the tag table's verdict (`key`, `void`, `content`, `ignores_first_lf`) and the end tag's name as written.

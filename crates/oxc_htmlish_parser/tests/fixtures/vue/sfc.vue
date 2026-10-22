@@ -4,6 +4,7 @@
 
 <script setup lang="ts">
 const a = "<div>";
+const b = "<!--<script>";
 </script>
 
 <style scoped>

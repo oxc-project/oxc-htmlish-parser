@@ -10,25 +10,25 @@ Root sfc=true
       Interpolation expression=[48..53] " msg "
     Text [61..62] "\n" (nl|nl)
   Text [73..75] "\n\n" (nl|nl)
-  Element [76..82] "script" Html raw end_tag=[119..128] "</script>"
+  Element [76..82] "script" Html raw end_tag=[145..154] "</script>"
     @[83..88] "setup"
     @[89..93] "lang" =" [95..97] "ts"
-    Text [99..119] "\nconst a = \"<div>\";\n" (nl|nl) content=[100..118] "const a = \"<div>\";"
-  Text [128..130] "\n\n" (nl|nl)
-  Element [131..136] "style" Html raw end_tag=[156..164] "</style>"
-    @[137..143] "scoped"
-    Text [144..156] "\n.a > .b {}\n" (nl|nl) content=[145..155] ".a > .b {}"
-  Text [164..166] "\n\n" (nl|nl)
-  Element [167..171] "docs" Html raw end_tag=[185..192] "</docs>"
-    Text [172..185] "\n# Title <b>\n" (nl|nl) content=[173..184] "# Title <b>"
-  Text [192..193] "\n" (nl|nl)
-  Element [194..202] "template" Html raw end_tag=[227..238] "</template>"
-    @[203..207] "lang" =" [209..212] "pug"
-    Text [214..227] "\ndiv {{ x }}\n" (nl|nl) content=[215..226] "div {{ x }}"
-  Text [238..239] "\n" (nl|nl)
-  Element [240..246] "Script" Html raw end_tag=[250..259] "</Script>"
-    Text [247..250] "raw" (-|-) content=[247..250] "raw"
-  Text [259..260] "\n" (nl|nl)
-  Element [261..264] "img" Html void no_end_tag span_end=273
-    @[265..268] "src" =" [270..271] "x"
-  Text [273..274] "\n" (nl|nl)
+    Text [99..145] "\nconst a = \"<div>\";\nconst b = \"<!--<script>\";\n" (nl|nl) content=[100..144] "const a = \"<div>\";\nconst b = \"<!--<script>\";"
+  Text [154..156] "\n\n" (nl|nl)
+  Element [157..162] "style" Html raw end_tag=[182..190] "</style>"
+    @[163..169] "scoped"
+    Text [170..182] "\n.a > .b {}\n" (nl|nl) content=[171..181] ".a > .b {}"
+  Text [190..192] "\n\n" (nl|nl)
+  Element [193..197] "docs" Html raw end_tag=[211..218] "</docs>"
+    Text [198..211] "\n# Title <b>\n" (nl|nl) content=[199..210] "# Title <b>"
+  Text [218..219] "\n" (nl|nl)
+  Element [220..228] "template" Html raw end_tag=[253..264] "</template>"
+    @[229..233] "lang" =" [235..238] "pug"
+    Text [240..253] "\ndiv {{ x }}\n" (nl|nl) content=[241..252] "div {{ x }}"
+  Text [264..265] "\n" (nl|nl)
+  Element [266..272] "Script" Html raw end_tag=[276..285] "</Script>"
+    Text [273..276] "raw" (-|-) content=[273..276] "raw"
+  Text [285..286] "\n" (nl|nl)
+  Element [287..290] "img" Html void no_end_tag span_end=299
+    @[291..294] "src" =" [296..297] "x"
+  Text [299..300] "\n" (nl|nl)

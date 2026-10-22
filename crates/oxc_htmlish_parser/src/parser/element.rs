@@ -1,5 +1,6 @@
 //! Elements: start and end tags, attributes, raw text content.
 
+use memchr::memchr2;
 use oxc_allocator::ArenaBox;
 
 use super::*;
@@ -93,8 +94,19 @@ impl<'a> Builder<'a> {
             self.allocator.alloc_str(lowercase)
         };
 
-        if let Some(open) = self.stack.pop_if(|parent| parent.tag.closed_by.contains(&key)) {
-            self.close(&open, None, start);
+        // The outermost open element this start tag closes, through omittable ones with `whatwg`
+        // (`<li><p>a<li>`, `<tbody><tr><td>a<tbody>`; DIVERGENCES.md#implicit-end-tags-follow-whatwgs-optional-tags).
+        let mut closed = None;
+        for (index, open) in self.stack.iter().enumerate().rev() {
+            if open.tag.closed_by.contains(&key) {
+                closed = Some(index);
+            }
+            if !(self.rules.whatwg && self.omittable(open)) {
+                break;
+            }
+        }
+        if let Some(index) = closed {
+            self.close_down_to(index, start);
         }
 
         let inherited = self.context();
@@ -115,9 +127,10 @@ impl<'a> Builder<'a> {
             }
         }
 
+        let sfc_block = self.at_sfc_root();
         let content = if closes_now {
             Content::Normal
-        } else if self.at_sfc_root() {
+        } else if sfc_block {
             if name_str == "template" && !has_non_html_lang(self.source, &attributes) {
                 Content::Normal
             } else {
@@ -156,8 +169,11 @@ impl<'a> Builder<'a> {
         self.stack.push(open);
         match content {
             Content::Normal => Ok(()),
-            Content::Raw => self.raw_text(tag_span, name_str, false),
-            Content::Escapable => self.raw_text(tag_span, name_str, true),
+            // A Vue SFC block is read by Vue's SFC parser, not a browser.
+            Content::Raw => {
+                self.raw_text(tag_span, name_str, false, !sfc_block && lowercase == "script")
+            }
+            Content::Escapable => self.raw_text(tag_span, name_str, true, false),
         }
     }
 
@@ -204,29 +220,56 @@ impl<'a> Builder<'a> {
         })
     }
 
-    /// Content up to `</name>` (case-insensitive) as one text, `{{ }}` split when `escapable`.
-    fn raw_text(&mut self, start_tag: Span, name: &str, escapable: bool) -> PResult<()> {
+    /// Content up to `</name>` (case-insensitive) as one text, `{{ }}` split when `escapable`;
+    /// `script`: with the HTML tokenizer's script data escapes.
+    fn raw_text(
+        &mut self,
+        start_tag: Span,
+        name: &str,
+        escapable: bool,
+        script: bool,
+    ) -> PResult<()> {
         let content_start = self.pos;
-        let finder = memmem::Finder::new(b"</");
+        // As in the HTML tokenizer, the name follows `</` right away (DIVERGENCES.md#raw-text-closes-only-where-the-name-follows-the-slash),
+        // and the tag ends as any end tag does.
+        let at_name = |at: usize| {
+            self.starts_with_ci(at, name) && self.byte(at + name.len()).is_some_and(is_tag_name_end)
+        };
+        // A script's `</script>` inside `<!-- <script> … -->` is content (DIVERGENCES.md#a-script-holds-script-end-tags-inside----script):
+        // 1 inside `<!--`, 2 past a `<script` there, until its `</script`; `-->` ends both.
+        let mut escape = 0;
         let mut from = content_start;
-        let (close_start, name_start, close_end) = loop {
-            let Some(lt) = finder.find(&self.bytes[from..]).map(|i| from + i) else {
+        let close_start = loop {
+            let rest = &self.bytes[from..];
+            let found = if escape > 0 { memchr2(b'<', b'-', rest) } else { memchr(b'<', rest) };
+            let Some(at) = found.map(|i| from + i) else {
                 return error(DiagnosticKind::UnterminatedRawText, start_tag);
             };
-            // As in the HTML tokenizer, the name follows `</` right away (DIVERGENCES.md#raw-text-closes-only-where-the-name-follows-the-slash),
-            // and the tag ends as any end tag does.
-            let name_start = lt + 2;
-            if self.starts_with_ci(name_start, name)
-                && self.byte(name_start + name.len()).is_some_and(is_tag_name_end)
-            {
-                // Without a `>` here, no later end tag has one either.
-                let Some(gt) = self.find(name_start + name.len(), self.bytes.len(), b">") else {
-                    return error(DiagnosticKind::UnterminatedRawText, start_tag);
-                };
-                break (lt, name_start, gt + 1);
+            from = at + 1;
+            let rest = &self.bytes[at..];
+            if rest.starts_with(b"</") && at_name(at + 2) {
+                if escape < 2 {
+                    break at;
+                }
+                escape = 1;
+            } else if script && escape == 0 && rest.starts_with(b"<!--") {
+                escape = 1;
+                // Its dashes may end it: `<!-->`.
+                from = at + 2;
+            } else if escape > 0 && rest.starts_with(b"-->") {
+                escape = 0;
+                from = at + 3;
+            } else if escape == 1 && rest[0] == b'<' && at_name(at + 1) {
+                escape = 2;
             }
-            from = lt + 2;
         };
+        let name_start = close_start + 2;
+        let name_end = name_start + name.len();
+        // Without a `>` here, no later end tag has one either.
+        let Some(gt) = self.find(name_end, self.bytes.len(), b">") else {
+            return error(DiagnosticKind::UnterminatedRawText, start_tag);
+        };
+        let close_end = gt + 1;
         if escapable && self.interpolates() {
             self.text(close_start, false)?;
         } else {
@@ -234,7 +277,6 @@ impl<'a> Builder<'a> {
         }
         self.pos = close_end;
         let open = self.stack.pop().expect("pushed by start_tag");
-        let name_end = name_start + name.len();
         let end_tag = EndTag {
             span: span(close_start, close_end),
             name: span(name_start, name_end),

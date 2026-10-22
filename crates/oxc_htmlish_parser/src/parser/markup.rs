@@ -40,11 +40,22 @@ impl Builder<'_> {
         let (close, end) = match &self.bytes[content_start..] {
             [b'>', ..] => (content_start, content_start + 1),
             [b'-', b'>', ..] => (content_start, content_start + 2),
+            // The first `>` after `--`, or `--!>` (DIVERGENCES.md#a-comment-closes-at----too).
             _ => {
-                let Some(close) = self.find(content_start, self.bytes.len(), b"-->") else {
-                    return error(DiagnosticKind::UnterminatedComment, span(start, content_start));
-                };
-                (close, close + 3)
+                let mut from = content_start;
+                loop {
+                    let Some(gt) = self.find(from, self.bytes.len(), b">") else {
+                        return error(
+                            DiagnosticKind::UnterminatedComment,
+                            span(start, content_start),
+                        );
+                    };
+                    match &self.bytes[content_start..gt] {
+                        [.., b'-', b'-'] => break (gt - 2, gt + 1),
+                        [.., b'-', b'-', b'!'] => break (gt - 3, gt + 1),
+                        _ => from = gt + 1,
+                    }
+                }
             }
         };
         self.pos = end;
