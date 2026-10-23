@@ -36,11 +36,12 @@ impl Builder<'_> {
     fn comment(&mut self) -> PResult<()> {
         let start = self.pos;
         let content_start = start + 4;
-        // `<!-->` and `<!--->` are empty comments, as in the HTML tokenizer (DIVERGENCES.md#a-comment-may-close-right-after-its-opening).
+        // `<!-->` and `<!--->` are empty comments, as in the HTML tokenizer
+        // (DIVERGENCES.md#a-comment-may-close-right-after-its-opening).
         let (close, end) = match &self.bytes[content_start..] {
             [b'>', ..] => (content_start, content_start + 1),
             [b'-', b'>', ..] => (content_start, content_start + 2),
-            // The first `>` after `--`, or `--!>` (DIVERGENCES.md#a-comment-closes-at----too).
+            // The first `>` after `--`, or `--!>` (DIVERGENCES.md#a-comment-closes-at----too)
             _ => {
                 let mut from = content_start;
                 loop {

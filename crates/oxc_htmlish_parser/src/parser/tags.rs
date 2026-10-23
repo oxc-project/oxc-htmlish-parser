@@ -65,7 +65,7 @@ pub fn html(lowercase: &str, whatwg: bool) -> Tag {
         "thead" => closes(false, &["tbody", "tfoot"]),
         "tbody" => closes(true, &["tbody", "tfoot"]),
         "tfoot" => closes(true, &["tbody"]),
-        // Without the `tbody` WHATWG would insert, a row's group ends with it.
+        // Without the `tbody` WHATWG would insert, a row's group ends with it
         "tr" if whatwg => closes(true, &["tr", "tbody", "tfoot"]),
         "tr" => closes(true, &["tr"]),
         "td" | "th" => closes(true, &["td", "th"]),
@@ -78,9 +78,9 @@ pub fn html(lowercase: &str, whatwg: bool) -> Tag {
         "optgroup" => closes(true, &["optgroup"]),
         "option" if whatwg => closes(true, &["option", "optgroup", "hr"]),
         "option" => closes(true, &["option", "optgroup"]),
-        // Not at what it cannot hold: pages put elements there before an explicit `</head>`.
+        // Not at what it cannot hold: pages put elements there before an explicit `</head>`
         "head" if whatwg => closes(true, &["body"]),
-        // Closed by what may follow them in a table.
+        // Closed by what may follow them in a table
         "caption" | "colgroup" if whatwg => {
             closes(true, &["colgroup", "thead", "tbody", "tfoot", "tr"])
         }
@@ -113,6 +113,6 @@ pub fn lowercase<'b>(name: &str, buf: &'b mut [u8; 16]) -> &'b str {
     let Some(buf) = buf.get_mut(..name.len()) else { return "" };
     buf.copy_from_slice(name.as_bytes());
     buf.make_ascii_lowercase();
-    // ASCII lowercasing keeps the bytes valid UTF-8.
+    // ASCII lowercasing keeps the bytes valid UTF-8
     std::str::from_utf8(buf).unwrap_or("")
 }

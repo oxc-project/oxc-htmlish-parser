@@ -1,12 +1,13 @@
 //! AST snapshots: one compact tree per fixture, spans and facts included.
 //!
-//! `fixtures/html/*.html` parse as HTML, `fixtures/angular/*.html` as Angular, `fixtures/vue/*.vue` as Vue.
+//! `fixtures/<dialect>/*` parse as that dialect (`html`, `vue`, `angular`).
 //! A fixture that fails to parse snapshots its diagnostic.
 //! Review with `cargo insta review` after an intentional AST change.
 
 use std::{fmt::Write as _, fs, path::Path};
 
 use insta::{Settings, assert_snapshot, glob};
+
 use oxc_htmlish_parser::{
     Allocator, Dialect, Parser, Span,
     ast::{Attribute, AttributeKind, Content, NodeId, NodeKind, Quote, Root, Whitespace},
@@ -14,16 +15,52 @@ use oxc_htmlish_parser::{
 
 mod check;
 
+#[test]
+fn ast_snapshots() {
+    glob!("fixtures/*/*.{html,vue}", |path| {
+        let source = fs::read_to_string(path).unwrap();
+        let dialect = match path.parent().unwrap().file_name().unwrap().to_str().unwrap() {
+            "html" => Dialect::Html,
+            "vue" => Dialect::Vue,
+            "angular" => Dialect::Angular,
+            dir => panic!("no dialect for fixtures/{dir}"),
+        };
+        let allocator = Allocator::default();
+        let out = match Parser::new(&allocator, &source, dialect).parse() {
+            Ok(root) => {
+                check::check(&root, NodeId::DOCUMENT).unwrap();
+                let mut printer =
+                    Printer { source: &source, root: &root, out: String::new(), depth: 0 };
+                printer.line(&format!("Root sfc={}", root.sfc));
+                printer.children(NodeId::DOCUMENT);
+                printer.out
+            }
+            Err(diagnostic) => format!("Error: {diagnostic}\n"),
+        };
+        snapshot(path, &out);
+    });
+}
+
+fn snapshot(path: &Path, out: &str) {
+    let file_name = path.file_name().unwrap().to_str().unwrap();
+    let mut settings = Settings::clone_current();
+    settings.set_snapshot_path(path.parent().unwrap());
+    settings.remove_snapshot_suffix();
+    settings.set_prepend_module_to_snapshot(false);
+    settings.remove_input_file();
+    settings.set_omit_expression(true);
+    settings.bind(|| {
+        assert_snapshot!(file_name.to_string(), out);
+    });
+}
+
+// ---
+
 struct Printer<'s, 'a> {
     source: &'s str,
     root: &'s Root<'a>,
     out: String,
     depth: usize,
-}
-
-/// `[a..b] "slice"`: the slice makes offsets reviewable.
-fn quoted(source: &str, span: Span) -> String {
-    format!("[{}..{}] {:?}", span.start, span.end, span.slice(source))
 }
 
 impl Printer<'_, '_> {
@@ -163,40 +200,7 @@ impl Printer<'_, '_> {
     }
 }
 
-#[test]
-fn ast_snapshots() {
-    glob!("fixtures/**/*.{html,vue}", |path| {
-        let source = fs::read_to_string(path).unwrap();
-        let dialect = match path.extension().and_then(|e| e.to_str()) {
-            Some("vue") => Dialect::Vue,
-            _ if path.parent().is_some_and(|p| p.ends_with("angular")) => Dialect::Angular,
-            _ => Dialect::Html,
-        };
-        let allocator = Allocator::default();
-        let out = match Parser::new(&allocator, &source, dialect).parse() {
-            Ok(root) => {
-                check::check(&root, NodeId::DOCUMENT).unwrap();
-                let mut printer =
-                    Printer { source: &source, root: &root, out: String::new(), depth: 0 };
-                printer.line(&format!("Root sfc={}", root.sfc));
-                printer.children(NodeId::DOCUMENT);
-                printer.out
-            }
-            Err(diagnostic) => format!("Error: {diagnostic}\n"),
-        };
-        snapshot(path, &out);
-    });
-}
-
-fn snapshot(path: &Path, out: &str) {
-    let file_name = path.file_name().unwrap().to_str().unwrap();
-    let mut settings = Settings::clone_current();
-    settings.set_snapshot_path(path.parent().unwrap());
-    settings.remove_snapshot_suffix();
-    settings.set_prepend_module_to_snapshot(false);
-    settings.remove_input_file();
-    settings.set_omit_expression(true);
-    settings.bind(|| {
-        assert_snapshot!(file_name.to_string(), out);
-    });
+/// `[a..b] "slice"`: the slice makes offsets reviewable.
+fn quoted(source: &str, span: Span) -> String {
+    format!("[{}..{}] {:?}", span.start, span.end, span.slice(source))
 }

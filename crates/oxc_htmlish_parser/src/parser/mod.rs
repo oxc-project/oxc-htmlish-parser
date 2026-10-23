@@ -5,11 +5,14 @@
 //! void elements, raw text, implicit closing.
 
 use memchr::{memchr, memmem};
+
 use oxc_allocator::{Allocator, ArenaVec};
 
-use crate::ast::*;
-use crate::diagnostic::{Diagnostic, DiagnosticKind};
-use crate::span::{Span, span};
+use crate::{
+    ast::*,
+    diagnostic::{Diagnostic, DiagnosticKind},
+    span::{Span, span},
+};
 use tags::Tag;
 
 mod angular;
@@ -26,8 +29,9 @@ pub enum Dialect {
     /// A file with a root `<html>` or `<!doctype html>` is read with HTML rules instead
     /// (`{{ }}` and directives are still Vue).
     Vue,
-    /// An Angular template: HTML with `{{ }}`, control flow blocks (`@if (a) { … }`), and `/>` closing any element.
-    /// ICU expressions and `@let` are not parsed yet (plain text).
+    /// An Angular template.
+    /// HTML with `{{ }}`, control flow blocks (`@if (a) { … }`), and `/>` closing any element.
+    /// TODO: ICU expressions and `@let` are not parsed yet (plain text).
     Angular,
 }
 
@@ -53,24 +57,11 @@ impl<'a> Parser<'a> {
         }
         let mut rules = match self.dialect {
             Dialect::Html => Rules::HTML,
-            Dialect::Vue => Rules {
-                html: false,
-                whatwg: false,
-                vue: true,
-                sfc: true,
-                angular: false,
-                self_close_any: true,
-                htm_closing: false,
-            },
-            // Angular's compiler rejects `<div/>`, but no valid template depends on reading it otherwise.
-            Dialect::Angular => Rules {
-                whatwg: false,
-                angular: true,
-                self_close_any: true,
-                htm_closing: false,
-                ..Rules::HTML
-            },
+            Dialect::Vue => Rules::VUE,
+            Dialect::Angular => Rules::ANGULAR,
         };
+        // About one node per 16 bytes: the median of 994 real-world HTML and Angular templates (vscode, mdn-content, ecosystem-ci).
+        // Vue SFCs are sparser (a `<script>` is one text node); reserving too much costs less than growing in the arena.
         let mut nodes = ArenaVec::with_capacity_in(self.source.len() / 16 + 1, &self.allocator);
         nodes.push(Node {
             kind: NodeKind::Document,
@@ -86,12 +77,12 @@ impl<'a> Parser<'a> {
                 Ok(()) => return Ok(Root { nodes: builder.nodes, sfc: rules.sfc }),
                 Err(Stop::Error(diagnostic)) => return Err(diagnostic),
                 Err(Stop::Html) => {
-                    // Start over in the same buffer, keeping only the document node.
+                    // Start over in the same buffer, keeping only the document node
                     nodes = builder.nodes;
                     nodes.truncate(1);
                     nodes[0].first_child = None;
                     nodes[0].last_child = None;
-                    rules = Rules { vue: true, ..Rules::HTML };
+                    rules = Rules::VUE_HTML;
                 }
             }
         }
@@ -129,6 +120,28 @@ impl Rules {
         angular: false,
         self_close_any: false,
         htm_closing: true,
+    };
+
+    const VUE: Self = Self {
+        html: false,
+        whatwg: false,
+        vue: true,
+        sfc: true,
+        angular: false,
+        self_close_any: true,
+        htm_closing: false,
+    };
+
+    /// A Vue file that turned out to be an HTML page.
+    const VUE_HTML: Self = Self { vue: true, ..Self::HTML };
+
+    /// Angular's compiler rejects `<div/>`, but no valid template depends on reading it otherwise.
+    const ANGULAR: Self = Self {
+        whatwg: false,
+        angular: true,
+        self_close_any: true,
+        htm_closing: false,
+        ..Self::HTML
     };
 }
 
@@ -244,7 +257,7 @@ impl<'a> Builder<'a> {
             allocator: self.allocator,
             source: self.source,
             bytes: &self.source.as_bytes()[..end],
-            rules: Rules { sfc: false, ..self.rules },
+            rules: self.rules,
             base: self.context(),
             base_parent: parent,
             pos: start,
@@ -262,8 +275,7 @@ impl<'a> Builder<'a> {
         parsed
     }
 
-    // ---
-    // Scanning helpers
+    // --- Scanning helpers
 
     fn byte(&self, at: usize) -> Option<u8> {
         self.bytes.get(at).copied()
@@ -315,7 +327,7 @@ impl<'a> Builder<'a> {
     }
 
     fn at_sfc_root(&self) -> bool {
-        self.rules.sfc && self.stack.is_empty()
+        self.rules.sfc && self.stack.is_empty() && self.base_parent == NodeId::DOCUMENT
     }
 
     /// The tag table as the dialect reads it: the one place for case and namespace policy.
@@ -341,8 +353,7 @@ impl<'a> Builder<'a> {
         }
     }
 
-    // ---
-    // Tree
+    // --- Tree
 
     /// Appends a node as the last child of the current element.
     fn push(&mut self, kind: NodeKind<'a>, span: Span) -> NodeId {

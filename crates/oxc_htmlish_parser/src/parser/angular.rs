@@ -82,7 +82,7 @@ impl<'a> Builder<'a> {
     /// `@name (parameters) {`, or a block without a body; `pos` is at `@`.
     pub(super) fn block_start(&mut self) -> PResult<()> {
         let start = self.pos;
-        // The name may hold whitespace after its first character (`else if`).
+        // The name may hold whitespace after its first character (`else if`)
         let name_start = start + 1;
         let mut at = self.skip(name_start, |b| {
             b.is_ascii_alphanumeric() || b == b'_' || b.is_ascii_whitespace()
@@ -97,7 +97,8 @@ impl<'a> Builder<'a> {
         }
         let name = &self.source[name_start..name_end];
         let body = self.byte(at) == Some(b'{');
-        // `@default never;` has no body; cases fall through to the next one without one.
+        // `@default never;` has no body;
+        // cases fall through to the next one without one.
         let never = name.split_ascii_whitespace().eq(["default", "never"])
             && !name.contains('\n')
             && self.byte(at) == Some(b';');

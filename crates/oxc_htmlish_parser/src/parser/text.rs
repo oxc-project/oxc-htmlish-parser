@@ -62,7 +62,7 @@ impl Builder<'_> {
             let close = if self.rules.angular {
                 self.interpolation_end(open + 2, limit)
             } else {
-                // Vue closes at the first `}}`, quotes and tags included.
+                // Vue closes at the first `}}`, quotes and tags included
                 self.find(open + 2, limit, b"}}")
             };
             let Some(close) = close else {

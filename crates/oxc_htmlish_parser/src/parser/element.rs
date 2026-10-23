@@ -1,6 +1,7 @@
 //! Elements: start and end tags, attributes, raw text content.
 
 use memchr::memchr2;
+
 use oxc_allocator::ArenaBox;
 
 use super::*;
@@ -8,11 +9,12 @@ use super::*;
 impl<'a> Builder<'a> {
     pub(super) fn end_tag(&mut self) -> PResult<()> {
         let start = self.pos;
-        // htm's `<//>` closes the innermost element; its name is the `/`.
+        // htm's `<//>` closes the innermost element; its name is the `/`
         let htm = self.rules.htm_closing && self.byte(start + 2) == Some(b'/');
         let name_start = start + 2;
         let name_end = if htm { start + 3 } else { self.tag_name_end(name_start) };
-        // As in the HTML tokenizer, the tag runs to its first `>`; what follows the name is ignored (DIVERGENCES.md#an-end-tag-runs-to-its-first-).
+        // As in the HTML tokenizer, the tag runs to its first `>`;
+        // what follows the name is ignored (DIVERGENCES.md#an-end-tag-runs-to-its-first-).
         let Some(gt) = self.find(name_end, self.bytes.len(), b">") else {
             return error(DiagnosticKind::UnterminatedEndTag, span(start, self.bytes.len()));
         };
@@ -28,7 +30,7 @@ impl<'a> Builder<'a> {
         if self.tag(name, tags::lowercase(name, &mut buf), self.context().namespace).void {
             return error(DiagnosticKind::VoidEndTag, tag.span);
         }
-        // Every dialect so far matches end tags case-insensitively.
+        // Every dialect so far matches end tags case-insensitively
         let index = if htm {
             self.stack.len().checked_sub(1)
         } else {
@@ -86,7 +88,7 @@ impl<'a> Builder<'a> {
         let key = if !self.rules.html || !name_str.bytes().any(|b| b.is_ascii_uppercase()) {
             name_str
         } else if lowercase.is_empty() {
-            // Longer than every table entry: lowercased for the formatter's own tables.
+            // Longer than every table entry: lowercased for the formatter's own tables
             let mut key = name_str.to_owned();
             key.make_ascii_lowercase();
             self.allocator.alloc_str(&key)
@@ -169,7 +171,7 @@ impl<'a> Builder<'a> {
         self.stack.push(open);
         match content {
             Content::Normal => Ok(()),
-            // A Vue SFC block is read by Vue's SFC parser, not a browser.
+            // A Vue SFC block is read by Vue's SFC parser, not a browser
             Content::Raw => {
                 self.raw_text(tag_span, name_str, false, !sfc_block && lowercase == "script")
             }
@@ -230,12 +232,14 @@ impl<'a> Builder<'a> {
         script: bool,
     ) -> PResult<()> {
         let content_start = self.pos;
-        // As in the HTML tokenizer, the name follows `</` right away (DIVERGENCES.md#raw-text-closes-only-where-the-name-follows-the-slash),
+        // As in the HTML tokenizer, the name follows `</` right away
+        // (DIVERGENCES.md#raw-text-closes-only-where-the-name-follows-the-slash),
         // and the tag ends as any end tag does.
         let at_name = |at: usize| {
             self.starts_with_ci(at, name) && self.byte(at + name.len()).is_some_and(is_tag_name_end)
         };
-        // A script's `</script>` inside `<!-- <script> … -->` is content (DIVERGENCES.md#a-script-holds-script-end-tags-inside----script):
+        // A script's `</script>` inside `<!-- <script> … -->` is content
+        // (DIVERGENCES.md#a-script-holds-script-end-tags-inside----script):
         // 1 inside `<!--`, 2 past a `<script` there, until its `</script`; `-->` ends both.
         let mut escape = 0;
         let mut from = content_start;

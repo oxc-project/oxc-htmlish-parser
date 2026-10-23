@@ -2,8 +2,10 @@
 
 use oxc_allocator::{Allocator, ArenaVec};
 
-use crate::ast::{VueArgument, VueDirective};
-use crate::span::{Span, span};
+use crate::{
+    ast::{VueArgument, VueDirective},
+    span::{Span, span},
+};
 
 /// `None` for plain attributes and malformed directive names.
 pub fn directive<'a>(
@@ -17,7 +19,7 @@ pub fn directive<'a>(
     let until_dot =
         |from: usize| s[from..].iter().position(|&b| b == b'.').map_or(s.len(), |i| from + i);
 
-    // `v-name`, then `:arg` and/or `.modifiers`; or a shorthand followed by the argument.
+    // `v-name`, then `:arg` and/or `.modifiers`; or a shorthand followed by the argument
     let (dir, arg_from, mut cursor) = if s.starts_with(b"v-") {
         let end = s[2..].iter().position(|&b| matches!(b, b':' | b'.')).map_or(s.len(), |i| 2 + i);
         if end == 2 {
@@ -37,7 +39,7 @@ pub fn directive<'a>(
         let dynamic = s.get(from) == Some(&b'[');
         let static_from =
             if dynamic { from + s[from..].iter().position(|&b| b == b']')? + 1 } else { from };
-        // Slots have no modifiers: the dots belong to the argument.
+        // Slots have no modifiers: the dots belong to the argument
         let end = if slot { s.len() } else { until_dot(static_from) };
         if end == from {
             return None;
