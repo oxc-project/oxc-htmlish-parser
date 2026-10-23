@@ -34,7 +34,8 @@ Angular's bracketed names may hold quotes (DIVERGENCES.md#bracketed-attribute-na
 ### `</` without a name right after it is a bogus comment
 
 As in the HTML tokenizer and Vue (`</ div>`, `</3>`); htm's `<//>` aside, in HTML.
-`angular-html-parser` reads `</ div >` as an end tag.
+`angular-html-parser` reads `</ div >` as an end tag, as Angular's compiler does.
+No template relies on it (an end tag is written `</div>`), so Angular keeps the shared reading too.
 Vue's comment content skips the whitespace after `</`; ours is the raw data.
 `runner: </ whitespace`
 
