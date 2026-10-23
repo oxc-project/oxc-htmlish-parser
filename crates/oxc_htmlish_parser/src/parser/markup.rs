@@ -9,7 +9,7 @@ impl Builder<'_> {
         let start = self.pos;
         match self.bytes[start + 1] {
             // As in the HTML tokenizer, `</` without a name right after it is a bogus comment (`</ div>`);
-            // htm's `<//>` aside (DIVERGENCES.md#-without-a-name-right-after-it-is-a-bogus-comment).
+            // htm's `<//>` aside (DIVERGENCES.md#end-tag-without-a-name).
             b'/' if self.byte(start + 2).is_some_and(|b| {
                 !b.is_ascii_alphabetic() && b != b'>' && !(b == b'/' && self.rules.htm_closing)
             }) =>
@@ -37,11 +37,11 @@ impl Builder<'_> {
         let start = self.pos;
         let content_start = start + 4;
         // `<!-->` and `<!--->` are empty comments, as in the HTML tokenizer
-        // (DIVERGENCES.md#a-comment-may-close-right-after-its-opening).
+        // (DIVERGENCES.md#abruptly-closed-empty-comment).
         let (close, end) = match &self.bytes[content_start..] {
             [b'>', ..] => (content_start, content_start + 1),
             [b'-', b'>', ..] => (content_start, content_start + 2),
-            // The first `>` after `--`, or `--!>` (DIVERGENCES.md#a-comment-closes-at----too)
+            // The first `>` after `--`, or `--!>` (DIVERGENCES.md#incorrectly-closed-comment)
             _ => {
                 let mut from = content_start;
                 loop {

@@ -14,7 +14,7 @@ impl<'a> Builder<'a> {
         let name_start = start + 2;
         let name_end = if htm { start + 3 } else { self.tag_name_end(name_start) };
         // As in the HTML tokenizer, the tag runs to its first `>`;
-        // what follows the name is ignored (DIVERGENCES.md#an-end-tag-runs-to-its-first-).
+        // what follows the name is ignored (DIVERGENCES.md#end-tag-with-attributes).
         let Some(gt) = self.find(name_end, self.bytes.len(), b">") else {
             return error(DiagnosticKind::UnterminatedEndTag, span(start, self.bytes.len()));
         };
@@ -70,7 +70,7 @@ impl<'a> Builder<'a> {
                     break true;
                 }
                 // A quote where an attribute name starts is a template's expression leaking out of a value
-                // (`content="{{ f("-") }}"`): a printer would re-space it (DIVERGENCES.md#quotes-in-attribute-names-are-an-error).
+                // (`content="{{ f("-") }}"`): a printer would re-space it (DIVERGENCES.md#quotes-in-attribute-names).
                 Some(b'/' | b'"' | b'\'') => {
                     return error(DiagnosticKind::UnexpectedCharacterInTag, span(at, at + 1));
                 }
@@ -97,7 +97,7 @@ impl<'a> Builder<'a> {
         };
 
         // The outermost open element this start tag closes, through omittable ones with `whatwg`
-        // (`<li><p>a<li>`, `<tbody><tr><td>a<tbody>`; DIVERGENCES.md#implicit-end-tags-follow-whatwgs-optional-tags).
+        // (`<li><p>a<li>`, `<tbody><tr><td>a<tbody>`; DIVERGENCES.md#implicit-end-tags).
         let mut closed = None;
         for (index, open) in self.stack.iter().enumerate().rev() {
             if open.tag.closed_by.contains(&key) {
@@ -181,7 +181,7 @@ impl<'a> Builder<'a> {
 
     fn attribute(&self, start: usize) -> PResult<Attribute<'a>> {
         // The first character is always part of the name, `=` included, and `<` anywhere (as in browsers,
-        // DIVERGENCES.md#-and--are-name-characters); a quote ends it, to be reported.
+        // DIVERGENCES.md#name-characters); a quote ends it, to be reported.
         let name_end = if self.rules.angular && self.bytes[start] == b'[' {
             self.bracketed_name_end(start)
         } else {
@@ -213,7 +213,7 @@ impl<'a> Builder<'a> {
             // `href=/a/b` and `src=a.png/` keep their slashes.
             let mut value_end = self.skip(value_start, |b| !b.is_ascii_whitespace() && b != b'>');
             // Angular's compiler ends it at `/` too, and `<cmp a=b/>` depends on that: the `/` self-closes
-            // (DIVERGENCES.md#unquoted-attribute-values-end-at-whitespace-or--only).
+            // (DIVERGENCES.md#unquoted-attribute-values).
             if self.rules.angular
                 && value_end > value_start + 1
                 && self.bytes[value_end - 1] == b'/'
@@ -242,13 +242,13 @@ impl<'a> Builder<'a> {
     ) -> PResult<()> {
         let content_start = self.pos;
         // As in the HTML tokenizer, the name follows `</` right away
-        // (DIVERGENCES.md#raw-text-closes-only-where-the-name-follows-the-slash),
+        // (DIVERGENCES.md#raw-text-end-tag),
         // and the tag ends as any end tag does.
         let at_name = |at: usize| {
             self.starts_with_ci(at, name) && self.byte(at + name.len()).is_some_and(is_tag_name_end)
         };
         // A script's `</script>` inside `<!-- <script> … -->` is content
-        // (DIVERGENCES.md#a-script-holds-script-end-tags-inside----script):
+        // (DIVERGENCES.md#script-data-escapes):
         // 1 inside `<!--`, 2 past a `<script` there, until its `</script`; `-->` ends both.
         let mut escape = 0;
         let mut from = content_start;

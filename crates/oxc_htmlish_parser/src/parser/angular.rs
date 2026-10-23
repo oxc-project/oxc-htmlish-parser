@@ -48,7 +48,7 @@ impl<'a> Builder<'a> {
 
     /// The `}}` closing an interpolation, outside string literals; after a `//` comment, quotes no longer count.
     /// `None` when a tag starts first, even in a string, or the input ends:
-    /// Angular reads the `{{` as text there; we report it (DIVERGENCES.md#an-unterminated--is-an-error).
+    /// Angular reads the `{{` as text there; we report it (DIVERGENCES.md#unterminated-interpolation).
     pub(super) fn interpolation_end(&self, from: usize, limit: usize) -> Option<usize> {
         let (mut quote, mut comment) = (None, false);
         let mut at = from;
@@ -66,7 +66,7 @@ impl<'a> Builder<'a> {
     }
 
     /// `[class.[&>svg]:w-4]`: a name opened with `[` runs while its brackets are open, up to a line break
-    /// (Angular's lexer, for Tailwind's arbitrary variants; DIVERGENCES.md#bracketed-attribute-names-end-at-).
+    /// (Angular's lexer, for Tailwind's arbitrary variants; DIVERGENCES.md#bracketed-attribute-names).
     pub(super) fn bracketed_name_end(&self, start: usize) -> usize {
         let mut open = 0;
         self.skip(start, |b| {

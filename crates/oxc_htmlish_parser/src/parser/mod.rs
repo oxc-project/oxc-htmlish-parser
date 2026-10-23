@@ -338,7 +338,7 @@ impl<'a> Builder<'a> {
                 return table;
             }
             // `angular-html-parser` reads raw text by name in every namespace, and nothing else of the table.
-            // SVG `<title>` is the exception it declares but its tokenizer misses (DIVERGENCES.md#svg-title-holds-markup).
+            // SVG `<title>` is the exception it declares but its tokenizer misses (DIVERGENCES.md#svg-title).
             let content = if lowercase == "title" { Content::Normal } else { table.content };
             return Tag { content, ..Tag::default() };
         }

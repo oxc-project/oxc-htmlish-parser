@@ -5,7 +5,8 @@ The parse-behavior oracles:
 - html and angular: `angular-html-parser` 10.13, with the options Prettier passes for each
 - vue: `@vue/compiler-core` (Prettier reads Vue through `angular-html-parser` too; where they differ, Vue wins)
 
-Each entry is a place where we deliberately do not match, with the input that shows it.
+Each entry is a place where we deliberately do not match: its heading names the concern, `Ours:` says what we do,
+and the rest what the oracles do and why, with the input that shows it.
 Where the oracle errors and we parse, Prettier fails on the file and nothing can depend on it.
 `runner:` names the shape `tasks/differential/run.ts` exempts (some only in mutated inputs and files, where whole-tag tokens do not limit them);
 entries without one are never generated there, fixtures pin them.
@@ -14,41 +15,41 @@ Where the oracles agree against the HTML tokenizer and we keep their reading, th
 
 ## All dialects
 
-### `<` and `=` are name characters
+### Name characters
 
-In tag names, attribute names and Vue directive arguments, as in the HTML tokenizer (quotes too, in tag names):
+Ours: `<` and `=` are part of tag names, attribute names and Vue directive arguments, as in the HTML tokenizer (quotes too, in tag names):
 `<p=e>` is an element named `p=e`, `<a<C />` one named `a<C`, and `<div <span>` a `div` with an attribute named `<span`.
 `angular-html-parser` reports these (or splits off an attribute without a name), and Vue reports a `<` in a plain attribute name;
 no valid template uses them, and reading them as browsers do keeps every dialect on one rule.
 `runner: punctuation in a name`
 
-### Quotes in attribute names are an error
+### Quotes in attribute names
 
+Ours: an error, as in `angular-html-parser` and Vue (in a plain attribute name).
 The HTML tokenizer reads `<a b"c>` as an attribute named `b"c`.
 Such a name is almost always a template's expression nesting the quotes of a value (`content="{{ f("-") }}"`, in Nunjucks or Askama files):
 read as browsers do, the printer would re-space what follows the cut value, changing the expression.
-We report it, as `angular-html-parser` and Vue (in a plain attribute name) do.
-Angular's bracketed names may hold quotes (DIVERGENCES.md#bracketed-attribute-names-end-at-).
+Angular's bracketed names may hold quotes (DIVERGENCES.md#bracketed-attribute-names).
 `runner: punctuation in a name`
 
-### `</` without a name right after it is a bogus comment
+### End tag without a name
 
-As in the HTML tokenizer and Vue (`</ div>`, `</3>`); htm's `<//>` aside, in HTML.
+Ours: `</` without a name right after it opens a bogus comment, as in the HTML tokenizer and Vue (`</ div>`, `</3>`); htm's `<//>` aside, in HTML.
 `angular-html-parser` reads `</ div >` as an end tag, as Angular's compiler does.
 No template relies on it (an end tag is written `</div>`), so Angular keeps the shared reading too.
 Vue's comment content skips the whitespace after `</`; ours is the raw data.
 `runner: </ whitespace`
 
-### A comment closes at `--!>` too
+### Incorrectly closed comment
 
-As in the HTML tokenizer (and Astro): `<!-- a --!> b -->` is the comment ` a `, then the text ` b -->`.
+Ours: a comment closes at `--!>` too, as in the HTML tokenizer (and Astro): `<!-- a --!> b -->` is the comment ` a `, then the text ` b -->`.
 `angular-html-parser` and Vue (and Svelte) read on to the next `-->`.
 `--!>` is a parse error no template uses, so every dialect follows the tokenizer, as with `<!-->`.
 `runner: --!>`
 
-### A script holds script end tags inside `<!-- <script>`
+### Script data escapes
 
-In the HTML tokenizer (and Astro), a `<script` after `<!--` in a script hides the next `</script>` (until `-->`):
+Ours: a `<script` after `<!--` in a script hides the next `</script>` (until `-->`), as in the HTML tokenizer (and Astro):
 
 ```html
 <script><!-- document.write("<script src=a.js></script>"); --></script>
@@ -61,10 +62,10 @@ Vue SFC blocks are the exception: Vue's SFC parser reads them, not a browser, an
 
 ## HTML and Angular
 
-### Unquoted attribute values end at whitespace or `>` only
+### Unquoted attribute values
 
+Ours: they end at whitespace or `>`, as in browsers and Vue; in Angular, a `/` right before `>` self-closes the element.
 `angular-html-parser` also ends them at `/ ' " = <`.
-Browsers and Vue do not.
 
 ```html
 <a href=/foo/bar>x</a>
@@ -74,37 +75,38 @@ Browsers and Vue do not.
 ```
 `runner: unquoted value with a quote or =`
 
-In Angular, a `/` that ends a value right before `>` self-closes the element, as in Angular's compiler:
-it ends every unquoted value at `/`, so the only valid template with one is `<cmp a=b/>`, which depends on it
+Angular's compiler ends every unquoted value at `/`, so the only valid template with one is `<cmp a=b/>`, which depends on it
 (the Angular team keeps that reading, angular/angular#68804).
 Every other `/` is an error in Angular and keeps the shared reading.
 
-### End tags match case-insensitively
+### End tag case
 
+Ours: end tags match case-insensitively.
 `<DIV></div>` is an error in `angular-html-parser` (it compares names as written).
 
-### Entities are not validated
+### Character references
 
+Ours: not validated; text and values are never decoded here, so they are plain text.
 `&unknown;` and malformed numeric references are errors in `angular-html-parser`.
-Text and values are never decoded here, so they are plain text.
 
-### Whitespace is HTML ASCII whitespace
+### Whitespace in tags
 
+Ours: tab, LF, FF, CR and space, as the HTML tokenizer has it.
 `angular-html-parser` also treats NBSP and the controls U+000E–U+001F as whitespace inside tags.
-We use tab, LF, FF, CR and space, as the HTML tokenizer does.
 
-### `foreignObject` children are HTML
+### `foreignObject` children
 
+Ours: HTML, as in browsers and Angular's compiler.
 `angular-html-parser` declares `preventNamespaceInheritance` on `foreignObject`,
 but the case-insensitive lookup (`foreignobject`) misses the entry, so its children stay SVG.
 Angular's compiler looks the exact name up first and reads them as HTML; the fork's case-insensitive lookup is the accident.
 
-### SVG `<title>` holds markup
+### SVG `title`
 
+Ours: it holds markup, the declared intent, as browsers read it.
 `angular-html-parser`'s tag table declares SVG `title` as parsable data (only the HTML `title` is escapable raw text),
 but its tokenizer never applies it (Angular's own compiler does, for an explicit `svg:` prefix only, angular/angular#40259),
 so `<svg><title>` is raw text there.
-We follow the declared intent, as browsers do.
 `runner: svg title`
 
 ```html
@@ -112,8 +114,9 @@ We follow the declared intent, as browsers do.
 <!-- angular-html-parser: title holds the text "<b>t</b>"; ours: title holds a b element -->
 ```
 
-### A void element closes before anything that follows it
+### Void element end
 
+Ours: a void element closes before anything that follows it.
 `angular-html-parser` keeps a void element on its stack until the next token.
 A doctype right after it becomes its child,
 and a start tag right after it cannot implicitly close the void element's parent.
@@ -124,26 +127,27 @@ and a start tag right after it cannot implicitly close the void element's parent
 <!-- angular-html-parser: td inside th; ours: th, td siblings -->
 ```
 
-### A `prefix:` is part of the element name
+### Namespace prefixes
 
+Ours: a `prefix:` is part of the element name: `<html:style>` and `<svg:rect>` are unknown HTML elements, with markup inside, as in browsers.
 `angular-html-parser` reads `<html:style>` as `style` in the HTML namespace and `<svg:rect>` as an SVG `rect`.
-The HTML tokenizer has no namespace prefixes: both are unknown HTML elements, with markup inside, as in browsers.
+The HTML tokenizer has no namespace prefixes.
 
 ```html
 <p><html:style><b>x</b></html:style></p>
 <!-- angular-html-parser: a style element holding the text "<b>x</b>"; ours: html:style holding a b element -->
 ```
 
-### An attribute name may start with `=`
+### Equals sign before an attribute name
 
-`<a =b>` is an attribute named `=b`, as in browsers;
+Ours: `<a =b>` is an attribute named `=b`, as in browsers.
 `angular-html-parser` reads an empty name with the value `b`.
 `runner: = starts an attribute name`
 
-### Raw text closes only where the name follows the slash
+### Raw text end tag
 
+Ours: raw text closes only at `</` followed right away by its name, as in the HTML tokenizer and Vue, so `</ script>` inside a script is content.
 `angular-html-parser` allows whitespace between `</` and the name of the end tag that closes raw text (`</ script>`), as it does in any end tag.
-The HTML tokenizer and Vue close raw text only at `</` followed right away by the name, so `</ script>` inside a script is content.
 
 ```html
 <script>const s = "</ script>";</script>
@@ -153,9 +157,10 @@ The HTML tokenizer and Vue close raw text only at `</` followed right away by th
 The end tag then runs to its first `>`, as any end tag does (`</script foo>` closes the script).
 `runner: raw text end after whitespace`
 
-### A comment may close right after its opening
+### Abruptly closed empty comment
 
-`<!-->` and `<!--->` are empty comments in the HTML tokenizer and Vue; `angular-html-parser` reads on to the next `-->`.
+Ours: `<!-->` and `<!--->` are empty comments, as in the HTML tokenizer and Vue.
+`angular-html-parser` reads on to the next `-->`.
 
 ```html
 <!-->a-->
@@ -163,18 +168,18 @@ The end tag then runs to its first `>`, as any end tag does (`</script foo>` clo
 ```
 `runner: empty comment`
 
-### An end tag runs to its first `>`
+### End tag with attributes
 
-As in the HTML tokenizer (and Vue), what follows the name up to the `>` is ignored: `</div foo>` closes the `div`.
+Ours: an end tag runs to its first `>`, as in the HTML tokenizer (and Vue): what follows the name is ignored, and `</div foo>` closes the `div`.
 `angular-html-parser` reports it.
 
 ## HTML
 
-### `/>` on non-void HTML elements is ignored
+### Self-closing non-void elements
 
-Prettier passes `canSelfClose: true`, so every element self-closes.
-Browsers ignore the `/` except on void and foreign (SVG / MathML) elements, and so do we.
+Ours: `/>` on a non-void HTML element is ignored, as in browsers (they keep it on void and foreign, SVG / MathML, elements).
 The written `/>` is kept as `Element::self_closing`.
+Prettier passes `canSelfClose: true`, so every element self-closes.
 
 ```html
 <div />after</div>
@@ -183,27 +188,27 @@ The written `/>` is kept as `Element::self_closing`.
 ```
 `runner: /> on non-void`
 
-### An element whose `/>` was ignored closes on an ancestor's end tag
+### Elements left open by an ignored self-close
 
+Ours: an ancestor's end tag closes them, as in browsers.
 `angular-html-parser` lets an ancestor's end tag close only the `closedByParent` set (`p`, `li`, `td`, ...).
-Since the previous entry leaves `<my-el />` open, that set alone would make the common shape below an error;
-browsers close it there.
+Since the previous entry leaves `<my-el />` open, that set alone would make the common shape below an error.
 
 ```html
 <div><my-el /></div>
 <!-- ours: my-el closes at </div>, without an end tag -->
 ```
 
-### Bracketed attribute names end at `>`
+### Bracketed attribute names
 
-`angular-html-parser` reads an attribute name opened with `[` while its brackets are open, `>` included (`[class.[&>svg]:w-4]`),
-which Angular templates rely on for Tailwind's arbitrary variants; we read it so in Angular only.
-In HTML the `>` ends the tag, as in browsers.
+Ours: in Angular only, a name opened with `[` runs while its brackets are open, `>` included, as in `angular-html-parser`;
+in HTML the `>` ends the tag, as in browsers.
+Angular templates rely on it for Tailwind's arbitrary variants (`[class.[&>svg]:w-4]`).
 `runner: bracketed attribute name`
 
-### Implicit end tags follow WHATWG's optional tags
+### Implicit end tags
 
-Browsers build an HTML page from its source, so an end tag goes where WHATWG lets it be omitted.
+Ours: WHATWG's optional end tags, since browsers build an HTML page from its source.
 `angular-html-parser`'s table misses some; it is Angular's compiler's, which builds Angular's DOM, so Angular keeps it.
 
 - `tr` also closes at `tbody` and `tfoot` (we insert no `tbody`), `option` and `optgroup` at `hr`;
@@ -230,11 +235,12 @@ read the second element inside the first, though both are valid HTML.
 
 ## Angular
 
-### A block without a body ends at its parameters
+### Blocks without a body
 
+Ours: a block without a body ends at its parameters, as every other span ends at the construct's last delimiter (`>`, `{`, `;`, `)`);
+the whitespace after it is a text.
 `angular-html-parser` reads the whitespace after the parameters into a block's start (it may precede the `{`),
-so a fallthrough `@case` without a body takes the whitespace up to the next `@case` into its span.
-Every other span ends at the construct's last delimiter (`>`, `{`, `;`, `)`), and the whitespace after it is a text.
+so a fallthrough `@case` takes the whitespace up to the next `@case` into its span.
 
 ```html
 @switch (a) { @case (1) @case (2) {x} }
@@ -242,66 +248,69 @@ Every other span ends at the construct's last delimiter (`>`, `{`, `;`, `)`), an
 ```
 `runner: fallthrough case`
 
-### An unterminated `{{` is an error
+### Unterminated interpolation
 
+Ours: an error, as in Vue; a tag ends the search even inside a string, as in Angular.
 Angular reads a `{{` without its `}}` before the next tag or the end of the input as text
 (its lexer: "This is actually wrong but here for backward compatibility").
-No template relies on it (Angular escapes a literal `{{` as `{{ '{{' }}`), so it is an error, as in Vue;
-a tag ends the search even inside a string, as in Angular.
+No template relies on it (Angular escapes a literal `{{` as `{{ '{{' }}`).
 `runner: unterminated interpolation`
 
 ## Vue
 
-### `{{ }}` closes at the first `}}`, tags included
+### Interpolation end
 
+Ours: `{{ }}` closes at the first `}}`, tags included, as Vue's tokenizer only looks for `}}` (`{{ '}}' }}` closes inside the string, as in Vue).
 `angular-html-parser` tracks quotes inside interpolation and ends it at a tag start,
 so `{{ a<b }}` is an error in Prettier.
-Vue's tokenizer only looks for `}}`; so do we (`{{ '}}' }}` closes inside the string, as in Vue).
 
-### No implicit closing, case-insensitive end tags
+### Implicit closing and end tag case
 
-Vue has no implicit end tags (`<p><div></div></p>` nests), and matches `</transition>` to `<Transition>`.
+Ours: no implicit end tags (`<p><div></div></p>` nests), and end tags match case-insensitively (`</transition>` closes `<Transition>`), as in Vue.
 Prettier's Vue options keep the HTML implicit-close table and match case-sensitively.
 
 ### `v-pre`
 
-Inside `v-pre`, `{{ }}` is text and directive names are plain attributes,
-including the `v-pre` element's own directives, written before `v-pre` or after.
+Ours: inside `v-pre`, `{{ }}` is text and directive names are plain attributes,
+including the `v-pre` element's own directives, written before `v-pre` or after, as in Vue.
 Prettier formats both.
 
-### A root `<html>` or `<!doctype html>` makes the file HTML
+### HTML pages
 
-As Prettier reads a Vue file: it is an HTML page, not an SFC, and parses with HTML rules (`{{ }}` and directives stay Vue).
+Ours: a root `<html>` or `<!doctype html>` makes the file an HTML page, not an SFC, as Prettier reads a Vue file:
+it parses with HTML rules (`{{ }}` and directives stay Vue).
 Vue reads such a root element as a custom block holding raw text.
 `runner: html page`
 
-### A directive name without its argument is a plain attribute
+### Directive names without an argument
 
-`v-slot:`, `v-bind:` and a lone `:` / `@` / `#` are attributes, not directives with an empty argument as in Vue:
-a broken name keeps its source as written, with no part to format.
+Ours: `v-slot:`, `v-bind:` and a lone `:` / `@` / `#` are plain attributes: a broken name keeps its source as written, with no part to format.
+Vue reads them as directives with an empty argument.
 `runner: directive without argument`
 
-### Bogus comments are kept
+### Bogus comments
 
-What `<!` or `<?` opens without a comment or CDATA is a bogus comment up to its `>`, as in the HTML tokenizer (`<!x>`, `<?x?>`, `<!- c -->`);
-we keep it as a comment, as all content.
+Ours: kept as comments, as all content: what `<!` or `<?` opens without a comment or CDATA is a bogus comment up to its `>`,
+as in the HTML tokenizer (`<!x>`, `<?x?>`, `<!- c -->`).
 Vue drops it, reads some as text (`<!- c -->`, `<! />`), and reads `<!>` on to a later `>`.
 `run.ts` drops the ones Vue drops from our signature.
 `runner: bogus comment`
 
-### A `/` that no `>` follows in a start tag is an error
+### Slash in a start tag
 
-`<a / b>` and `<C a="b"/ c>` are reported, as in `angular-html-parser`; Vue and browsers ignore the `/`.
+Ours: a `/` that no `>` follows is an error (`<a / b>`, `<C a="b"/ c>`), as in `angular-html-parser`.
+Vue and browsers ignore the `/`.
 `runner: / in start tag`
 
-### `</br>` is an error
+### `br` end tag
 
-As in `angular-html-parser`; Vue reads it as `<br>`, as HTML tree construction does, which we do not do.
+Ours: `</br>` is an error, as in `angular-html-parser`.
+Vue reads it as `<br>`, as HTML tree construction does, which we do not do.
 `runner: </br>`
 
-### `{{ }}` in RCDATA stays inside it
+### Interpolation in RCDATA
 
-In `<title>` and `<textarea>`, `<{{ t }}` holds the text `<` and an interpolation, as anywhere else in them,
+Ours: in `<title>` and `<textarea>`, `<{{ t }}` holds the text `<` and an interpolation, as anywhere else in them,
 and an interpolation without its `}}` before the end tag is an error.
 Vue's tokenizer misses an interpolation right after a `<` there, and reads an unterminated one on past the end tag.
 `runner: {{ }} in RCDATA`
@@ -311,20 +320,22 @@ Vue's tokenizer misses an interpolation right after a `<` there, and reads an un
 Not divergences: recorded so that they are not reopened.
 Svelte's and Astro's readings are noted for the dialects to come.
 
-### `xmp`, `iframe`, `noembed`, `noframes`, `noscript` and `plaintext` hold markup
+### Raw text elements that hold markup
 
+Ours: `xmp`, `iframe`, `noembed`, `noframes`, `noscript` and `plaintext` hold markup, as the oracles read them.
 Browsers read their content as raw text (`noscript` only with scripting on).
 None of them holds markup in valid HTML (obsolete, or nothing allowed) but `noscript`, whose markup is what a printer formats.
 Svelte reads markup too; Astro, raw text.
 
-### CDATA is read in HTML content too
+### CDATA in HTML content
 
-Browsers read `<![CDATA[a>b]]>` outside SVG and MathML as a bogus comment up to the first `>`, then text.
-We keep the section whole, as `angular-html-parser` (and Angular's compiler) does:
+Ours: the section is kept whole, as `angular-html-parser` (and Angular's compiler) does.
+Browsers read `<![CDATA[a>b]]>` outside SVG and MathML as a bogus comment up to the first `>`, then text:
 the cut would leave the rest as text a printer re-spaces.
 Vue and Svelte report it.
 
-### Duplicate attributes are kept
+### Duplicate attributes
 
+Ours: kept, as in `angular-html-parser` and Astro.
 Browsers drop all but the first, which would drop source.
-`angular-html-parser` and Astro keep them; Vue and Svelte report them.
+Vue and Svelte report them.
