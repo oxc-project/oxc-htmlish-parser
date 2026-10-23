@@ -73,6 +73,11 @@ Browsers and Vue do not.
 ```
 `runner: unquoted value with a quote or =`
 
+In Angular, a `/` that ends a value right before `>` self-closes the element, as in Angular's compiler:
+it ends every unquoted value at `/`, so the only valid template with one is `<cmp a=b/>`, which depends on it
+(the Angular team keeps that reading, angular/angular#68804).
+Every other `/` is an error in Angular and keeps the shared reading.
+
 ### End tags match case-insensitively
 
 `<DIV></div>` is an error in `angular-html-parser` (it compares names as written).

@@ -211,7 +211,16 @@ impl<'a> Builder<'a> {
         } else {
             // Browsers (and Vue) end an unquoted value at whitespace or `>` only:
             // `href=/a/b` and `src=a.png/` keep their slashes.
-            let value_end = self.skip(value_start, |b| !b.is_ascii_whitespace() && b != b'>');
+            let mut value_end = self.skip(value_start, |b| !b.is_ascii_whitespace() && b != b'>');
+            // Angular's compiler ends it at `/` too, and `<cmp a=b/>` depends on that: the `/` self-closes
+            // (DIVERGENCES.md#unquoted-attribute-values-end-at-whitespace-or--only).
+            if self.rules.angular
+                && value_end > value_start + 1
+                && self.bytes[value_end - 1] == b'/'
+                && self.byte(value_end) == Some(b'>')
+            {
+                value_end -= 1;
+            }
             (AttributeValue { span: span(value_start, value_end), quote: Quote::None }, value_end)
         };
         Ok(Attribute {

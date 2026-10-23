@@ -1,0 +1,18 @@
+---
+source: crates/oxc_htmlish_parser/tests/ast.rs
+---
+Root sfc=false
+  Element [1..4] "cmp" Html self_closing no_end_tag span_end=10
+    @[5..6] "a" = [7..8] "b"
+  Text [10..12] "x\n" (-|nl) content=[10..11] "x"
+  Element [13..18] "input" Html void self_closing no_end_tag span_end=30
+    @[19..23] "type" = [24..28] "text"
+  Text [30..31] "\n" (nl|nl)
+  Element [32..33] "a" Html end_tag=[49..53] "</a>"
+    @[34..38] "href" = [39..47] "/foo/bar"
+    Text [48..49] "y" (-|-) content=[48..49] "y"
+  Text [53..54] "\n" (nl|nl)
+  Element [55..56] "i" Html end_tag=[62..66] "</i>"
+    @[57..58] "c" = [59..60] "/"
+    Text [61..62] "z" (-|-) content=[61..62] "z"
+  Text [66..67] "\n" (nl|nl)
