@@ -97,11 +97,13 @@ We use tab, LF, FF, CR and space, as the HTML tokenizer does.
 
 `angular-html-parser` declares `preventNamespaceInheritance` on `foreignObject`,
 but the case-insensitive lookup (`foreignobject`) misses the entry, so its children stay SVG.
+Angular's compiler looks the exact name up first and reads them as HTML; the fork's case-insensitive lookup is the accident.
 
 ### SVG `<title>` holds markup
 
 `angular-html-parser`'s tag table declares SVG `title` as parsable data (only the HTML `title` is escapable raw text),
-but its tokenizer only sees an explicit `svg:` prefix, so `<svg><title>` is raw text there.
+but its tokenizer never applies it (Angular's own compiler does, for an explicit `svg:` prefix only, angular/angular#40259),
+so `<svg><title>` is raw text there.
 We follow the declared intent, as browsers do.
 `runner: svg title`
 
@@ -242,7 +244,8 @@ Every other span ends at the construct's last delimiter (`>`, `{`, `;`, `)`), an
 
 ### An unterminated `{{` is an error
 
-Angular reads a `{{` without its `}}` before the next tag or the end of the input as text (kept for backward compatibility).
+Angular reads a `{{` without its `}}` before the next tag or the end of the input as text
+(its lexer: "This is actually wrong but here for backward compatibility").
 No template relies on it (Angular escapes a literal `{{` as `{{ '{{' }}`), so it is an error, as in Vue;
 a tag ends the search even inside a string, as in Angular.
 `runner: unterminated interpolation`

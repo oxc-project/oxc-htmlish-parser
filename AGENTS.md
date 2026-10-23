@@ -14,7 +14,7 @@ Parse behavior targets each dialect's own parser (the oracle), not the spec.
 | angular | `angular-html-parser` with Prettier's angular options; ICU expressions and `@let` are still text |
 | vue | `@vue/compiler-core` |
 
-Where Prettier errors on valid input the dialect accepts (`<DIV></div>`, unknown entities, `{{ a<b }}` in Vue), that is a bug to fix here.
+Where Prettier errors on valid input the dialect accepts (`<DIV></div>` in HTML, unknown entities, `{{ a<b }}` in Vue), that is a bug to fix here.
 
 ### One reading for every dialect
 
