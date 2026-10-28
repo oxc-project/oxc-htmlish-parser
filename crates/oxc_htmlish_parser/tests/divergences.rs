@@ -1,5 +1,5 @@
 //! `DIVERGENCES.md` against what it names (AGENTS.md "Deciding a difference"):
-//! every entry above the kept section names its deciding step and a fixture,
+//! every entry names its deciding step, and every one above the kept section a fixture,
 //! every fixture it names exists, its `runner:` names and `tasks/differential/dialects.ts`'s quirks are the same set,
 //! and every `DIVERGENCES.md#slug` the sources cite is an entry.
 
@@ -69,13 +69,11 @@ fn divergences() {
             let lines = || body.lines().take_while(|line| !line.starts_with("## "));
             let fixtures: Vec<&str> = lines().flat_map(|line| items(line, "fixture")).collect();
             runners.extend(lines().flat_map(|line| items(line, "runner")).map(str::to_owned));
-            if !is_kept {
-                if !lines().any(|line| line.starts_with("`decided by: ")) {
-                    problems.push(format!("{title}: no `decided by:`"));
-                }
-                if fixtures.is_empty() {
-                    problems.push(format!("{title}: no `fixture:`"));
-                }
+            if !lines().any(|line| line.starts_with("`decided by: ")) {
+                problems.push(format!("{title}: no `decided by:`"));
+            }
+            if !is_kept && fixtures.is_empty() {
+                problems.push(format!("{title}: no `fixture:`"));
             }
             for fixture in fixtures {
                 if !crate_dir.join("tests/fixtures").join(fixture).is_file() {
@@ -94,8 +92,22 @@ fn divergences() {
         problems.push(format!("quirk {name:?} in dialects.ts has no `runner:` entry"));
     }
 
-    for file in fs::read_dir(crate_dir.join("src/parser")).unwrap() {
-        let path = file.unwrap().path();
+    let mut sources = vec![crate_dir.join("src")];
+    let mut files = vec![];
+    while let Some(dir) = sources.pop() {
+        for entry in fs::read_dir(&dir).unwrap() {
+            let path = entry.unwrap().path();
+            if path.is_dir() {
+                sources.push(path);
+            } else {
+                files.push(path);
+            }
+        }
+    }
+    files.extend(
+        ["dialects.ts", "probe.ts", "run.ts"].map(|f| root.join("tasks/differential").join(f)),
+    );
+    for path in files {
         let source = fs::read_to_string(&path).unwrap();
         for cited in source.split("DIVERGENCES.md#").skip(1) {
             let cited: String =

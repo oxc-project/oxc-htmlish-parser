@@ -2,7 +2,7 @@
 //!
 //! Lookups take lowercase names; the parser's `Builder::tag` applies each dialect's case and namespace policy on top.
 //! Implicit closing follows WHATWG's optional end tags in HTML, where browsers build the page from the source,
-//! and `angular-html-parser` (`html_tags.ts`, Angular's own compiler's) otherwise.
+//! and Angular's compiler's table (`html_tags.ts`, as `angular-html-parser` forks it) in Angular; Vue closes nothing implicitly.
 
 use crate::ast::{Content, Namespace};
 

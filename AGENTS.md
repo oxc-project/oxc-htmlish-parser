@@ -8,17 +8,18 @@ It is the parsing layer for oxc's htmlish formatter (`oxc_formatter_htmlish`).
 
 Parse behavior targets each dialect's oracle (not the spec), judged against its norm.
 
-| Dialect | Oracle | Norm | "Without an error", checked with |
-| --- | --- | --- | --- |
-| html | `angular-html-parser` 10.12.0, with Prettier's options | WHATWG | no parse error from parse5 7.3.0 |
-| vue | `@vue/compiler-core` 3.5.44 | the oracle | `compile` of the root `<template>`'s content (`@vue/compiler-dom`) |
-| angular | `@angular/compiler` 22.0.6 | the oracle | `parseTemplate` |
+| Dialect | Oracle (the tree compared) | Norm (what reads the template; "without an error" means it reports none) |
+| --- | --- | --- |
+| html | `angular-html-parser` 10.12.0, with Prettier's options | WHATWG: parse5 7.3.0 reports its tokenizer errors; tree construction errors are judged from the spec |
+| vue | `@vue/compiler-dom` 3.5.44 `parse`, in SFC mode | its `compile` of the root `<template>`'s content |
+| angular | `@angular/compiler` 22.0.6 `HtmlParser` | its `parseTemplate` |
 
-The parse a compiler accepts may still fail to compile (a `<script>` in a Vue template): the compile step is what "without an error" means.
-
+- A parse the oracle accepts may still fail to compile (a `<script>` in a Vue template): the norm's step is what "without an error" means.
+- parse5 7.3.0 predates WHATWG's customizable `<select>`, which keeps the markup in it: for `select`, the spec is the norm.
 - A dialect with a compiler takes it as the oracle: what the compiler reads is what the template does.
   Prettier reads Vue and Angular with `angular-html-parser` too; where that differs from their compilers, the compiler wins.
-  For Vue the differences are wholesale (case-sensitive end tags, HTML's implicit closing, `{{ a<b }}` an error), for Angular the fork's own.
+  For Vue the differences are wholesale (`angular-html-parser` matches end tags case-sensitively, keeps HTML's implicit closing, and reports `{{ a<b }}`),
+  for Angular the fork's own.
 - HTML has no such compiler: browsers recover from any input, and an `.html` file is often a template whose source no browser reads.
   Prettier's parser is the oracle, and WHATWG the norm it is judged against.
 - Versions follow Prettier's pin (3.9.10): the `angular-html-parser` it bundles, the `@angular/compiler` it depends on.
@@ -29,30 +30,41 @@ The parse a compiler accepts may still fail to compile (a `<script>` in a Vue te
 
 An oracle difference is never matched by reflex.
 Check every claim with `just probe <dialect> <source>` (ours, the oracle, the norm's errors, what browsers build, Prettier's output at the pin),
-and back the entry with what it prints.
+and back the entry with what it prints; `just probe all <source>` shows every dialect's reading, for step 4.
 Only a difference a printer could carry into its output is a reading to decide;
 one in how the AST holds a part printed as written (a node kind, a dropped part kept as text) is recorded as `representation`.
 Decide a reading in order; the first step that applies settles it:
 
 1. Would a printer working from the oracle's reading change what the norm reads? Follow the norm.
-   - Tokens (tags, comments, text, attributes) always; the tree as "Trees" says.
+   - What the norm reads is its tokens (tags, comments, text, attributes), always, and its tree, as "Trees" says.
+     Whitespace a printer adds or removes is the formatter's to judge (its whitespace rules), not a reading.
 2. Does the oracle deviate from the norm by accident? Drop it.
    - Intent is backed by a test, a declared table entry, an issue or explicit code: keep.
-   - Accident is a by-product of the machinery (a lookup that misses, a token left on a stack) with an unambiguous reading under the norm.
+   - Accident is a by-product of the machinery (a lookup that misses, a token left on a stack, a branch the norm has and the oracle lacks)
+     with an unambiguous reading under the norm.
 3. Does the norm read the input without an error, where the oracle or we report one? Parse it, as the norm reads it.
    - An error is safe (the input is left as written), but a gap.
      Leaving one needs an entry for its cost: a rare shape, and a branch to read it.
-4. Otherwise (the norm reports an error too, or several readings pass), the reading the dialects share wins: the HTML tokenizer's.
-   - It never overrides 1: a dialect reads a shape its own way where its compiler does (`{{ a<b }}` and `</Transition>` in Vue, `</ div>` in Vue and Angular).
+4. Otherwise (the norm reports an error too, or several readings pass), a reading already followed wins over a new one:
+   for tokens the HTML tokenizer's, for trees "Trees", and where the norm has a rule for a nearby valid shape, that rule
+   (Angular's compiler closes a custom element at `/>`, so `<div/>` closes too).
+   - It never overrides 1: a dialect reads a shape its own way where its compiler does (`{{ a<b }}` in Vue, `</ div>` in Vue and Angular).
+   - Where that reading would let a printer alter what the user wrote (re-space a template's expression, drop a `/` or a `</br>`),
+     the shape stays an error.
+   - A reading made at a start tag holds for every continuation:
+     Vue's compiler nests `<option>a<option>`, since `<option>a<option>b</option></option>` is valid there, so ours nests it too.
 
+In Vue and Angular the oracle is the norm: step 2 never applies, and a difference from the oracle is decided by 1, 3, 4 or `representation`.
 When unsure which step applies, keep the oracle's reading: a drop needs grounds, a keep does not.
 
 Every drop is an entry in `DIVERGENCES.md` naming the deciding step (`decided by:`), its fixtures (`fixture:`)
 and (if the differential generates the shape) its `quirks` exemption in `tasks/differential/dialects.ts` (`runner:`).
-A keep that was weighed goes in its last section, so that it is not reopened.
+`decided by:` is the step that settled the reading, `Trees`, or `representation`; a step 3 parse that keeps as text what the norm drops is `3, representation`.
+A keep that was weighed goes in its last section, with the step that kept it, so that it is not reopened.
 `cargo test` holds the file to this (`tests/divergences.rs`): the lines, the fixtures they name, the runner names against the quirks,
 and every `DIVERGENCES.md#slug` the sources cite.
-A gap left for its cost (step 3) is an entry too, and one not parsed yet is in "The one rule" and the differential's `pending`.
+A gap left for its cost (step 3) is an entry in its dialect's section too (`decided by: 3, cost`, its fixture the input that errors);
+one not parsed yet is in "The one rule" and the differential's `pending`.
 
 ### Bumping the oracles
 
@@ -68,11 +80,12 @@ Prettier's pin moves the oracles: `angular-html-parser` and `@angular/compiler` 
 The tree is the written nesting, closed by the tag table (`src/parser/tags.rs`): void elements, raw text, implicit closing.
 Step 1 holds a printer to a norm's tree only where the input has no parse error.
 
-- Implicit closing follows the norm: WHATWG's optional end tags in HTML, the compiler's table elsewhere.
+- Implicit closing follows the norm: WHATWG's optional end tags in HTML, Angular's table in Angular; Vue's compiler closes nothing implicitly.
   WHATWG's closers that would turn a written end tag into an error (`p` at `figure`: `<p><figure></figure></p>`) are left out, as in the oracle.
 - What a norm inserts without a parse error (`html`, `head`, `body`, `tbody`) is not inserted:
   a printer adds no tags, so the norm inserts them into the output again.
-- What a norm rebuilds on a parse error (foster parenting, the adoption agency, nested `a`) is not rebuilt, as in the oracle:
+- What a norm rebuilds on a parse error (anything its tree builder does on one: foster parenting, the adoption agency, nested `a`,
+  breaking out of foreign content, tags `select` ignores) is not rebuilt, as in the oracle:
   a template's source is no page a browser reads, and the rebuilt tree is none of the template's.
   The written nesting is formatted as is, best effort.
 - Broken structure (an unmatched end tag, an unterminated start tag) is an error, as in the oracles; the parse stops at the first one.
@@ -91,7 +104,7 @@ Step 1 holds a printer to a norm's tree only where the input has no parse error.
 | Command | Covers |
 | --- | --- |
 | `cargo test` | error table (`src/parser/mod.rs`), AST snapshots + span nesting (`tests/ast.rs`), `DIVERGENCES.md` against what it names (`tests/divergences.rs`) |
-| `just probe <html\|vue\|angular> <source>` | one input through every reader: ours, the oracle, the norm, browsers (html), Prettier at the pin |
+| `just probe <html\|vue\|angular\|all> <source>` | one input through every reader: ours (normalized, and raw where it differs), the oracle, the norm, browsers (html), Prettier at the pin |
 | `cargo insta review` | accept snapshot changes after an intentional AST change |
 | `just differential <html\|vue\|angular> [count] [seed]` | structural fuzz against the oracles (`angular-html-parser`, `@vue/compiler-dom`, `@angular/compiler`) |
 | `just differential-files <html\|vue\|angular> <file>...` | the same comparison on real files |

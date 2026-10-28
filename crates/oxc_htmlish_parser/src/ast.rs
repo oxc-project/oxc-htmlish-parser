@@ -103,7 +103,7 @@ pub struct Element<'a> {
     pub key: &'a str,
     pub namespace: Namespace,
     pub attributes: ArenaVec<'a, Attribute<'a>>,
-    /// `<name …>`, including the `/>` when written.
+    /// `<name …>`, including the `/>` when written; in a Vue SFC, a start tag a `</` ends has no `>` (`<C a="b"</C>`).
     pub start_tag: Span,
     /// The start tag ends with `/>`.
     /// In HTML this closes only void and foreign elements; elsewhere the `/` is ignored and the element has children.

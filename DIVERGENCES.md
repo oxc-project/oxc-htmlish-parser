@@ -5,7 +5,7 @@ The oracles and their norms are AGENTS.md's "The one rule":
 
 Each entry is a place where we deliberately do not read as the oracle does: its heading names the concern, `Ours:` says what we do,
 and the rest what the oracle does and why, with the input that shows it.
-`decided by:` names the step of AGENTS.md's "Deciding a difference" that settled it, or `representation`.
+`decided by:` names the step of AGENTS.md's "Deciding a difference" that settled it, `Trees`, or `representation`.
 `fixture:` names the fixtures under `crates/oxc_htmlish_parser/tests/fixtures/` that pin it.
 `runner:` names the shape `tasks/differential/dialects.ts` exempts (some only in mutated inputs and files, where whole-tag tokens do not limit them);
 entries without one are never generated there.
@@ -71,7 +71,7 @@ Ours: they end at whitespace or `>`, as in browsers and Vue; in Angular, a `/` r
 Prettier prints the second as `src="a.png"`, another URL (`oxc_formatter_htmlish`'s DIVERGENCES.md#unquoted-value-with-slash).
 Angular's compiler ends every unquoted value at `/`, so the only valid template with one is `<cmp a=b/>` (or `<cmp a=/>`), which depends on it
 (the Angular team keeps that reading, angular/angular#68804); it ends one at `=` too (`<a b=c=d>`), and Angular reads both so.
-At the other characters, or a `/` elsewhere, Angular reports it, and keeps the shared reading.
+At the other characters, or a `/` elsewhere, Angular reports it; ours keeps the shared reading.
 `decided by: 1 in HTML (3 for the values angular-html-parser reports), 4 in Angular`
 `fixture: html/self-closing.html`, `fixture: angular/unquoted-value-self-closing.html`
 `runner: unquoted value with a quote or =`
@@ -363,7 +363,7 @@ Ours: an end tag of a void element (`</br>`) is text, kept as written: `a</br>b`
 Vue drops the tag and joins the text around it (`ab`).
 Its characters stay in ours, where a printer breaks a line only at whitespace (in `</br >` too), which Vue condenses as before.
 HTML and Angular report it (the last section).
-`decided by: 3`
+`decided by: 3, representation`
 `fixture: vue/compiler-readings.vue`
 `runner: </br>`
 
@@ -379,6 +379,7 @@ Browsers read their content as raw text (`noscript` only with scripting on).
 None of them holds markup in valid HTML (obsolete, or nothing allowed) but `noscript`, whose markup is what a printer formats.
 What browsers read as their text renders nothing, or (`xmp`, `plaintext`) prints as written.
 Svelte reads markup too; Astro, raw text.
+`decided by: 2 (intent: Angular's tag table)`
 `fixture: html/raw-text.html`
 
 ### CDATA in HTML content
@@ -387,6 +388,7 @@ Ours: the section is kept whole, as `angular-html-parser` (and Angular's compile
 Browsers read `<![CDATA[a>b]]>` outside SVG and MathML as a bogus comment up to the first `>`, then text:
 the cut would leave the rest as text a printer re-spaces.
 Vue and Svelte report it.
+`decided by: 2 (intent: explicit CDATA lexing, in Angular's compiler too)`
 `fixture: html/markup.html`
 
 ### Duplicate attributes
@@ -394,6 +396,7 @@ Vue and Svelte report it.
 Ours: kept, as in the oracles (and Astro).
 Browsers drop all but the first, which would drop source; printed as written, the output drops the same ones.
 Vue and Svelte report them.
+`decided by: representation`
 `fixture: html/markup.html`
 
 ### Quotes in attribute names
@@ -403,24 +406,29 @@ The HTML tokenizer reads `<a b"c>` as an attribute named `b"c`, with a parse err
 Such a name is almost always a template's expression nesting the quotes of a value (`content="{{ f("-") }}"`, in Nunjucks or Askama files):
 read as browsers do, the printer would re-space what follows the cut value, changing the expression.
 Angular's bracketed names may hold quotes (DIVERGENCES.md#bracketed-attribute-names).
+`decided by: 4 (the shared reading would let a printer alter a template's expression)`
 `fixture: vue/compiler-readings.vue`
 
 ### Slash in a start tag
 
 Ours: a `/` that no `>` follows is an error (`<a / b>`, `<C a="b"/ c>`), as in the oracles (Vue reports `Illegal '/' in tags.`).
 Browsers ignore the `/`, with a parse error; reading it so would drop it from the output.
+`decided by: 4 (the shared reading would drop the slash)`
 
 ### Raw text in foreign elements
 
-Ours: `script`, `style` and the other raw text elements hold raw text in SVG and MathML too, as the oracles read them.
+Ours: in HTML and Angular, `script`, `style` and the other raw text elements hold raw text in SVG and MathML too, as the oracles read them
+(Vue reads markup there, as we do).
 Browsers read their content as markup there.
 A printer formats it as the language the element names, which browsers read as the same text, or prints it as written.
+`decided by: 2 (intent: Angular's tag table, which names no namespace)`
 `fixture: html/raw-text.html`
 
 ### Void element end tags in HTML and Angular
 
 Ours: `</br>` is an error, as in `angular-html-parser` and Angular's compiler.
 Browsers read it as `<br>`, with a parse error, which is tree construction we do not do (AGENTS.md "Trees").
+`decided by: 4 (reading it as a br element would print a tag that is not written)`
 
 ### Trees rebuilt on a parse error
 
@@ -435,4 +443,5 @@ x<table>t<tr><td>c</td></tr></table>
 A printer working from the written nesting lays `t` out inside the table, as Prettier does;
 the line breaks it adds there render as a space between `x` and `t` once a browser moves `t` out.
 A template's source is no page a browser reads (`<table>{% for r in rows %}<tr>`), so the written nesting is formatted as is, best effort.
+`decided by: Trees`
 `fixture: html/implicit-close.html`

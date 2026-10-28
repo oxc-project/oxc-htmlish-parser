@@ -125,6 +125,8 @@ function angularHtmlParserSig(source: string): Sig {
 }
 
 const angularParser = new HtmlParser();
+/** `@angular/compiler`'s token type for an interpolation in a text. */
+const INTERPOLATION = 8;
 
 /** `@angular/compiler`'s tree, parsed with the options its template compiler passes. */
 function angularCompilerSig(source: string): Sig {
@@ -135,8 +137,8 @@ function angularCompilerSig(source: string): Sig {
   });
   if (errors.length > 0) return `error: ${errors[0].msg}`;
   const slice = (span: any) => source.slice(span.start.offset, span.end.offset);
-  const nodes = (nodes: any[]): unknown[][] => nodes.map(node);
-  function node(n: any): unknown[] {
+  const nodes = (nodes: any[]): unknown[][] => nodes.flatMap((n) => (n.constructor.name === "Text" ? node(n) : [node(n)])) as unknown[][];
+  function node(n: any): any {
     switch (n.constructor.name) {
       case "Element": {
         // As written: Angular's name carries the namespace (`:svg:rect`)
@@ -148,8 +150,11 @@ function angularCompilerSig(source: string): Sig {
         const attrs = n.attrs.map((a: any) => [slice(a.keySpan), a.valueSpan ? slice(a.valueSpan) : null]);
         return elementSig(source, n, name, ended, attrs, nodes(n.children));
       }
+      // Its interpolations are tokens; one without its `}}` is text to us
       case "Text":
-        return ["t", slice(n.sourceSpan)];
+        return n.tokens
+          .map((t: any) => [t.type === INTERPOLATION && t.parts.length === 3 ? "i" : "t", slice(t.sourceSpan)])
+          .filter((t: any) => t[1] !== "");
       // Trimmed, as Angular keeps it
       case "Comment":
         return ["c", n.value ?? ""];
@@ -345,7 +350,12 @@ function angularShape(nodes: any[]): any[] {
   const out = nodes
     .filter((n) => n[0] !== "d" && !(n[0] === "bc" && n[2] === "<!"))
     .map((n) => (n[0] === "x" ? ["t", n[1].slice(9, -3)] : n[0] === "bc" && n[2] === "<?" ? ["t", `<${n[1]}>`] : n));
-  return bogusAsComment(mergeTexts(out, true)).map((n) => (n[0] === "c" ? ["c", n[1].replace(/\r\n?/g, "\n").trim()] : n));
+  return bogusAsComment(mergeTexts(out)).map((n) => {
+    if (n[0] === "c") return ["c", n[1].replace(/\r\n?/g, "\n").trim()];
+    // Its lexer reads `{{ }}` in RCDATA as text; its compiler binds it all the same, as we read it
+    if (n[0] === "el" && ["textarea", "title"].includes(n[1].toLowerCase())) return [...n.slice(0, 4), mergeTexts(n[4], true)];
+    return n;
+  });
 }
 
 export const DIALECTS: Record<string, DialectSpec> = {
