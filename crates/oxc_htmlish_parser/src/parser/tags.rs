@@ -6,6 +6,26 @@
 
 use crate::ast::{Content, Namespace};
 
+/// The void elements' names: one pattern for [`html`]'s match and [`is_void`].
+macro_rules! void_names {
+    () => {
+        "area"
+            | "base"
+            | "br"
+            | "col"
+            | "embed"
+            | "hr"
+            | "img"
+            | "input"
+            | "link"
+            | "meta"
+            | "param"
+            | "source"
+            | "track"
+            | "wbr"
+    };
+}
+
 /// What the table says about one element.
 #[derive(Clone, Copy, Default)]
 pub struct Tag {
@@ -55,7 +75,7 @@ pub fn html(lowercase: &str, whatwg: bool) -> Tag {
     let closes =
         |closed_by_parent, closed_by| Tag { closed_by_parent, closed_by, ..Tag::default() };
     match lowercase {
-        _ if is_void(lowercase) => Tag { void: true, ..Tag::default() },
+        void_names!() => Tag { void: true, ..Tag::default() },
         "script" | "style" => Tag { content: Content::Raw, ..Tag::default() },
         "textarea" => Tag { content: Content::Escapable, ignores_first_lf: true, ..Tag::default() },
         "title" => Tag { content: Content::Escapable, ..Tag::default() },
@@ -90,23 +110,7 @@ pub fn html(lowercase: &str, whatwg: bool) -> Tag {
 
 /// A void element, by its lowercase name.
 pub fn is_void(lowercase: &str) -> bool {
-    matches!(
-        lowercase,
-        "area"
-            | "base"
-            | "br"
-            | "col"
-            | "embed"
-            | "hr"
-            | "img"
-            | "input"
-            | "link"
-            | "meta"
-            | "param"
-            | "source"
-            | "track"
-            | "wbr"
-    )
+    matches!(lowercase, void_names!())
 }
 
 /// The namespace an element named `key` opens in, given the one its parent's children inherit.
