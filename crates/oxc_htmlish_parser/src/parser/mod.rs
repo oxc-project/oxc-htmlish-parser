@@ -295,6 +295,8 @@ impl<'a> Builder<'a> {
     }
 
     // --- Scanning helpers
+    // The hot ones inline, with their dialect-only paths split out and the dialect checks of `at_markup` kept out of line:
+    // grown by those, they stop inlining
 
     fn byte(&self, at: usize) -> Option<u8> {
         self.bytes.get(at).copied()
@@ -316,10 +318,16 @@ impl<'a> Builder<'a> {
         }
     }
 
-    fn skip_ws(&self, mut at: usize) -> usize {
-        if !self.rules.angular {
-            return self.skip(at, |b| b.is_ascii_whitespace());
+    #[inline]
+    fn skip_ws(&self, at: usize) -> usize {
+        if self.rules.angular {
+            self.skip_ws_angular(at)
+        } else {
+            self.skip(at, |b| b.is_ascii_whitespace())
         }
+    }
+
+    fn skip_ws_angular(&self, mut at: usize) -> usize {
         while let n @ 1.. = self.ws_len(at) {
             at += n;
         }
@@ -327,16 +335,23 @@ impl<'a> Builder<'a> {
     }
 
     /// The first offset from `at` that is whitespace or a byte `end` takes.
-    fn until_ws_or(&self, mut at: usize, end: impl Fn(u8) -> bool) -> usize {
-        if !self.rules.angular {
-            return self.skip(at, |b| !b.is_ascii_whitespace() && !end(b));
+    #[inline]
+    fn until_ws_or(&self, at: usize, end: impl Fn(u8) -> bool) -> usize {
+        if self.rules.angular {
+            self.until_ws_or_angular(at, end)
+        } else {
+            self.skip(at, |b| !b.is_ascii_whitespace() && !end(b))
         }
+    }
+
+    fn until_ws_or_angular(&self, mut at: usize, end: impl Fn(u8) -> bool) -> usize {
         while self.byte(at).is_some_and(|b| !end(b)) && self.ws_len(at) == 0 {
             at += 1;
         }
         at
     }
 
+    #[inline]
     fn tag_name_end(&self, at: usize) -> usize {
         self.until_ws_or(at, |b| matches!(b, b'>' | b'/'))
     }
@@ -371,13 +386,15 @@ impl<'a> Builder<'a> {
 
     /// `<` followed by what can start markup (`<?` too); any other `<` is text.
     /// In a Vue SFC, a void element's end tag (`</br>`) is text too: Vue drops it (DIVERGENCES.md#void-element-end-tags).
+    #[inline]
     fn at_markup(&self, at: usize) -> bool {
         (self.at_tag_start(at) || self.bytes[at..].starts_with(b"<?"))
-            && !(self.rules.sfc && self.at_void_end_tag(at))
+            && !(self.rules.sfc && self.byte(at + 1) == Some(b'/') && self.at_void_end_tag(at))
             && !(self.rules.angular && self.at_prefix_without_name(at))
     }
 
     /// Angular: `<svg:` with no local name after the prefix is no tag; its compiler reads the `<` as text.
+    #[inline(never)]
     fn at_prefix_without_name(&self, at: usize) -> bool {
         let colon = self.skip(at + 1, |b| b.is_ascii_alphanumeric());
         colon > at + 1
@@ -385,10 +402,9 @@ impl<'a> Builder<'a> {
             && self.tag_name_end(colon + 1) == colon + 1
     }
 
+    /// The end tag at `at` (`</`) closes a void element.
+    #[inline(never)]
     fn at_void_end_tag(&self, at: usize) -> bool {
-        if self.byte(at + 1) != Some(b'/') {
-            return false;
-        }
         let name_start = self.end_tag_name_start(at);
         tags::is_void(&self.source[name_start..self.tag_name_end(name_start)])
     }
