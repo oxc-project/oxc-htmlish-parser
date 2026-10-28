@@ -31,7 +31,7 @@ pub enum Dialect {
     Vue,
     /// An Angular template.
     /// HTML with `{{ }}`, control flow blocks (`@if (a) { … }`), and `/>` closing any element.
-    /// TODO: ICU expressions and `@let` are not parsed yet (plain text).
+    /// TODO: ICU expressions and start-tag comments are not parsed yet (an error), nor `@let` (plain text).
     Angular,
 }
 

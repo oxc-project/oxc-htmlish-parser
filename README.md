@@ -1,12 +1,9 @@
 # oxc-htmlish-parser
 
-`oxc-htmlish-parser` parses HTML and HTML-based template languages into a span-faithful typed AST, designed for building formatters.
+`oxc-htmlish-parser` parses HTML and HTML-based template languages (Vue, Angular) into a span-faithful typed AST, designed for building formatters.
 
-- Not a spec-compliant HTML parser: there is no WHATWG tree construction, only a tag table (void elements, raw text, implicit closing).
-- Parse behavior targets each dialect's own parser (`angular-html-parser` for HTML and Angular, `@vue/compiler-core` for Vue).
-  Deliberate differences are listed in [DIVERGENCES.md](./DIVERGENCES.md).
-- Values are not cooked: consumers slice the original source through spans.
-- Dialects: HTML, Vue, Angular (control flow blocks; ICU and `@let` are still text).
+How each dialect is read, and why, is in [AGENTS.md](./AGENTS.md).
+Deliberate differences from each dialect's oracle are listed in [DIVERGENCES.md](./DIVERGENCES.md).
 
 ## Example
 
@@ -17,3 +14,15 @@ let allocator = Allocator::default();
 let root = Parser::new(&allocator, "<p>Hello</p>\n", Dialect::Html).parse().unwrap();
 println!("{root:#?}");
 ```
+
+## License
+
+MIT
+
+# [Sponsored By](https://oxc.rs/sponsor)
+
+<p align="center">
+  <a href="https://oxc.rs/sponsor">
+    <img src="https://raw.githubusercontent.com/oxc-project/sponsors/main/sponsors.svg" alt="Our sponsors" />
+  </a>
+</p>

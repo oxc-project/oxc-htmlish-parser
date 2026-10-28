@@ -25,7 +25,7 @@ Parse behavior targets each dialect's oracle (not the spec), judged against its 
   Prettier's parser is the oracle, and WHATWG the norm it is judged against.
 - Versions follow Prettier's pin (3.9.10): the `angular-html-parser` it bundles, the `@angular/compiler` it depends on.
   A fix on an oracle's `main` is followed only as a `DIVERGENCES.md` entry citing it.
-- Not parsed yet, so an error for now: Angular's ICU expressions, `@let` and start-tag comments.
+- Not parsed yet: Angular's ICU expressions and start-tag comments, an error for now, and `@let`, read as text.
 
 ## Deciding a difference
 
@@ -72,7 +72,7 @@ one not parsed yet is in "The one rule" and the differential's `pending`.
 
 Prettier's pin moves the oracles: `angular-html-parser` and `@angular/compiler` follow its `package.json`, the rest the versions that ship with it.
 
-1. Bump `tasks/differential/package.json` and the table above.
+1. Bump `tasks/differential/package.json` (exact versions, excluded from Renovate) and the table above.
 2. Run `just differential` for every dialect, over several seeds, and `just differential-files` on local repos.
 3. A quirk that no longer fires is an entry to re-decide: delete it when the oracle now reads as we do.
    A new mismatch is decided as above, never exempted by reflex.
@@ -115,6 +115,7 @@ Step 1 holds a printer to a norm's tree only where the input has no parse error.
 | `just compare <html\|vue\|angular> <rev> <file>...` | this tree against `<rev>` on real files: what now fails, parses, or reads differently |
 
 First run: `npm i` in `tasks/differential`.
+CI (`.github/workflows`) runs check, test, clippy, doc and typos, and `differential.yml` the fuzz for every dialect over seeds 0 to 2.
 
 - `tests/fixtures/<dialect>/*` parse as that dialect (`html`, `vue`, `angular`); one compact tree per fixture.
 - Add a fixture when a change touches structure or facts.
