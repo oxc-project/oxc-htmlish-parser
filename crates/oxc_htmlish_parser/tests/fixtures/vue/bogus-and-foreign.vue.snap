@@ -2,7 +2,7 @@
 source: crates/oxc_htmlish_parser/tests/ast.rs
 ---
 Root sfc=true
-  Element [1..9] "template" Html end_tag=[61..72] "</template>"
+  Element [1..9] "template" Html end_tag=[93..104] "</template>"
     Text [10..13] "\n  " (nl|nl)
     Element [14..17] "svg" Svg end_tag=[29..35] "</svg>"
       Element [19..21] "br" Svg void no_end_tag span_end=22
@@ -11,5 +11,14 @@ Root sfc=true
     Comment bogus content=[40..52] " 3 not a tag"
     Text [53..56] "\n  " (nl|nl)
     Comment bogus content=[58..59] "3"
-    Text [60..61] "\n" (nl|nl)
-  Text [72..73] "\n" (nl|nl)
+    Text [60..63] "\n  " (nl|nl)
+    Element [64..65] "p" Html end_tag=[88..92] "</p>"
+      Text [66..67] "a" (-|-) content=[66..67] "a"
+      Comment bogus content=[69..70] "x"
+      Text [71..72] "b" (-|-) content=[71..72] "b"
+      Comment bogus content=[73..76] "?y?"
+      Text [77..78] "c" (-|-) content=[77..78] "c"
+      Comment bogus content=[80..86] "- d --"
+      Text [87..88] "e" (-|-) content=[87..88] "e"
+    Text [92..93] "\n" (nl|nl)
+  Text [104..105] "\n" (nl|nl)

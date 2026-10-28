@@ -10,11 +10,12 @@ Parse behavior targets each dialect's oracle (not the spec), judged against its 
 
 | Dialect | Oracle (the tree compared) | Norm (what reads the template; "without an error" means it reports none) |
 | --- | --- | --- |
-| html | `angular-html-parser` 10.12.0, with Prettier's options | WHATWG: parse5 7.3.0 reports its tokenizer errors; tree construction errors are judged from the spec |
+| html | `angular-html-parser` 10.12.0, with Prettier's options | WHATWG: parse5 7.3.0 reports its tokenizer's errors and a few of its tree builder's; the others are judged from the spec |
 | vue | `@vue/compiler-dom` 3.5.44 `parse`, in SFC mode | its `compile` of the root `<template>`'s content |
 | angular | `@angular/compiler` 22.0.6 `HtmlParser` | its `parseTemplate` |
 
 - A parse the oracle accepts may still fail to compile (a `<script>` in a Vue template): the norm's step is what "without an error" means.
+  A warning (`[Vue warn]`) is no error.
 - parse5 7.3.0 predates WHATWG's customizable `<select>`, which keeps the markup in it: for `select`, the spec is the norm.
 - A dialect with a compiler takes it as the oracle: what the compiler reads is what the template does.
   Prettier reads Vue and Angular with `angular-html-parser` too; where that differs from their compilers, the compiler wins.
@@ -28,7 +29,8 @@ Parse behavior targets each dialect's oracle (not the spec), judged against its 
 
 ## Deciding a difference
 
-An oracle difference is never matched by reflex.
+A difference is ours against the oracle, or the oracle against the norm where ours follows the oracle (a keep, once weighed).
+It is never matched by reflex.
 Check every claim with `just probe <dialect> <source>` (ours, the oracle, the norm's errors, what browsers build, Prettier's output at the pin),
 and back the entry with what it prints; `just probe all <source>` shows every dialect's reading, for step 4.
 Only a difference a printer could carry into its output is a reading to decide;
@@ -42,12 +44,12 @@ Decide a reading in order; the first step that applies settles it:
    - Intent is backed by a test, a declared table entry, an issue or explicit code: keep.
    - Accident is a by-product of the machinery (a lookup that misses, a token left on a stack, a branch the norm has and the oracle lacks)
      with an unambiguous reading under the norm.
-3. Does the norm read the input without an error, where the oracle or we report one? Parse it, as the norm reads it.
+3. Does the norm read the input without an error, where the oracle reports one, or ours would by the reading another dialect has? Parse it, as the norm reads it.
    - An error is safe (the input is left as written), but a gap.
      Leaving one needs an entry for its cost: a rare shape, and a branch to read it.
-4. Otherwise (the norm reports an error too, or several readings pass), a reading already followed wins over a new one:
-   for tokens the HTML tokenizer's, for trees "Trees", and where the norm has a rule for a nearby valid shape, that rule
-   (Angular's compiler closes a custom element at `/>`, so `<div/>` closes too).
+4. Otherwise (the norm reports an error too, or several readings pass), a reading already followed wins over a new one, in this order:
+   the norm's rule for a nearby valid shape (Angular's compiler closes a custom element at `/>`, so `<div/>` closes too),
+   then "Trees" for trees, then the HTML tokenizer's for tokens.
    - It never overrides 1: a dialect reads a shape its own way where its compiler does (`{{ a<b }}` in Vue, `</ div>` in Vue and Angular).
    - Where that reading would let a printer alter what the user wrote (re-space a template's expression, drop a `/` or a `</br>`),
      the shape stays an error.
@@ -85,10 +87,12 @@ Step 1 holds a printer to a norm's tree only where the input has no parse error.
 - What a norm inserts without a parse error (`html`, `head`, `body`, `tbody`) is not inserted:
   a printer adds no tags, so the norm inserts them into the output again.
 - What a norm rebuilds on a parse error (anything its tree builder does on one: foster parenting, the adoption agency, nested `a`,
-  breaking out of foreign content, tags `select` ignores) is not rebuilt, as in the oracle:
+  breaking out of foreign content) is not rebuilt, as in the oracle:
   a template's source is no page a browser reads, and the rebuilt tree is none of the template's.
   The written nesting is formatted as is, best effort.
-- Broken structure (an unmatched end tag, an unterminated start tag) is an error, as in the oracles; the parse stops at the first one.
+- Broken structure is an error, as in the oracles; the parse stops at the first one:
+  an unterminated start tag, or an unmatched end tag, which no open element takes or which would close one that cannot close implicitly
+  (the `</b>` of `<b><i>x</b>`, where the adoption agency rebuilds).
   An implicit close never is: where an element closes changes the tree, not the source.
 
 ## Scope

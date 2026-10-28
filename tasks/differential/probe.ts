@@ -29,6 +29,9 @@ function vueSfc(source: string): { ast: any; errors: string[] } {
   return { ast, errors };
 }
 
+/** Vue's compile warnings, which are no errors. */
+const warnings: string[] = [];
+
 /** The norm's errors on the input (AGENTS.md "The one rule": what "without an error" is checked with). */
 function normErrors(dialect: string, source: string): string[] {
   if (dialect === "html") {
@@ -45,7 +48,14 @@ function normErrors(dialect: string, source: string): string[] {
         ? ""
         : source;
     const errors: string[] = [];
-    compileVue(content, { comments: true, onError: (e: any) => errors.push(e.message) });
+    // A warning is no error (AGENTS.md "The one rule"): shown apart
+    const warn = console.warn;
+    console.warn = (message: string) => warnings.push(String(message).split("\n")[0]);
+    try {
+      compileVue(content, { comments: true, onError: (e: any) => errors.push(e.message) });
+    } finally {
+      console.warn = warn;
+    }
     return errors;
   }
   return parseTemplate(source, "template.html", { preserveWhitespaces: true }).errors?.map((e: any) => e.msg) ?? [];
@@ -94,20 +104,24 @@ async function probe(dialect: string, source: string) {
   if (JSON.stringify(mine) !== JSON.stringify(normalized)) show("ours raw", mine);
   show("oracle", same ? "same" : oracle);
   const [oursError, oracleError] = [typeof normalized === "string", typeof oracle === "string"];
-  if (!same && oracleError && !oursError) {
-    show("shape", "lenient: the oracle reports it, we parse");
-  } else if (!same && !oracleError) {
-    const shape = matchShape(spec.pending ?? {}, source) ?? matchShape({ ...spec.quirks, ...spec.mutationQuirks }, source);
-    show("shape", shape ? `${shape} (a run.ts quirk or pending construct; its DIVERGENCES.md entry decides)` : "none documented");
-  }
+  const shape = matchShape(spec.pending ?? {}, source) ?? matchShape({ ...spec.quirks, ...spec.mutationQuirks }, source);
+  if (oursError && oracleError) show("shape", "both report an error");
+  else if (oracleError) show("shape", "lenient: the oracle reports it, we parse");
+  else if (shape) show("shape", `documented: ${shape} (a quirk in dialects.ts, or pending; its DIVERGENCES.md entry decides)`);
+  else if (!same) show("shape", "none documented");
   if (dialect === "vue") {
     const texts = vueTexts(source);
     if (texts.length > 0) show("vue text", texts);
   }
+  warnings.length = 0;
   const errors = normErrors(dialect, source);
-  const label = dialect === "html" ? "tokenizer errors (parse5 reports no tree construction errors: judge those from the spec)" : "errors";
+  const label = dialect === "html" ? "parse5 errors (its tokenizer's and a few of its tree builder's: judge the others from the spec)" : "errors";
   show("norm", errors.length === 0 ? `no ${label}` : `${label}: ${errors.join(" | ")}`);
-  if (dialect === "html") show("browser", browserTree(source));
+  if (warnings.length > 0) show("warnings", `${warnings.join(" | ")} (no errors)`);
+  if (dialect === "html") {
+    show("browser", browserTree(source));
+    if (/<select\b/i.test(source)) show("note", "parse5 7.3.0 predates WHATWG's customizable <select>: for select, the spec is the norm");
+  }
   try {
     show("prettier", "\n" + (await prettier.format(source, { parser: dialect, printWidth: 80 })));
   } catch (e: any) {

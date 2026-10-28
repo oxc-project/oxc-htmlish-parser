@@ -1,7 +1,7 @@
 # Divergences from the oracles
 
 The oracles and their norms are AGENTS.md's "The one rule":
-`angular-html-parser` for html (WHATWG the norm), `@vue/compiler-core` for vue, `@angular/compiler` for angular.
+`angular-html-parser` for html (WHATWG the norm), `@vue/compiler-dom`'s SFC parse for vue, `@angular/compiler` for angular.
 
 Each entry is a place where we deliberately do not read as the oracle does: its heading names the concern, `Ours:` says what we do,
 and the rest what the oracle does and why, with the input that shows it.
@@ -322,9 +322,10 @@ Printed as written, the output reads to Angular as the input did.
 
 ### Self-closing native elements
 
-Ours: `/>` closes any element, as in Vue, and as Prettier reads Angular (`canSelfClose: true`).
-Angular's compiler closes void, custom and foreign elements so, and reports the rest (`<div/>`).
-`decided by: 4`
+Ours: `/>` closes any element.
+Angular's compiler closes void, custom and foreign elements so, and reports the rest (`<div/>`):
+ours takes its rule for custom elements to native ones, as Vue and Prettier (`canSelfClose: true`) read them too.
+`decided by: 4 (the norm's rule for a nearby valid shape)`
 `fixture: angular/compiler-readings.html`
 
 ## Vue
@@ -352,7 +353,7 @@ Ours: kept as comments, as all content: what `<!` or `<?` opens without a commen
 as in the HTML tokenizer (`<!x>`, `<?x?>`, `<!- c -->`).
 Vue drops it, reads some as text (`<!- c -->`, `<! />`), and reads `<!>` on to a later `>`.
 Printed as written, the output reads to Vue as the input did.
-`run.ts` drops the ones Vue drops from our signature.
+`dialects.ts` reads the ones Vue drops as their source text in our signature.
 `decided by: representation`
 `fixture: vue/bogus-and-foreign.vue`, `fixture: vue/template.vue`
 `runner: bogus comment`
@@ -432,7 +433,8 @@ Browsers read it as `<br>`, with a parse error, which is tree construction we do
 
 ### Trees rebuilt on a parse error
 
-Ours: the written nesting, as in the oracles (AGENTS.md "Trees").
+Ours: the written nesting, as in the oracles (AGENTS.md "Trees");
+an end tag that would close an element that cannot close implicitly is an error (the adoption agency's `<b><i>x</b>y</i>`).
 Browsers rebuild it on a parse error: foster parenting, the adoption agency, nested `a`.
 
 ```html

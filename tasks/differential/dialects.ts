@@ -258,6 +258,21 @@ function vueNormalize(nodes: any[], keepEdges = false, svg = false, vPre = false
   return out;
 }
 
+/**
+ * Our bogus comments as Vue drops them (but `</ x>`, which it keeps):
+ * a text after one joins the text before it, so that text's source (what Vue's signature holds) spans the comment.
+ */
+function vueDropsBogus(nodes: any[]): any[] {
+  const dropped = (n: any) => n?.[0] === "bc" && n[2] !== "</";
+  const out: any[] = [];
+  nodes.forEach((n, i) => {
+    if (!dropped(n)) return out.push(n);
+    const next = nodes.slice(i + 1).find((m) => !dropped(m));
+    if (out.at(-1)?.[0] === "t" && next?.[0] === "t") out.at(-1)[1] += `<${n[2] === "<!" ? "!" : ""}${n[1]}>`;
+  });
+  return out;
+}
+
 /** Rewrites every node list of a signature, children first. */
 function mapNodes(nodes: any[], f: (nodes: any[]) => any[]): any[] {
   for (const n of nodes) {
@@ -418,8 +433,7 @@ export const DIALECTS: Record<string, DialectSpec> = {
     wrap: (body) => `<template>${body}</template>\n`,
     oracle: vueOracle,
     // Vue drops the bogus comments a `<!` or `<?` opens; we keep them, as all content.
-    normalize: (sig) =>
-      vueNormalize(mapNodes(sig, (nodes) => mergeTexts(bogusAsComment(nodes.filter((n) => n[0] !== "bc" || n[2] === "</"))))),
+    normalize: (sig) => vueNormalize(mapNodes(sig, (nodes) => mergeTexts(bogusAsComment(vueDropsBogus(nodes))))),
     quirks: {
       // Vue skips whitespace after `</` in a bogus comment's content.
       "</ whitespace": /<\/[ \t\n\f\r]/,
