@@ -2,7 +2,7 @@
 source: crates/oxc_htmlish_parser/tests/ast.rs
 ---
 Root sfc=true
-  Element [1..9] "template" Html end_tag=[403..414] "</template>"
+  Element [1..9] "template" Html end_tag=[440..451] "</template>"
     Text [10..13] "\n  " (nl|nl)
     Element [14..15] "C" Html self_closing no_end_tag span_end=73
       @[16..20] "v-if" =" [22..23] "a" vue name="if"
@@ -45,7 +45,12 @@ Root sfc=true
         @[352..354] ":b" =" [356..357] "2"
         Text [359..368] "{{ raw }}" (-|-) content=[359..368] "{{ raw }}"
     Text [381..384] "\n  " (nl|nl)
-    Element [385..386] "p" Html end_tag=[398..402] "</p>"
-      Interpolation expression=[389..396] " after "
-    Text [402..403] "\n" (nl|nl)
-  Text [414..415] "\n" (nl|nl)
+    Element [385..388] "div" Html end_tag=[412..418] "</div>"
+      @[389..394] "v-pre"
+      Element [396..397] "C" Html self_closing no_end_tag span_end=412
+        @[398..405] "v-bind:" =" [407..408] "p"
+    Text [418..421] "\n  " (nl|nl)
+    Element [422..423] "p" Html end_tag=[435..439] "</p>"
+      Interpolation expression=[426..433] " after "
+    Text [439..440] "\n" (nl|nl)
+  Text [451..452] "\n" (nl|nl)

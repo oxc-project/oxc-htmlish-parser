@@ -30,3 +30,9 @@ Root sfc=false
   Element [237..243] "script" Html raw end_tag=[256..265] "</script>"
     Text [244..256] "<!--<script>" (-|-) content=[244..256] "<!--<script>"
   Text [265..266] "\n" (nl|nl)
+  Element [267..270] "div" Html self_closing no_end_tag span_end=272
+  Text [272..274] "x\n" (-|nl) content=[272..273] "x"
+  Comment bogus content=[275..294] "?xml version=\"1.0\"?"
+  Comment bogus content=[297..298] "x"
+  Cdata [299..312] "<![CDATA[c]]>"
+  Text [312..313] "\n" (nl|nl)

@@ -23,3 +23,11 @@ Root sfc=false
       Element [96..102] "option" Html no_end_tag span_end=104
         Text [103..104] "b" (-|-) content=[103..104] "b"
   Text [113..114] "\n" (nl|nl)
+  Element [115..120] "table" Html end_tag=[145..153] "</table>"
+    Element [122..124] "tr" Html no_end_tag span_end=145
+      Element [126..128] "th" Html no_end_tag span_end=140
+        Element [130..133] "img" Html void no_end_tag span_end=140
+          @[134..137] "src" = [138..139] "x"
+      Element [141..143] "td" Html no_end_tag span_end=145
+        Text [144..145] "y" (-|-) content=[144..145] "y"
+  Text [153..154] "\n" (nl|nl)

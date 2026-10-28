@@ -6,8 +6,10 @@ The oracles and their norms are AGENTS.md's "The one rule":
 Each entry is a place where we deliberately do not read as the oracle does: its heading names the concern, `Ours:` says what we do,
 and the rest what the oracle does and why, with the input that shows it.
 `decided by:` names the step of AGENTS.md's "Deciding a difference" that settled it, or `representation`.
-`runner:` names the shape `tasks/differential/run.ts` exempts (some only in mutated inputs and files, where whole-tag tokens do not limit them);
-entries without one are never generated there, fixtures pin them.
+`fixture:` names the fixtures under `crates/oxc_htmlish_parser/tests/fixtures/` that pin it.
+`runner:` names the shape `tasks/differential/dialects.ts` exempts (some only in mutated inputs and files, where whole-tag tokens do not limit them);
+entries without one are never generated there.
+`cargo test` checks these lines (`tests/divergences.rs`).
 Entries are grouped by the dialects they apply to.
 The keeps that were weighed close the file.
 
@@ -22,6 +24,7 @@ Angular's compiler ends a tag name at `= < ' "` too, reading the rest as attribu
 printed as written, the name reads to Angular as it did.
 No valid template uses them, and reading them as browsers do keeps every dialect on one rule.
 `decided by: 3 for tag names in HTML (the tokenizer reads them without an error), 4 for the rest`
+`fixture: html/markup.html`, `fixture: vue/template.vue`
 `runner: punctuation in a name`
 
 ### End tag without a name
@@ -31,6 +34,7 @@ Ours: `</` without a name after it (past whitespace, in Vue and Angular) opens a
 Vue's comment content skips whitespace after `</` (`</ 3>`); ours is the raw data.
 `</` and whitespace before a name is HTML's "End tag after whitespace".
 `decided by: 4`
+`fixture: vue/bogus-and-foreign.vue`
 `runner: </ whitespace`
 
 ### Script data escapes
@@ -47,6 +51,7 @@ Vue's compiler reports any script in a template, and the shared reading follows 
 Angular reads a script as its compiler does, up to its first end tag.
 Vue SFC blocks are the exception: Vue's SFC parser reads them, not a browser, and they end at their first end tag.
 `decided by: 3 in HTML, 4 in Vue`
+`fixture: html/raw-text.html`, `fixture: angular/compiler-readings.html`
 `runner: script escape`
 
 ## HTML and Angular
@@ -68,6 +73,7 @@ Angular's compiler ends every unquoted value at `/`, so the only valid template 
 (the Angular team keeps that reading, angular/angular#68804); it ends one at `=` too (`<a b=c=d>`), and Angular reads both so.
 At the other characters, or a `/` elsewhere, Angular reports it, and keeps the shared reading.
 `decided by: 1 in HTML (3 for the values angular-html-parser reports), 4 in Angular`
+`fixture: html/self-closing.html`, `fixture: angular/unquoted-value-self-closing.html`
 `runner: unquoted value with a quote or =`
 
 ### End tag case
@@ -75,18 +81,21 @@ At the other characters, or a `/` elsewhere, Angular reports it, and keeps the s
 Ours: end tags match case-insensitively, as in browsers and Vue.
 `<DIV></div>` is an error in `angular-html-parser` and Angular's compiler (they compare names as written).
 `decided by: 3 in HTML, 4 in Angular`
+`fixture: html/basic.html`
 
 ### Character references
 
 Ours: not validated; text and values are never decoded here, so they are plain text, as browsers read them (with a parse error).
 `&unknown;` and malformed numeric references are errors in `angular-html-parser` and Angular's compiler.
 `decided by: 4`
+`fixture: html/basic.html`
 
 ### End tag with attributes
 
 Ours: an end tag runs to its first `>`, as in the HTML tokenizer (and Vue): what follows the name is ignored, and `</div foo>` closes the `div`.
 `angular-html-parser` and Angular's compiler report it.
 `decided by: 4`
+`fixture: html/markup.html`
 
 ### Void element end
 
@@ -103,6 +112,7 @@ and a start tag right after it cannot implicitly close the void element's parent
 In Angular the output keeps the tags, so Angular nests them the same way again;
 what a printer adds between them is whitespace-only text, which Angular drops.
 `decided by: 2 in HTML (a token left on a stack), 4 in Angular`
+`fixture: html/implicit-close.html`, `fixture: angular/implicit-close.html`
 `runner: doctype after void`, `runner: implicit close after void`
 
 ## HTML
@@ -115,6 +125,7 @@ Ours: `</` and whitespace open a bogus comment, as browsers read it: `<div>a</ d
 `angular-html-parser` reads `</ div >` as an end tag, as Vue's and Angular's compilers do.
 Prettier prints it `</div>`, which closes the `div` there (`oxc_formatter_htmlish`'s DIVERGENCES.md#end-tag-with-space-is-comment).
 `decided by: 1`
+`fixture: html/markup.html`, `fixture: vue/compiler-readings.vue`, `fixture: angular/compiler-readings.html`
 `runner: </ whitespace`
 
 ### Incorrectly closed comment
@@ -122,6 +133,7 @@ Prettier prints it `</div>`, which closes the `div` there (`oxc_formatter_htmlis
 Ours: a comment closes at `--!>` too, as in the HTML tokenizer (and Astro): `<!-- a --!> b -->` is the comment ` a `, then the text ` b -->`.
 `angular-html-parser` reads on to the next `-->`, as Vue's and Angular's compilers do (and Svelte).
 `decided by: 2 (the fork has no branch for it)`
+`fixture: html/markup.html`, `fixture: vue/compiler-readings.vue`, `fixture: angular/compiler-readings.html`
 `runner: --!>`
 
 ### Abruptly closed empty comment
@@ -135,6 +147,7 @@ Ours: `<!-->` and `<!--->` are empty comments, as in the HTML tokenizer and Vue.
 ```
 
 `decided by: 2`
+`fixture: html/markup.html`, `fixture: angular/compiler-readings.html`
 `runner: empty comment`
 
 ### Raw text end tag
@@ -150,6 +163,7 @@ Ours: raw text closes only at `</` followed right away by its name, as in the HT
 Prettier prints the first end tag `</style`, which closes the style there for browsers.
 The end tag then runs to its first `>`, as any end tag does (`</script foo>` closes the script).
 `decided by: 1`
+`fixture: html/raw-text.html`, `fixture: angular/compiler-readings.html`
 `runner: raw text end after whitespace`
 
 ### Equals sign before an attribute name
@@ -158,6 +172,7 @@ Ours: `<a =b>` is an attribute named `=b`, as in browsers.
 `angular-html-parser` reads an empty name with the value `b`, as Angular's compiler does.
 Prettier prints it `<a ="b">`, an attribute named `="b"` to browsers.
 `decided by: 1`
+`fixture: html/markup.html`
 `runner: = starts an attribute name`
 
 ### Whitespace in tags
@@ -166,6 +181,7 @@ Ours: tab, LF, FF, CR and space, as the HTML tokenizer has it.
 `angular-html-parser` also treats NBSP and the controls U+000E–U+001F as whitespace inside tags, as Angular's compiler does.
 Prettier prints `<div␠class="x">` (`␠` a NBSP) as `<div class="x">`, a `div` to browsers, which read an element named `div␠class="x"`.
 `decided by: 1`
+`fixture: html/markup.html`, `fixture: angular/compiler-readings.html`
 
 ### `foreignObject` children
 
@@ -174,6 +190,7 @@ Ours: HTML, as in browsers and Angular's compiler.
 but the case-insensitive lookup (`foreignobject`) misses the entry, so its children stay SVG.
 Angular's compiler looks the exact name up first; the fork's case-insensitive lookup is the accident.
 `decided by: 2`
+`fixture: html/self-closing.html`
 
 ### SVG `title`
 
@@ -187,6 +204,7 @@ but its tokenizer never applies it, as in Angular's compiler (but for an explici
 ```
 
 `decided by: 2`
+`fixture: html/raw-text.html`, `fixture: angular/compiler-readings.html`
 `runner: svg title`
 
 ### Namespace prefixes
@@ -202,6 +220,8 @@ Prettier lays them out as the elements the prefix names (`oxc_formatter_htmlish`
 ```
 
 `decided by: 1`
+`fixture: html/namespace-prefix.html`, `fixture: angular/compiler-readings.html`
+`runner: namespace prefix`
 
 ### Self-closing non-void elements
 
@@ -217,6 +237,7 @@ Prettier passes `canSelfClose: true`, so every element self-closes.
 
 Prettier re-indents what follows `<pre />`, which is `pre` content to browsers (`oxc_formatter_htmlish`'s DIVERGENCES.md#pre-content-without-end-tag).
 `decided by: 1`
+`fixture: html/self-closing.html`
 `runner: /> on non-void`
 
 ### Elements left open by an ignored self-close
@@ -231,6 +252,7 @@ Since the previous entry leaves `<my-el />` open, that set alone would make the 
 ```
 
 `decided by: 4`
+`fixture: html/self-closing.html`
 
 ### Bracketed attribute names
 
@@ -238,6 +260,7 @@ Ours: a `>` ends the tag, as in browsers; in Angular, a name opened with `[` run
 `angular-html-parser` reads Angular's bracketed names in HTML too; Prettier passes no option to turn it off.
 Angular templates rely on it for Tailwind's arbitrary variants (`[class.[&>svg]:w-4]`).
 `decided by: 2`
+`fixture: html/markup.html`, `fixture: angular/bracketed-attribute.html`
 `runner: bracketed attribute name`
 
 ### Implicit end tags
@@ -267,6 +290,7 @@ So `<p>a<figure>`, and `<head><title>t</title><p>` with both `</head>` and `<bod
 read the second element inside the first, though both are valid HTML.
 Both are blocks to a browser either way, so the whitespace a printer adds between them renders nothing.
 `decided by: 2`
+`fixture: html/implicit-close.html`
 `runner: WHATWG optional end tags`
 
 ## Angular
@@ -284,6 +308,7 @@ so a fallthrough `@case` takes the whitespace up to the next `@case` into its sp
 ```
 
 `decided by: representation`
+`fixture: angular/blocks.html`
 `runner: fallthrough case`
 
 ### How Angular's AST holds a node
@@ -293,12 +318,14 @@ and what `<!` or `<?` opens without a comment or CDATA as a bogus comment up to 
 Angular's compiler drops doctypes, and reads `<!x>` as one; it reads CDATA and `<?xml ?>` as text, and trims a comment.
 Printed as written, the output reads to Angular as the input did.
 `decided by: representation`
+`fixture: angular/compiler-readings.html`
 
 ### Self-closing native elements
 
 Ours: `/>` closes any element, as in Vue, and as Prettier reads Angular (`canSelfClose: true`).
 Angular's compiler closes void, custom and foreign elements so, and reports the rest (`<div/>`).
 `decided by: 4`
+`fixture: angular/compiler-readings.html`
 
 ## Vue
 
@@ -308,6 +335,7 @@ Ours: a root `<html>` or `<!doctype html>` makes the file an HTML page, not an S
 it parses with HTML rules (`{{ }}` and directives stay Vue).
 Vue reads such a root element as a custom block holding raw text, which nothing compiles, so formatting the page changes no output.
 `decided by: 4 (an HTML page reads as the html dialect does)`
+`fixture: vue/html-page.vue`
 `runner: html page`
 
 ### Directive names without an argument in `v-pre`
@@ -315,6 +343,7 @@ Vue reads such a root element as a custom block holding raw text, which nothing 
 Ours: `v-bind:="p"` under `v-pre` is a plain attribute named `v-bind:`, as written.
 Vue names it `v-bind`, without the colon, and drops its value; printed as written, the output reads to Vue as the input did.
 `decided by: representation`
+`fixture: vue/directives.vue`
 `runner: directive without argument in v-pre`
 
 ### Bogus comments
@@ -325,6 +354,7 @@ Vue drops it, reads some as text (`<!- c -->`, `<! />`), and reads `<!>` on to a
 Printed as written, the output reads to Vue as the input did.
 `run.ts` drops the ones Vue drops from our signature.
 `decided by: representation`
+`fixture: vue/bogus-and-foreign.vue`, `fixture: vue/template.vue`
 `runner: bogus comment`
 
 ### Void element end tags
@@ -334,6 +364,7 @@ Vue drops the tag and joins the text around it (`ab`).
 Its characters stay in ours, where a printer breaks a line only at whitespace (in `</br >` too), which Vue condenses as before.
 HTML and Angular report it (the last section).
 `decided by: 3`
+`fixture: vue/compiler-readings.vue`
 `runner: </br>`
 
 ## Kept: the oracles over the norm
@@ -348,6 +379,7 @@ Browsers read their content as raw text (`noscript` only with scripting on).
 None of them holds markup in valid HTML (obsolete, or nothing allowed) but `noscript`, whose markup is what a printer formats.
 What browsers read as their text renders nothing, or (`xmp`, `plaintext`) prints as written.
 Svelte reads markup too; Astro, raw text.
+`fixture: html/raw-text.html`
 
 ### CDATA in HTML content
 
@@ -355,12 +387,14 @@ Ours: the section is kept whole, as `angular-html-parser` (and Angular's compile
 Browsers read `<![CDATA[a>b]]>` outside SVG and MathML as a bogus comment up to the first `>`, then text:
 the cut would leave the rest as text a printer re-spaces.
 Vue and Svelte report it.
+`fixture: html/markup.html`
 
 ### Duplicate attributes
 
 Ours: kept, as in the oracles (and Astro).
 Browsers drop all but the first, which would drop source; printed as written, the output drops the same ones.
 Vue and Svelte report them.
+`fixture: html/markup.html`
 
 ### Quotes in attribute names
 
@@ -369,6 +403,7 @@ The HTML tokenizer reads `<a b"c>` as an attribute named `b"c`, with a parse err
 Such a name is almost always a template's expression nesting the quotes of a value (`content="{{ f("-") }}"`, in Nunjucks or Askama files):
 read as browsers do, the printer would re-space what follows the cut value, changing the expression.
 Angular's bracketed names may hold quotes (DIVERGENCES.md#bracketed-attribute-names).
+`fixture: vue/compiler-readings.vue`
 
 ### Slash in a start tag
 
@@ -380,6 +415,7 @@ Browsers ignore the `/`, with a parse error; reading it so would drop it from th
 Ours: `script`, `style` and the other raw text elements hold raw text in SVG and MathML too, as the oracles read them.
 Browsers read their content as markup there.
 A printer formats it as the language the element names, which browsers read as the same text, or prints it as written.
+`fixture: html/raw-text.html`
 
 ### Void element end tags in HTML and Angular
 
@@ -399,3 +435,4 @@ x<table>t<tr><td>c</td></tr></table>
 A printer working from the written nesting lays `t` out inside the table, as Prettier does;
 the line breaks it adds there render as a space between `x` and `t` once a browser moves `t` out.
 A template's source is no page a browser reads (`<table>{% for r in rows %}<tr>`), so the written nesting is formatted as is, best effort.
+`fixture: html/implicit-close.html`

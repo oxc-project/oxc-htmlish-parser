@@ -17,6 +17,10 @@ fmt:
 differential dialect count="5000" seed="0":
     node tasks/differential/run.ts {{ dialect }} {{ count }} {{ seed }}
 
+# One input through every reader: ours, the oracle, the norm, browsers (html) and Prettier at the pin.
+probe dialect source:
+    node tasks/differential/probe.ts {{ dialect }} {{ quote(source) }}
+
 # The differential comparison on real files.
 differential-files dialect +files:
     node tasks/differential/run.ts {{ dialect }} --files {{ files }}

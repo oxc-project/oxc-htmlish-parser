@@ -83,5 +83,26 @@ Root sfc=false
     Element [375..379] "body" Html no_end_tag span_end=381
       Text [380..381] "x" (-|-) content=[380..381] "x"
   Text [388..389] "\n" (nl|nl)
-  Element [390..393] "div" Html no_end_tag span_end=406
+  Element [390..393] "div" Html no_end_tag span_end=514
     Text [394..406] "open at eof\n" (-|nl) content=[394..405] "open at eof"
+    Element [407..412] "table" Html end_tag=[437..445] "</table>"
+      Element [414..416] "tr" Html no_end_tag span_end=437
+        Element [418..420] "th" Html no_end_tag span_end=432
+          Element [422..425] "img" Html void no_end_tag span_end=432
+            @[426..429] "src" = [430..431] "x"
+        Element [433..435] "td" Html no_end_tag span_end=437
+          Text [436..437] "y" (-|-) content=[436..437] "y"
+    Text [445..447] "\nx" (nl|-) content=[446..447] "x"
+    Element [448..453] "table" Html end_tag=[474..482] "</table>"
+      Text [454..455] "t" (-|-) content=[454..455] "t"
+      Element [456..458] "tr" Html end_tag=[469..474] "</tr>"
+        Element [460..462] "td" Html end_tag=[464..469] "</td>"
+          Text [463..464] "c" (-|-) content=[463..464] "c"
+    Text [482..483] "\n" (nl|nl)
+    Element [484..485] "a" Html end_tag=[509..513] "</a>"
+      @[486..490] "href" = [491..492] "1"
+      Text [493..494] "x" (-|-) content=[493..494] "x"
+      Element [495..496] "a" Html end_tag=[505..509] "</a>"
+        @[497..501] "href" = [502..503] "2"
+        Text [504..505] "y" (-|-) content=[504..505] "y"
+    Text [513..514] "\n" (nl|nl)

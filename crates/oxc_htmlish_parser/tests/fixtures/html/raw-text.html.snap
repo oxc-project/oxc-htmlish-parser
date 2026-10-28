@@ -39,3 +39,14 @@ Root sfc=false
   Element [329..335] "script" Html raw end_tag=[341..350] "</script>"
     Text [336..341] "<!-->" (-|-) content=[336..341] "<!-->"
   Text [350..351] "\n" (nl|nl)
+  Element [352..355] "svg" Svg end_tag=[380..386] "</svg>"
+    Element [357..362] "style" Svg raw end_tag=[372..380] "</style>"
+      Text [363..372] "a<b>x</b>" (-|-) content=[363..372] "a<b>x</b>"
+  Text [386..387] "\n" (nl|nl)
+  Element [388..396] "noscript" Html end_tag=[405..416] "</noscript>"
+    Element [398..399] "b" Html end_tag=[401..405] "</b>"
+      Text [400..401] "x" (-|-) content=[400..401] "x"
+  Element [417..420] "xmp" Html end_tag=[429..435] "</xmp>"
+    Element [422..423] "b" Html end_tag=[425..429] "</b>"
+      Text [424..425] "y" (-|-) content=[424..425] "y"
+  Text [435..436] "\n" (nl|nl)

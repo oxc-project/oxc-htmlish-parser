@@ -8,11 +8,13 @@ It is the parsing layer for oxc's htmlish formatter (`oxc_formatter_htmlish`).
 
 Parse behavior targets each dialect's oracle (not the spec), judged against its norm.
 
-| Dialect | Oracle | Norm |
-| --- | --- | --- |
-| html | `angular-html-parser` 10.12.0, with Prettier's options | WHATWG |
-| vue | `@vue/compiler-core` 3.5.44 | the oracle |
-| angular | `@angular/compiler` 22.0.6 | the oracle |
+| Dialect | Oracle | Norm | "Without an error", checked with |
+| --- | --- | --- | --- |
+| html | `angular-html-parser` 10.12.0, with Prettier's options | WHATWG | no parse error from parse5 7.3.0 |
+| vue | `@vue/compiler-core` 3.5.44 | the oracle | `compile` of the root `<template>`'s content (`@vue/compiler-dom`) |
+| angular | `@angular/compiler` 22.0.6 | the oracle | `parseTemplate` |
+
+The parse a compiler accepts may still fail to compile (a `<script>` in a Vue template): the compile step is what "without an error" means.
 
 - A dialect with a compiler takes it as the oracle: what the compiler reads is what the template does.
   Prettier reads Vue and Angular with `angular-html-parser` too; where that differs from their compilers, the compiler wins.
@@ -26,6 +28,8 @@ Parse behavior targets each dialect's oracle (not the spec), judged against its 
 ## Deciding a difference
 
 An oracle difference is never matched by reflex.
+Check every claim with `just probe <dialect> <source>` (ours, the oracle, the norm's errors, what browsers build, Prettier's output at the pin),
+and back the entry with what it prints.
 Only a difference a printer could carry into its output is a reading to decide;
 one in how the AST holds a part printed as written (a node kind, a dropped part kept as text) is recorded as `representation`.
 Decide a reading in order; the first step that applies settles it:
@@ -41,10 +45,23 @@ Decide a reading in order; the first step that applies settles it:
 4. Otherwise (the norm reports an error too, or several readings pass), the reading the dialects share wins: the HTML tokenizer's.
    - It never overrides 1: a dialect reads a shape its own way where its compiler does (`{{ a<b }}` and `</Transition>` in Vue, `</ div>` in Vue and Angular).
 
-When in doubt, keep the oracle's reading: a drop needs grounds, a keep does not.
+When unsure which step applies, keep the oracle's reading: a drop needs grounds, a keep does not.
 
-Every drop is an entry in `DIVERGENCES.md` naming the deciding step, with a fixture and (if the differential generates the shape) a `quirks` exemption in `run.ts`.
+Every drop is an entry in `DIVERGENCES.md` naming the deciding step (`decided by:`), its fixtures (`fixture:`)
+and (if the differential generates the shape) its `quirks` exemption in `tasks/differential/dialects.ts` (`runner:`).
 A keep that was weighed goes in its last section, so that it is not reopened.
+`cargo test` holds the file to this (`tests/divergences.rs`): the lines, the fixtures they name, the runner names against the quirks,
+and every `DIVERGENCES.md#slug` the sources cite.
+A gap left for its cost (step 3) is an entry too, and one not parsed yet is in "The one rule" and the differential's `pending`.
+
+### Bumping the oracles
+
+Prettier's pin moves the oracles: `angular-html-parser` and `@angular/compiler` follow its `package.json`, the rest the versions that ship with it.
+
+1. Bump `tasks/differential/package.json` and the table above.
+2. Run `just differential` for every dialect, over several seeds, and `just differential-files` on local repos.
+3. A quirk that no longer fires is an entry to re-decide: delete it when the oracle now reads as we do.
+   A new mismatch is decided as above, never exempted by reflex.
 
 ## Trees
 
@@ -73,7 +90,8 @@ Step 1 holds a printer to a norm's tree only where the input has no parse error.
 
 | Command | Covers |
 | --- | --- |
-| `cargo test` | error table (`src/parser/mod.rs`), AST snapshots + span nesting (`tests/ast.rs`) |
+| `cargo test` | error table (`src/parser/mod.rs`), AST snapshots + span nesting (`tests/ast.rs`), `DIVERGENCES.md` against what it names (`tests/divergences.rs`) |
+| `just probe <html\|vue\|angular> <source>` | one input through every reader: ours, the oracle, the norm, browsers (html), Prettier at the pin |
 | `cargo insta review` | accept snapshot changes after an intentional AST change |
 | `just differential <html\|vue\|angular> [count] [seed]` | structural fuzz against the oracles (`angular-html-parser`, `@vue/compiler-dom`, `@angular/compiler`) |
 | `just differential-files <html\|vue\|angular> <file>...` | the same comparison on real files |
@@ -83,9 +101,9 @@ First run: `npm i` in `tasks/differential`.
 
 - `tests/fixtures/<dialect>/*` parse as that dialect (`html`, `vue`, `angular`); one compact tree per fixture.
 - Add a fixture when a change touches structure or facts.
-- The differential compares a signature (`tasks/sig/src/main.rs`, mirrored in `run.ts`);
+- The differential compares a signature (`tasks/sig/src/main.rs`, mirrored in `tasks/differential/dialects.ts`);
   what it generates and fails on is in `run.ts`'s header.
-  Each dialect is one entry there: oracle, normalizations, `quirks` (shapes in `DIVERGENCES.md`) and `pending` (not parsed yet).
+  Each dialect is one entry in `dialects.ts`: oracle, normalizations, `quirks` (shapes in `DIVERGENCES.md`) and `pending` (not parsed yet).
   `NO_QUIRKS=1` shows exempted mismatches, `ALL=1` every failure, `ERRORS=1` the error messages by count.
 - Before committing a change to how a shape is read, run `compare` (`--list <file>` for large corpora) on local repos:
   a file that parsed and now fails is a regression to explain, and a template language in `.html` (Nunjucks, Askama, ...)

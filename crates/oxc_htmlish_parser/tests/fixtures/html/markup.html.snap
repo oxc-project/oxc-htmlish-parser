@@ -66,3 +66,12 @@ Root sfc=false
   Text [388..390] "b\n" (-|nl) content=[388..389] "b"
   Comment content=[394..397] " a "
   Text [401..408] " b -->\n" (sp|nl) content=[402..407] "b -->"
+  Element [409..410] "p" Html end_tag=[422..426] "</p>"
+    @[411..412] "a" = [413..414] "1"
+    @[415..416] "a" = [417..418] "2"
+    Text [419..422] "dup" (-|-) content=[419..422] "dup"
+  Text [426..427] "\n" (nl|nl)
+  Element [428..431] "div" Html end_tag=[457..463] "</div>"
+    @[432..441] "[class.[&"
+    Text [442..457] "svg]:w-4]=\"x\">y" (-|-) content=[442..457] "svg]:w-4]=\"x\">y"
+  Text [463..464] "\n" (nl|nl)
