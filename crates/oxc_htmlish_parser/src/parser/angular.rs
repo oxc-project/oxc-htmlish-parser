@@ -47,36 +47,53 @@ impl<'a> Builder<'a> {
     }
 
     /// The `}}` closing an interpolation, outside string literals; after a `//` comment, quotes no longer count.
-    /// `None` when a tag starts first, even in a string, or the input ends:
-    /// Angular reads the `{{` as text there; we report it (DIVERGENCES.md#unterminated-interpolation).
-    pub(super) fn interpolation_end(&self, from: usize, limit: usize) -> Option<usize> {
+    /// `Err` with where the search stopped when a tag starts first, even in a string, or the input ends:
+    /// Angular reads what it searched as text.
+    /// As in Angular's lexer, the character right after `//` is read without looking for a tag (`{{ a //<b }}` holds no tag).
+    pub(super) fn interpolation_end(&self, from: usize, limit: usize) -> Result<usize, usize> {
         let (mut quote, mut comment) = (None, false);
         let mut at = from;
-        while at < limit && !self.at_markup(at) {
+        while at < limit {
+            if self.at_tag_start(at) {
+                return Err(at);
+            }
             if quote.is_none() {
                 match &self.bytes[at..limit] {
-                    [b'}', b'}', ..] => return Some(at),
-                    [b'/', b'/', ..] => comment = true,
+                    [b'}', b'}', ..] => return Ok(at),
+                    [b'/', b'/', ..] => {
+                        comment = true;
+                        at += 2;
+                    }
                     _ => {}
                 }
             }
-            at += string_step(self.bytes[at], &mut quote, !comment).0;
+            let Some(&b) = self.bytes[..limit].get(at) else { break };
+            at += string_step(b, &mut quote, !comment).0;
         }
-        None
+        Err(at.min(limit))
     }
 
     /// `[class.[&>svg]:w-4]`: a name opened with `[` runs while its brackets are open, up to a line break
     /// (Angular's lexer, for Tailwind's arbitrary variants; DIVERGENCES.md#bracketed-attribute-names).
     pub(super) fn bracketed_name_end(&self, start: usize) -> usize {
-        let mut open = 0;
-        self.skip(start, |b| {
+        let (mut open, mut at) = (0, start);
+        while let Some(b) = self.byte(at) {
             match b {
                 b'[' => open += 1,
                 b']' => open -= 1,
                 _ => {}
             }
-            if open > 0 { !matches!(b, b'\n' | b'\r') } else { !is_attribute_name_end(b) }
-        })
+            let end = if open > 0 {
+                matches!(b, b'\n' | b'\r')
+            } else {
+                self.ws_len(at) > 0 || ends_attribute_name(b)
+            };
+            if end {
+                break;
+            }
+            at += 1;
+        }
+        at
     }
 
     /// `@name (parameters) {`, or a block without a body; `pos` is at `@`.
@@ -140,9 +157,11 @@ impl<'a> Builder<'a> {
                     push(param_start, at, out);
                     return Ok(at + 1);
                 }
+                // Each parameter counts its own parentheses, as Angular's lexer does
                 b';' => {
                     push(param_start, at, out);
                     param_start = at + 1;
+                    depth = 0;
                 }
                 _ => {}
             }

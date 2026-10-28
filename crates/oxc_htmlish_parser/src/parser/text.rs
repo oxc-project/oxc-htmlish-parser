@@ -1,6 +1,6 @@
 //! Text, split at `{{ }}` (and Angular blocks).
 
-use memchr::memchr2;
+use memchr::{memchr2, memrchr};
 
 use super::*;
 
@@ -54,19 +54,24 @@ impl Builder<'_> {
                 }
                 _ => {}
             }
-            if self.byte(self.pos + 1) != Some(b'{') {
+            if self.byte(self.pos + 1) != Some(b'{')
+                || (!markup_ends && self.rules.sfc && self.after_end_tag_prefix(self.pos))
+            {
                 self.pos += 1;
                 continue;
             }
             let open = self.pos;
             let close = if self.rules.angular {
-                self.interpolation_end(open + 2, limit)
+                match self.interpolation_end(open + 2, limit) {
+                    Ok(close) => close,
+                    Err(stop) => {
+                        // Angular reads an unterminated `{{` as text, up to where the search stopped
+                        self.pos = stop;
+                        continue;
+                    }
+                }
             } else {
-                // Vue closes at the first `}}`, quotes and tags included
-                self.find(open + 2, limit, b"}}")
-            };
-            let Some(close) = close else {
-                return error(DiagnosticKind::UnterminatedInterpolation, span(open, open + 2));
+                self.vue_interpolation_end(open, limit)?
             };
             self.push_text(start, open);
             self.push(
@@ -78,6 +83,28 @@ impl Builder<'_> {
         }
         self.push_text(start, self.pos);
         Ok(())
+    }
+
+    /// Vue closes an interpolation `{{` at `open` opens at its first `}}`, quotes and tags included.
+    pub(super) fn vue_interpolation_end(&self, open: usize, limit: usize) -> PResult<usize> {
+        self.find(open + 2, limit, b"}}").map_or_else(
+            || error(DiagnosticKind::UnterminatedInterpolation, span(open, open + 2)),
+            Ok,
+        )
+    }
+
+    /// Vue, in RCDATA: whether the text before `at` ends in part of the element's end tag (`<`, `</ti`).
+    /// Vue's tokenizer reads the character that breaks the match (a `{` here) as text, unread for `{{` (`<{{ t }}` is text).
+    pub(super) fn after_end_tag_prefix(&self, at: usize) -> bool {
+        let Some(open) = self.stack.last() else { return false };
+        let name = open.name.as_bytes();
+        // A name holds no `<`, so only the last one before `at` can start the match
+        let window = &self.bytes[at.saturating_sub(name.len() + 1)..at];
+        memrchr(b'<', window).is_some_and(|i| {
+            let seen = &window[i + 1..];
+            seen.first().is_none_or(|&b| b == b'/')
+                && seen.get(1..).is_none_or(|rest| rest.eq_ignore_ascii_case(&name[..rest.len()]))
+        })
     }
 
     pub(super) fn push_text(&mut self, mut start: usize, end: usize) {

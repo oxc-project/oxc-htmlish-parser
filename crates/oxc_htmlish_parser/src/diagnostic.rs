@@ -1,8 +1,8 @@
 //! Parse errors.
 //!
 //! Only truly broken structure is an error (as in Prettier); the parse stops at the first one.
-//! What a dialect's own compiler accepts is never an error here
-//! (unknown entities, `<DIV></div>`, `{{ a<b }}` in Vue).
+//! What a dialect's own compiler accepts is never an error here (unknown entities, `<DIV></div>`, `{{ a<b }}` in Vue),
+//! but for what is not parsed yet (AGENTS.md).
 
 use std::fmt::Display;
 
@@ -39,7 +39,7 @@ pub enum DiagnosticKind {
     /// An end tag with no open element to close,
     /// or one that would close an element whose end tag cannot be omitted.
     UnexpectedEndTag,
-    /// `</br>`.
+    /// `</br>`, outside a Vue SFC (where it is text).
     VoidEndTag,
     /// Angular: `@if (a)` without `{`, or parameters without `)`.
     IncompleteBlock,

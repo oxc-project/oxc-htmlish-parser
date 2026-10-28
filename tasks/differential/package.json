@@ -6,7 +6,8 @@
     "node": ">=22.18"
   },
   "dependencies": {
+    "@angular/compiler": "22.0.6",
     "@vue/compiler-dom": "3.5.44",
-    "angular-html-parser": "10.13.0"
+    "angular-html-parser": "10.12.0"
   }
 }

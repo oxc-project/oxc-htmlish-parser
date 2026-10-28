@@ -7,6 +7,11 @@ use crate::{
     span::{Span, span},
 };
 
+/// A directive name starts here (`v-`, or a shorthand), as Vue's tokenizer tells them from plain attributes.
+pub fn is_directive_start(name: &[u8]) -> bool {
+    name.starts_with(b"v-") || matches!(name.first(), Some(b':' | b'@' | b'#' | b'.'))
+}
+
 /// `None` for plain attributes and malformed directive names.
 pub fn directive<'a>(
     allocator: &'a Allocator,
@@ -20,6 +25,9 @@ pub fn directive<'a>(
         |from: usize| s[from..].iter().position(|&b| b == b'.').map_or(s.len(), |i| from + i);
 
     // `v-name`, then `:arg` and/or `.modifiers`; or a shorthand followed by the argument
+    if !is_directive_start(s) {
+        return None;
+    }
     let (dir, arg_from, mut cursor) = if s.starts_with(b"v-") {
         let end = s[2..].iter().position(|&b| matches!(b, b':' | b'.')).map_or(s.len(), |i| 2 + i);
         if end == 2 {
@@ -27,10 +35,8 @@ pub fn directive<'a>(
         }
         let arg_from = (s.get(end) == Some(&b':')).then_some(end + 1);
         ((2, end), arg_from, end)
-    } else if matches!(s.first(), Some(b':' | b'@' | b'#' | b'.')) {
-        ((0, 1), Some(1), 1)
     } else {
-        return None;
+        ((0, 1), Some(1), 1)
     };
     let slot = matches!(&s[dir.0..dir.1], b"#" | b"slot");
 
@@ -41,10 +47,10 @@ pub fn directive<'a>(
             if dynamic { from + s[from..].iter().position(|&b| b == b']')? + 1 } else { from };
         // Slots have no modifiers: the dots belong to the argument
         let end = if slot { s.len() } else { until_dot(static_from) };
-        if end == from {
-            return None;
+        // Without one (`v-bind:`, a lone `:`), Vue reads no argument (`:="o"` binds an object)
+        if end > from {
+            argument = Some(VueArgument { span: at(from, end), dynamic });
         }
-        argument = Some(VueArgument { span: at(from, end), dynamic });
         cursor = end;
     }
 

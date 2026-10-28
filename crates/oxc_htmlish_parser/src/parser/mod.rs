@@ -97,14 +97,24 @@ struct Rules {
     html: bool,
     /// With `html`: WHATWG's optional end tags, which close through the ancestors whose end tag may go too
     /// (browsers build the page from the source);
-    /// otherwise `angular-html-parser`'s table, against the direct parent only (Angular's compiler builds it).
+    /// otherwise Angular's table, against the direct parent only (Angular's compiler builds it).
     whatwg: bool,
     /// `{{ }}` and directive names.
     vue: bool,
-    /// Root elements are SFC blocks: raw text unless `<template>` in HTML.
+    /// A Vue SFC, read by Vue's SFC tokenizer: root elements are SFC blocks (raw text unless `<template>` in HTML);
+    /// a void element's end tag is text, a quote may open an attribute name or sit in a directive name, `</` ends a start tag,
+    /// and RCDATA reads `{{ }}` as that tokenizer does.
     sfc: bool,
-    /// `{{ }}` (closed outside quotes) and control flow blocks.
+    /// `{{ }}` (closed outside quotes) and control flow blocks, and Angular's lexer in tags:
+    /// its whitespace (VT, U+000E–U+001F, NBSP), namespace prefixes, `<!-->` read on to `-->`,
+    /// whitespace around a raw text element's end tag name and no script data escapes,
+    /// `=` ending an unquoted value and opening a nameless attribute.
     angular: bool,
+    /// Whitespace may come before an end tag's name (`</ div>`), as Vue's and Angular's compilers read it;
+    /// otherwise `</` and whitespace open a bogus comment, as in the HTML tokenizer.
+    end_tag_whitespace: bool,
+    /// A comment closes at `--!>` too, as in the HTML tokenizer; otherwise at `-->` only, as Vue's and Angular's compilers read it.
+    bang_comment_end: bool,
     /// `/>` closes every element (Prettier's `canSelfClose`); otherwise only void and foreign ones, as in browsers.
     self_close_any: bool,
     /// `<//>` closes the innermost element (Prettier's `allowHtmComponentClosingTags`).
@@ -120,6 +130,8 @@ impl Rules {
         angular: false,
         self_close_any: false,
         htm_closing: true,
+        end_tag_whitespace: false,
+        bang_comment_end: true,
     };
 
     const VUE: Self = Self {
@@ -130,6 +142,8 @@ impl Rules {
         angular: false,
         self_close_any: true,
         htm_closing: false,
+        end_tag_whitespace: true,
+        bang_comment_end: false,
     };
 
     /// A Vue file that turned out to be an HTML page.
@@ -141,6 +155,8 @@ impl Rules {
         angular: true,
         self_close_any: true,
         htm_closing: false,
+        end_tag_whitespace: true,
+        bang_comment_end: false,
         ..Self::HTML
     };
 }
@@ -174,9 +190,9 @@ fn is_tag_name_end(b: u8) -> bool {
     b.is_ascii_whitespace() || matches!(b, b'>' | b'/')
 }
 
-/// Where an attribute name ends, past its first character: as a tag name, at `=`, or at a quote (an error then).
-fn is_attribute_name_end(b: u8) -> bool {
-    is_tag_name_end(b) || matches!(b, b'=' | b'"' | b'\'')
+/// Where an attribute name ends, past its first character and whitespace: as a tag name, at `=`, or at a quote (an error then).
+fn ends_attribute_name(b: u8) -> bool {
+    matches!(b, b'>' | b'/' | b'=' | b'"' | b'\'')
 }
 
 /// Where the leading ASCII whitespace of `bytes` ends and the trailing one starts.
@@ -233,11 +249,14 @@ impl<'a> Builder<'a> {
 
     fn run(&mut self) -> PResult<()> {
         while self.pos < self.bytes.len() {
-            if self.at_markup(self.pos) {
-                self.markup()?;
-            } else {
+            // The text stops at markup, or at the end
+            if !self.at_markup(self.pos) {
                 self.text(self.bytes.len(), true)?;
+                if self.pos == self.bytes.len() {
+                    break;
+                }
             }
+            self.markup()?;
         }
         while let Some(open) = self.stack.pop() {
             if open.block {
@@ -286,12 +305,46 @@ impl<'a> Builder<'a> {
         self.bytes[at..].iter().position(|&b| !pred(b)).map_or(self.bytes.len(), |i| at + i)
     }
 
-    fn skip_ws(&self, at: usize) -> usize {
-        self.skip(at, |b| b.is_ascii_whitespace())
+    /// The length of the whitespace at `at` in a tag or a block's head, 0 for none: ASCII whitespace, as in the HTML tokenizer;
+    /// in Angular also VT, U+000E–U+001F and NBSP, as its compiler reads them (DIVERGENCES.md#whitespace-in-tags).
+    fn ws_len(&self, at: usize) -> usize {
+        match self.byte(at) {
+            Some(b) if b.is_ascii_whitespace() => 1,
+            Some(0x0B | 0x0E..=0x1F) if self.rules.angular => 1,
+            Some(0xC2) if self.rules.angular && self.byte(at + 1) == Some(0xA0) => 2,
+            _ => 0,
+        }
+    }
+
+    fn skip_ws(&self, mut at: usize) -> usize {
+        if !self.rules.angular {
+            return self.skip(at, |b| b.is_ascii_whitespace());
+        }
+        while let n @ 1.. = self.ws_len(at) {
+            at += n;
+        }
+        at
+    }
+
+    /// The first offset from `at` that is whitespace or a byte `end` takes.
+    fn until_ws_or(&self, mut at: usize, end: impl Fn(u8) -> bool) -> usize {
+        if !self.rules.angular {
+            return self.skip(at, |b| !b.is_ascii_whitespace() && !end(b));
+        }
+        while self.byte(at).is_some_and(|b| !end(b)) && self.ws_len(at) == 0 {
+            at += 1;
+        }
+        at
     }
 
     fn tag_name_end(&self, at: usize) -> usize {
-        self.skip(at, |b| !is_tag_name_end(b))
+        self.until_ws_or(at, |b| matches!(b, b'>' | b'/'))
+    }
+
+    /// Where an end tag's name starts after `</` at `start`:
+    /// right there, as in the HTML tokenizer; past whitespace, as Vue's and Angular's compilers read it (DIVERGENCES.md#end-tag-after-whitespace).
+    fn end_tag_name_start(&self, start: usize) -> usize {
+        if self.rules.end_tag_whitespace { self.skip_ws(start + 2) } else { start + 2 }
     }
 
     /// The offset of `pat` in `[from, limit)`.
@@ -308,12 +361,36 @@ impl<'a> Builder<'a> {
         self.bytes[at..].get(..pat.len()).is_some_and(|b| b.eq_ignore_ascii_case(pat.as_bytes()))
     }
 
-    /// `<` followed by what can start markup; any other `<` is text.
-    fn at_markup(&self, at: usize) -> bool {
+    /// `<` followed by a letter, `/` or `!`: a tag, a comment or a declaration starts (Angular's `_isTagStart`).
+    fn at_tag_start(&self, at: usize) -> bool {
         self.bytes[at] == b'<'
             && self
                 .byte(at + 1)
-                .is_some_and(|b| b.is_ascii_alphabetic() || matches!(b, b'/' | b'!' | b'?'))
+                .is_some_and(|b| b.is_ascii_alphabetic() || matches!(b, b'/' | b'!'))
+    }
+
+    /// `<` followed by what can start markup (`<?` too); any other `<` is text.
+    /// In a Vue SFC, a void element's end tag (`</br>`) is text too: Vue drops it (DIVERGENCES.md#void-element-end-tags).
+    fn at_markup(&self, at: usize) -> bool {
+        (self.at_tag_start(at) || self.bytes[at..].starts_with(b"<?"))
+            && !(self.rules.sfc && self.at_void_end_tag(at))
+            && !(self.rules.angular && self.at_prefix_without_name(at))
+    }
+
+    /// Angular: `<svg:` with no local name after the prefix is no tag; its compiler reads the `<` as text.
+    fn at_prefix_without_name(&self, at: usize) -> bool {
+        let colon = self.skip(at + 1, |b| b.is_ascii_alphanumeric());
+        colon > at + 1
+            && self.byte(colon) == Some(b':')
+            && self.tag_name_end(colon + 1) == colon + 1
+    }
+
+    fn at_void_end_tag(&self, at: usize) -> bool {
+        if self.byte(at + 1) != Some(b'/') {
+            return false;
+        }
+        let name_start = self.end_tag_name_start(at);
+        tags::is_void(&self.source[name_start..self.tag_name_end(name_start)])
     }
 
     /// What the current element's next child inherits.
@@ -331,15 +408,19 @@ impl<'a> Builder<'a> {
     }
 
     /// The tag table as the dialect reads it: the one place for case and namespace policy.
-    fn tag(&self, name: &str, lowercase: &str, namespace: Namespace) -> Tag {
+    /// `svg_prefixed`: Angular's `svg:` prefix named the namespace.
+    fn tag(&self, name: &str, lowercase: &str, namespace: Namespace, svg_prefixed: bool) -> Tag {
         let table = tags::html(lowercase, self.rules.whatwg);
         if self.rules.html {
             if namespace == Namespace::Html {
                 return table;
             }
             // `angular-html-parser` reads raw text by name in every namespace, and nothing else of the table.
-            // SVG `<title>` is the exception it declares but its tokenizer misses (DIVERGENCES.md#svg-title).
-            let content = if lowercase == "title" { Content::Normal } else { table.content };
+            // SVG `<title>` is the exception it declares but its tokenizer misses, as browsers read it (DIVERGENCES.md#svg-title);
+            // Angular's compiler applies it to `svg:title` only.
+            let markup = !self.rules.angular || svg_prefixed;
+            let content =
+                if lowercase == "title" && markup { Content::Normal } else { table.content };
             return Tag { content, ..Tag::default() };
         }
         // Vue: void tags and `pre` by exact name; raw text by any case, in HTML only; no implicit closing.
@@ -431,13 +512,15 @@ mod tests {
             ("<!doctype html", Dialect::Html, UnterminatedDocType, 0),
             ("<div", Dialect::Html, UnterminatedStartTag, 0),
             ("</div", Dialect::Html, UnterminatedEndTag, 0),
-            ("<p>{{ a</p>", Dialect::Angular, UnterminatedInterpolation, 3),
-            ("{{ '<b>' }}", Dialect::Angular, UnterminatedInterpolation, 0),
+            // Angular reads the `{{` as text, then the `}` closes no block
+            ("{{ '<b>' }}", Dialect::Angular, UnexpectedBlockClose, 9),
             ("<a b='c>", Dialect::Html, UnterminatedAttributeValue, 5),
             ("<a / b>", Dialect::Html, UnexpectedCharacterInTag, 3),
             ("<a \"b\">", Dialect::Html, UnexpectedCharacterInTag, 3),
             ("<a b\"c=1>", Dialect::Html, UnexpectedCharacterInTag, 4),
             ("<a b=\"c(\"d\")\">", Dialect::Html, UnexpectedCharacterInTag, 10),
+            ("<template><a b\"c=1></a></template>", Dialect::Vue, UnexpectedCharacterInTag, 14),
+            ("<template><a / b></a></template>", Dialect::Vue, UnexpectedCharacterInTag, 13),
             ("<script>a", Dialect::Html, UnterminatedRawText, 0),
             ("<script><!--<script></script>", Dialect::Html, UnterminatedRawText, 0),
             ("</div>", Dialect::Html, UnexpectedEndTag, 0),

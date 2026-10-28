@@ -179,7 +179,7 @@ pub enum AttributeKind<'a> {
 
 /// A Vue directive name split into its parts, each a span inside [`Attribute::name`].
 ///
-/// Malformed names (`:` alone, an unclosed `[`) stay [`AttributeKind::Plain`].
+/// Malformed names (`v-` alone, an unclosed `[`) stay [`AttributeKind::Plain`].
 #[derive(Debug)]
 pub struct VueDirective<'a> {
     /// The name after `v-` (`if`, `bind`), or the shorthand (`:` / `@` / `#` / `.`).

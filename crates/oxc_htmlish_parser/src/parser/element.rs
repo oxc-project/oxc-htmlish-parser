@@ -11,7 +11,7 @@ impl<'a> Builder<'a> {
         let start = self.pos;
         // htm's `<//>` closes the innermost element; its name is the `/`
         let htm = self.rules.htm_closing && self.byte(start + 2) == Some(b'/');
-        let name_start = start + 2;
+        let name_start = self.end_tag_name_start(start);
         let name_end = if htm { start + 3 } else { self.tag_name_end(name_start) };
         // As in the HTML tokenizer, the tag runs to its first `>`;
         // what follows the name is ignored (DIVERGENCES.md#end-tag-with-attributes).
@@ -27,7 +27,7 @@ impl<'a> Builder<'a> {
         let name = &self.source[name_start..name_end];
 
         let mut buf = [0; 16];
-        if self.tag(name, tags::lowercase(name, &mut buf), self.context().namespace).void {
+        if self.tag(name, tags::lowercase(name, &mut buf), self.context().namespace, false).void {
             return error(DiagnosticKind::VoidEndTag, tag.span);
         }
         // Every dialect so far matches end tags case-insensitively
@@ -69,9 +69,12 @@ impl<'a> Builder<'a> {
                     at += 2;
                     break true;
                 }
+                // Vue's SFC tokenizer ends a start tag at `</` where an attribute could start (`<C a="b"</C>`)
+                Some(b'<') if self.rules.sfc && self.byte(at + 1) == Some(b'/') => break false,
                 // A quote where an attribute name starts is a template's expression leaking out of a value
                 // (`content="{{ f("-") }}"`): a printer would re-space it (DIVERGENCES.md#quotes-in-attribute-names).
-                Some(b'/' | b'"' | b'\'') => {
+                // Vue's SFC tokenizer reads it as the name's first character.
+                Some(b) if b == b'/' || (!self.rules.sfc && matches!(b, b'"' | b'\'')) => {
                     return error(DiagnosticKind::UnexpectedCharacterInTag, span(at, at + 1));
                 }
                 Some(_) => {
@@ -83,13 +86,18 @@ impl<'a> Builder<'a> {
         };
         self.pos = at;
 
+        // Angular reads a namespace prefix as its compiler does: `svg:rect` is an SVG `rect` (DIVERGENCES.md#namespace-prefixes)
+        let (local, prefixed) = match self.angular_prefix(name_str) {
+            Some((prefix, local)) => (local, Some(tags::namespace(prefix, Namespace::Html))),
+            None => (name_str, None),
+        };
         let mut buf = [0; 16];
-        let lowercase = tags::lowercase(name_str, &mut buf);
-        let key = if !self.rules.html || !name_str.bytes().any(|b| b.is_ascii_uppercase()) {
-            name_str
+        let lowercase = tags::lowercase(local, &mut buf);
+        let key = if !self.rules.html || !local.bytes().any(|b| b.is_ascii_uppercase()) {
+            local
         } else if lowercase.is_empty() {
             // Longer than every table entry: lowercased for the formatter's own tables
-            let mut key = name_str.to_owned();
+            let mut key = local.to_owned();
             key.make_ascii_lowercase();
             self.allocator.alloc_str(&key)
         } else {
@@ -112,8 +120,8 @@ impl<'a> Builder<'a> {
         }
 
         let inherited = self.context();
-        let namespace = tags::namespace(key, inherited.namespace);
-        let tag = self.tag(name_str, lowercase, namespace);
+        let namespace = prefixed.unwrap_or_else(|| tags::namespace(key, inherited.namespace));
+        let tag = self.tag(name_str, lowercase, namespace, prefixed == Some(Namespace::Svg));
         let closes_now = tag.void
             || (self_closing && (self.rules.self_close_any || namespace != Namespace::Html));
 
@@ -162,7 +170,7 @@ impl<'a> Builder<'a> {
             name: name_str,
             block: false,
             tag,
-            context: Context { namespace: tags::children_namespace(name_str, namespace), v_pre },
+            context: Context { namespace: tags::children_namespace(local, namespace), v_pre },
         };
         if closes_now {
             self.close(&open, None, at);
@@ -171,22 +179,33 @@ impl<'a> Builder<'a> {
         self.stack.push(open);
         match content {
             Content::Normal => Ok(()),
-            // A Vue SFC block is read by Vue's SFC parser, not a browser
+            // A Vue SFC block is read by Vue's SFC parser, and Angular's by its compiler, not a browser
             Content::Raw => {
-                self.raw_text(tag_span, name_str, false, !sfc_block && lowercase == "script")
+                let script = !sfc_block && !self.rules.angular && lowercase == "script";
+                self.raw_text(tag_span, local, false, script)
             }
-            Content::Escapable => self.raw_text(tag_span, name_str, true, false),
+            Content::Escapable => self.raw_text(tag_span, local, true, false),
         }
     }
 
     fn attribute(&self, start: usize) -> PResult<Attribute<'a>> {
-        // The first character is always part of the name, `=` included, and `<` anywhere (as in browsers,
-        // DIVERGENCES.md#name-characters); a quote ends it, to be reported.
+        // The first character is part of the name, `=` included, and `<` anywhere (as in browsers, DIVERGENCES.md#name-characters),
+        // but in Angular, whose compiler reads a name it ends at once, empty (`<a =b>`; DIVERGENCES.md#equals-sign-before-an-attribute-name).
+        // A quote ends it, to be reported, but in a Vue directive name, which takes quotes as Vue reads them
+        // (DIVERGENCES.md#quotes-in-attribute-names).
         let name_end = if self.rules.angular && self.bytes[start] == b'[' {
             self.bracketed_name_end(start)
+        } else if self.rules.angular && self.bytes[start] == b'=' {
+            start
+        } else if self.rules.sfc && vue::is_directive_start(&self.bytes[start..]) {
+            self.until_ws_or(start + 1, |b| matches!(b, b'>' | b'/' | b'='))
         } else {
-            self.skip(start + 1, |b| !is_attribute_name_end(b))
+            self.until_ws_or(start + 1, ends_attribute_name)
         };
+        // A quote right after a name is in it, to be reported, as in every oracle
+        if matches!(self.byte(name_end), Some(b'"' | b'\'')) {
+            return error(DiagnosticKind::UnexpectedCharacterInTag, span(name_end, name_end + 1));
+        }
         let name = span(start, name_end);
         let eq = self.skip_ws(name_end);
         if self.byte(eq) != Some(b'=') {
@@ -209,13 +228,16 @@ impl<'a> Builder<'a> {
             let quote = if q == b'"' { Quote::Double } else { Quote::Single };
             (AttributeValue { span: span(value_start + 1, close), quote }, close + 1)
         } else {
-            // Browsers (and Vue) end an unquoted value at whitespace or `>` only:
-            // `href=/a/b` and `src=a.png/` keep their slashes.
-            let mut value_end = self.skip(value_start, |b| !b.is_ascii_whitespace() && b != b'>');
-            // Angular's compiler ends it at `/` too, and `<cmp a=b/>` depends on that: the `/` self-closes
-            // (DIVERGENCES.md#unquoted-attribute-values).
+            // Browsers (and Vue) end an unquoted value at whitespace or `>` only: `href=/a/b` and `src=a.png/` keep their slashes.
+            // Angular's compiler ends it at `=` too (`b=c=d`), and at a `/` right before `>`, which self-closes (`<cmp a=b/>`;
+            // DIVERGENCES.md#unquoted-attribute-values).
+            let mut value_end = if self.rules.angular {
+                self.until_ws_or(value_start, |b| matches!(b, b'>' | b'='))
+            } else {
+                self.until_ws_or(value_start, |b| b == b'>')
+            };
             if self.rules.angular
-                && value_end > value_start + 1
+                && value_end > value_start
                 && self.bytes[value_end - 1] == b'/'
                 && self.byte(value_end) == Some(b'>')
             {
@@ -241,28 +263,49 @@ impl<'a> Builder<'a> {
         script: bool,
     ) -> PResult<()> {
         let content_start = self.pos;
-        // As in the HTML tokenizer, the name follows `</` right away
-        // (DIVERGENCES.md#raw-text-end-tag),
-        // and the tag ends as any end tag does.
         let at_name = |at: usize| {
             self.starts_with_ci(at, name) && self.byte(at + name.len()).is_some_and(is_tag_name_end)
+        };
+        // Where the name of an end tag `</` at `at` closes starts: as in the HTML tokenizer, right after `</`,
+        // and the tag ends as any end tag does; in Angular, whitespace may surround the name and `>` follows,
+        // as its compiler reads it (DIVERGENCES.md#raw-text-end-tag).
+        let closes = |at: usize| {
+            if !self.rules.angular {
+                return at_name(at + 2).then_some(at + 2);
+            }
+            let name_start = self.skip_ws(at + 2);
+            (self.starts_with_ci(name_start, name)
+                && self.byte(self.skip_ws(name_start + name.len())) == Some(b'>'))
+            .then_some(name_start)
         };
         // A script's `</script>` inside `<!-- <script> … -->` is content
         // (DIVERGENCES.md#script-data-escapes):
         // 1 inside `<!--`, 2 past a `<script` there, until its `</script`; `-->` ends both.
         let mut escape = 0;
+        // Vue reads an interpolation in RCDATA up to its `}}`, past the end tag too
+        let vue_interpolation = escapable && self.rules.sfc && self.interpolates();
         let mut from = content_start;
-        let close_start = loop {
+        let (close_start, name_start) = loop {
             let rest = &self.bytes[from..];
-            let found = if escape > 0 { memchr2(b'<', b'-', rest) } else { memchr(b'<', rest) };
+            let found = if escape > 0 {
+                memchr2(b'<', b'-', rest)
+            } else if vue_interpolation {
+                memchr2(b'<', b'{', rest)
+            } else {
+                memchr(b'<', rest)
+            };
             let Some(at) = found.map(|i| from + i) else {
                 return error(DiagnosticKind::UnterminatedRawText, start_tag);
             };
             from = at + 1;
             let rest = &self.bytes[at..];
-            if rest.starts_with(b"</") && at_name(at + 2) {
+            if vue_interpolation && rest.starts_with(b"{{") && !self.after_end_tag_prefix(at) {
+                from = self.vue_interpolation_end(at, self.bytes.len())? + 2;
+            } else if rest.starts_with(b"</")
+                && let Some(name_start) = closes(at)
+            {
                 if escape < 2 {
-                    break at;
+                    break (at, name_start);
                 }
                 escape = 1;
             } else if script && escape == 0 && rest.starts_with(b"<!--") {
@@ -276,7 +319,6 @@ impl<'a> Builder<'a> {
                 escape = 2;
             }
         };
-        let name_start = close_start + 2;
         let name_end = name_start + name.len();
         // Without a `>` here, no later end tag has one either.
         let Some(gt) = self.find(name_end, self.bytes.len(), b">") else {
@@ -297,6 +339,17 @@ impl<'a> Builder<'a> {
         };
         self.close(&open, Some(end_tag), close_start);
         Ok(())
+    }
+
+    /// Angular: `name`'s namespace prefix and local name, as its compiler splits them:
+    /// a prefix is the letters and digits before the first `:`.
+    fn angular_prefix<'n>(&self, name: &'n str) -> Option<(&'n str, &'n str)> {
+        if !self.rules.angular {
+            return None;
+        }
+        let (prefix, local) = name.split_once(':')?;
+        (!prefix.is_empty() && prefix.bytes().all(|b| b.is_ascii_alphanumeric()))
+            .then_some((prefix, local))
     }
 
     /// `[from, gt)` trimmed, when anything is left.

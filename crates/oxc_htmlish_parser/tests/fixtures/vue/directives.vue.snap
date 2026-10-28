@@ -30,10 +30,10 @@ Root sfc=true
       @[261..273] "v-model.trim" =" [275..276] "m" vue name="model" modifiers=["trim"]
     Text [280..283] "\n  " (nl|nl)
     Element [284..285] "C" Html self_closing no_end_tag span_end=316
-      @[286..287] ":"
-      @[288..289] "@"
+      @[286..287] ":" vue name=":"
+      @[288..289] "@" vue name="@"
       @[290..292] "v-"
-      @[293..300] "v-bind:"
+      @[293..300] "v-bind:" vue name="bind"
       @[301..307] ":[open"
       @[308..313] "plain"
     Text [316..319] "\n  " (nl|nl)

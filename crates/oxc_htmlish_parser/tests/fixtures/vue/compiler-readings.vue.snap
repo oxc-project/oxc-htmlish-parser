@@ -1,0 +1,25 @@
+---
+source: crates/oxc_htmlish_parser/tests/ast.rs
+---
+Root sfc=true
+  Element [1..9] "template" Html end_tag=[169..180] "</template>"
+    Text [10..13] "\n  " (nl|nl)
+    Element [14..17] "div" Html end_tag=[19..26] "</ div>"
+      Text [18..19] "a" (-|-) content=[18..19] "a"
+    Text [26..29] "\n  " (nl|nl)
+    Comment content=[33..64] " a --!> <b>still a comment</b> "
+    Text [67..70] "\n  " (nl|nl)
+    Element [71..72] "p" Html end_tag=[94..98] "</p>"
+      Text [73..81] "a</br>b " (-|sp) content=[73..80] "a</br>b"
+      Element [82..84] "br" Html void no_end_tag span_end=85
+      Text [85..94] " c </br >" (sp|-) content=[86..94] "c </br >"
+    Text [98..101] "\n  " (nl|nl)
+    Element [102..103] "C" Html self_closing no_end_tag span_end=124
+      @[104..108] ":a\"b" =" [110..111] "c" vue name=":" arg="a\"b"
+      @[113..121] "v-if-\"x\"" vue name="if-\"x\""
+    Text [124..127] "\n  " (nl|nl)
+    Element [128..133] "title" Html escapable end_tag=[160..168] "</title>"
+      Text [134..153] "<{{ t }} </{{ u }} " (-|sp) content=[134..152] "<{{ t }} </{{ u }}"
+      Interpolation expression=[155..158] " v "
+    Text [168..169] "\n" (nl|nl)
+  Text [180..181] "\n" (nl|nl)

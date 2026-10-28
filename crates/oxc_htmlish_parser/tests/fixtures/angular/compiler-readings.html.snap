@@ -1,0 +1,32 @@
+---
+source: crates/oxc_htmlish_parser/tests/ast.rs
+---
+Root sfc=false
+  Element [1..4] "div" Html end_tag=[6..13] "</ div>"
+    Text [5..6] "a" (-|-) content=[5..6] "a"
+  Text [13..14] "\n" (nl|nl)
+  Comment content=[18..49] " a --!> <b>still a comment</b> "
+  Text [52..53] "\n" (nl|nl)
+  Comment content=[57..71] ">a comment too"
+  Text [74..75] "\n" (nl|nl)
+  Element [76..81] "style" Html raw end_tag=[83..93] "</ style >"
+    Text [82..83] "a" (-|-) content=[82..83] "a"
+  Text [93..94] "\n" (nl|nl)
+  Element [95..100] "input" Html void no_end_tag span_end=125
+    @[102..106] "type" =" [108..112] "text"
+    @[114..119] "value" = [120..121] "a"
+    @[123..124] "b"
+  Text [125..126] "\n" (nl|nl)
+  Element [127..130] "svg" Svg end_tag=[192..198] "</svg>"
+    Element [132..137] "title" Svg escapable end_tag=[148..156] "</title>"
+      Text [138..148] "<b>raw</b>" (-|-) content=[138..148] "<b>raw</b>"
+    Element [157..166] "svg:title" Svg key="title" end_tag=[180..192] "</svg:title>"
+      Element [168..169] "b" Svg end_tag=[176..180] "</b>"
+        Text [170..176] "markup" (-|-) content=[170..176] "markup"
+  Text [198..199] "\n" (nl|nl)
+  Element [200..205] "svg:g" Svg key="g" end_tag=[227..235] "</svg:g>"
+    Element [207..215] "svg:rect" Svg key="rect" end_tag=[216..227] "</svg:rect>"
+  Text [235..236] "\n" (nl|nl)
+  Element [237..243] "script" Html raw end_tag=[256..265] "</script>"
+    Text [244..256] "<!--<script>" (-|-) content=[244..256] "<!--<script>"
+  Text [265..266] "\n" (nl|nl)

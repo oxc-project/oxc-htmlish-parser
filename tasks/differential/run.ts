@@ -1,7 +1,8 @@
 // Differential fuzz against each dialect's parse-behavior oracle.
 //
-// - html / angular: angular-html-parser, with the options Prettier passes for each
+// - html: angular-html-parser, with the options Prettier passes
 // - vue: @vue/compiler-dom in SFC mode
+// - angular: @angular/compiler, with the options its template compiler parses with
 //
 // Reduces each input to a structural signature on both sides (ours from `tasks/sig`'s `sig-batch`),
 // and reports where they differ. Failures are a tree mismatch, an error from us on input the oracle accepts,
@@ -20,6 +21,7 @@
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
+import { HtmlParser } from "@angular/compiler";
 import { parse as parseVue } from "@vue/compiler-dom";
 import { parseHtml } from "angular-html-parser";
 
@@ -76,6 +78,7 @@ const VUE_TOKENS = [
   "<pre>", "<pre>\n", "<textarea>\n{{ t }}</textarea>", "<title>{{ t }} <b></title>",
   "<script>a < b</script>", "<style>a>b{}</style>", "<svg>", "<svg><style>a<b</style></svg>",
   "<!-- c -->", "{{ a }}", "{{ a<b }}", "{{ '}}' }}", "{{", "}}", "{{ <div> }}",
+  "</ div>", "<!-- c --!>", "</br>", "<C :=\"o\" v-bind:=\"p\">", "<title><{{ t }}</title>",
 ];
 
 const ANGULAR_TOKENS = [
@@ -85,6 +88,8 @@ const ANGULAR_TOKENS = [
   "{{ a }}", "{{ '}}' }}", "{{ a // b }}", "a@b.com",
   "@if (a) {", "@else if (b) {", "@else {", "@for (i of xs; track i) {", "@empty {",
   "@switch (a) {", "@case (1)", "@case (2) {", "@default {", "@defer (on idle) {", "@placeholder {",
+  "</ div>", "<!-- c --!>", "<!-->", "<style>a</ style >", "<svg:g>", "<svg:rect/>", "<svg><title><b>t</b></title></svg>",
+  "<div\u00a0a=b\u00a0c>", "{{ a",
 ];
 
 // ---
@@ -112,28 +117,31 @@ function leadingLf(children: unknown[][]): boolean {
   return true;
 }
 
-/** `angular-html-parser`, with the options Prettier passes for `html` or `angular`. */
-function angularHtmlParserSig(source: string, options: object): Sig {
-  const { rootNodes, errors } = parseHtml(source, options);
+/**
+ * An element's signature from an oracle's node: `name` as written, `ended` when an end tag closed it.
+ * The oracles drop a text that was only the ignored line break; the start tag's end tells whether there was one.
+ */
+function elementSig(source: string, n: any, name: string, ended: boolean, attrs: unknown[], children: unknown[][]): unknown[] {
+  // Not in an implicit namespace (`:svg:pre`)
+  const lfTag = !/^:\w+:/.test(n.name) && !n.isSelfClosing && IGNORES_FIRST_LF.has(name.toLowerCase());
+  const lf = lfTag && (leadingLf(children) || LEADING_LF.test(source.slice(n.startSourceSpan.end.offset)));
+  let flags = n.isSelfClosing ? "/" : "";
+  if (ended && !n.isSelfClosing) flags += "e";
+  if (lf) flags += "lf";
+  return ["el", name, flags, attrs, children];
+}
+
+/** `angular-html-parser`, with the options Prettier passes for `html`. */
+function angularHtmlParserSig(source: string): Sig {
+  const { rootNodes, errors } = parseHtml(source, { canSelfClose: true, allowHtmComponentClosingTags: true });
   if (errors.length > 0) return `error: ${errors[0].msg}`;
   const slice = (span: any) => source.slice(span.start.offset, span.end.offset);
   const nodes = (nodes: any[]): unknown[][] => nodes.map(node);
-  // angular-html-parser drops a text that was only the ignored line break;
-  // its start tag's end tells whether there was one.
-  const lfAfter = (el: any) => LEADING_LF.test(source.slice(el.startSourceSpan.end.offset));
   function node(n: any): unknown[] {
     switch (n.kind) {
       case "element": {
-        const name = slice(n.nameSpan);
-        const children = nodes(n.children);
-        const prefix = name.includes(":") ? "" : n.name.match(/^:(\w+):/)?.[1];
-        const lfTag = !prefix && !n.isSelfClosing && IGNORES_FIRST_LF.has(name.toLowerCase());
-        const lf = lfTag && (leadingLf(children) || lfAfter(n));
-        let flags = n.isSelfClosing ? "/" : "";
-        if (n.endSourceSpan !== null && !n.isSelfClosing) flags += "e";
-        if (lf) flags += "lf";
         const attrs = n.attrs.map((a: any) => [slice(a.keySpan), a.valueSpan ? stripQuotes(slice(a.valueSpan)) : null]);
-        return ["el", name, flags, attrs, children];
+        return elementSig(source, n, slice(n.nameSpan), n.endSourceSpan !== null, attrs, nodes(n.children));
       }
       case "text":
         return ["t", slice(n.sourceSpan)];
@@ -145,15 +153,51 @@ function angularHtmlParserSig(source: string, options: object): Sig {
         return ["d", slice(n.sourceSpan)];
       case "cdata":
         return ["x", slice(n.sourceSpan)];
-      // Not parsed yet (AGENTS.md): text on our side.
-      case "letDeclaration":
-      case "expansion":
-        return ["t", slice(n.sourceSpan)];
-      case "block":
-        // Our parameters are trimmed (`Block::parameters`).
-        return ["b", n.name, n.parameters.map((p: any) => p.expression.replace(/^[ \t\n\f\r]+|[ \t\n\f\r]+$/g, "")), nodes(n.children)];
       default:
         throw new UnknownNode(`unexpected node ${n.kind}`);
+    }
+  }
+  return mapNodes(nodes(rootNodes), mergeTexts);
+}
+
+const angularParser = new HtmlParser();
+
+/** `@angular/compiler`'s tree, parsed with the options its template compiler passes. */
+function angularCompilerSig(source: string): Sig {
+  const { rootNodes, errors } = angularParser.parse(source, "template.html", {
+    tokenizeExpansionForms: true,
+    tokenizeBlocks: true,
+    tokenizeLet: true,
+  });
+  if (errors.length > 0) return `error: ${errors[0].msg}`;
+  const slice = (span: any) => source.slice(span.start.offset, span.end.offset);
+  const nodes = (nodes: any[]): unknown[][] => nodes.map(node);
+  function node(n: any): unknown[] {
+    switch (n.constructor.name) {
+      case "Element": {
+        // As written: Angular's name carries the namespace (`:svg:rect`)
+        const name = /^<([^\t-\x20\xa0>\/<'"=]+)/.exec(slice(n.startSourceSpan))![1];
+        // A void or self-closed element ends at its start tag
+        const end = n.endSourceSpan;
+        const ended = end !== null && end.start.offset !== n.startSourceSpan.start.offset;
+        // A value's span leaves its quotes out
+        const attrs = n.attrs.map((a: any) => [slice(a.keySpan), a.valueSpan ? slice(a.valueSpan) : null]);
+        return elementSig(source, n, name, ended, attrs, nodes(n.children));
+      }
+      case "Text":
+        return ["t", slice(n.sourceSpan)];
+      // Trimmed, as Angular keeps it
+      case "Comment":
+        return ["c", n.value ?? ""];
+      // Our parameters are trimmed (`Block::parameters`).
+      case "Block":
+        return ["b", n.name, n.parameters.map((p: any) => p.expression.replace(/^[ \t\n\f\r]+|[ \t\n\f\r]+$/g, "")), nodes(n.children)];
+      // Not parsed yet (AGENTS.md): text on our side.
+      case "Expansion":
+      case "LetDeclaration":
+        return ["t", slice(n.sourceSpan)];
+      default:
+        throw new UnknownNode(`unexpected node ${n.constructor.name}`);
     }
   }
   return mapNodes(nodes(rootNodes), mergeTexts);
@@ -254,7 +298,7 @@ function mapNodes(nodes: any[], f: (nodes: any[]) => any[]): any[] {
   return f(nodes);
 }
 
-/** `angular-html-parser` has no bogus comment kind. */
+/** The oracles have no bogus comment kind. */
 const bogusAsComment = (nodes: any[]) => nodes.map((n) => (n[0] === "bc" ? ["c", n[1]] : n));
 
 // ---
@@ -269,16 +313,13 @@ const ANGULAR_CLOSED_BY: Record<string, string> = {
 };
 const ANGULAR_CLOSERS = [...new Set(Object.values(ANGULAR_CLOSED_BY).join(" ").split(" "))].join("|");
 
-const VOID_QUIRKS: Record<string, RegExp> = {
-  // `</` without a name right after it is a bogus comment; angular-html-parser reads `</ div >` as an end tag.
-  "</ whitespace": /<\/[ \t\n\f\r]/,
-  // angular-html-parser does not close a void element before a doctype.
-  "doctype after void": new RegExp(`${VOID_TAG}<!doctype`, "i"),
-  // ... nor before a start tag, which then cannot close the void element's parent implicitly.
-  "implicit close after void": new RegExp(`${VOID_TAG}<(?:${ANGULAR_CLOSERS})\\b`, "i"),
-  // Its tokenizer cannot see the namespace, so SVG `<title>` is raw text there, against its own tag table.
-  "svg title": /<svg\b(?:(?!<\/svg>)[^])*<title/i,
-};
+/** A void element stays open until the next token in angular-html-parser and Angular's compiler: a start tag right after it cannot close the void element's parent implicitly. */
+const IMPLICIT_CLOSE_AFTER_VOID = new RegExp(`${VOID_TAG}<(?:${ANGULAR_CLOSERS})\\b`, "i");
+
+/** A `<script` after `<!--` in a script, which hides its next `</script>` in browsers. */
+const SCRIPT_ESCAPE = /<script\b[^>]*>(?:(?!<\/script)[^])*?<!--(?:(?!-->)[^])*?<script[\s/>]/i;
+/** A quote, `<` or `=` in a tag name. */
+const PUNCTUATION_IN_TAG_NAME = /<[a-zA-Z][^\s/>]*["'<=]/;
 
 interface DialectSpec {
   tokens: readonly string[];
@@ -297,25 +338,6 @@ interface DialectSpec {
 
 /** A pattern, or a predicate where a regex cannot follow the reading. */
 type Shape = RegExp | ((source: string) => boolean);
-
-/** Whether a `{{` reaches a tag start or the end before its `}}`, outside strings, as `parser/angular.rs` reads it. */
-function unterminatedInterpolation(source: string): boolean {
-  for (let start = source.indexOf("{{"); start !== -1; ) {
-    let [at, quote, comment] = [start + 2, "", false];
-    for (; at < source.length; at++) {
-      const c = source[at];
-      if (c === "<" && /[a-zA-Z/!?]/.test(source[at + 1] ?? "")) break;
-      if (!quote && source.startsWith("}}", at)) break;
-      if (!quote && source.startsWith("//", at)) comment = true;
-      if (c === "\\") at++;
-      else if (c === quote) quote = "";
-      else if (!quote && !comment && "'\"`".includes(c)) quote = c;
-    }
-    if (!source.startsWith("}}", at)) return true;
-    start = source.indexOf("{{", at + 2);
-  }
-  return false;
-}
 
 const WHATWG_CLOSED_BY: Record<string, string> = {
   ...ANGULAR_CLOSED_BY,
@@ -349,69 +371,66 @@ function whatwgClosing(source: string): boolean {
   return false;
 }
 
-/** What DIVERGENCES.md documents for all dialects, as mutations form it. */
-const ALL_MUTATION_QUIRKS: Record<string, RegExp> = {
-  // The oracles close a comment at `-->` only.
-  "--!>": /--!>/,
-  // The oracles end a script at its first `</script>`, even after `<!-- <script`.
-  "script escape": /<script\b[^>]*>(?:(?!<\/script)[^])*?<!--(?:(?!-->)[^])*?<script[\s/>]/i,
-};
 
-/** What DIVERGENCES.md documents against `angular-html-parser` (HTML and Angular), as mutations form it. */
-const TAG_MUTATION_QUIRKS: Record<string, RegExp> = {
-  ...ALL_MUTATION_QUIRKS,
-  "/> on non-void": new RegExp(`<(?!(?:${[...VOID].join("|")})[\\s/>])[a-zA-Z][^\\s/>]*(?:\\s[^<>]*)?/>`, "i"),
-  "= starts an attribute name": /<[a-zA-Z][^<>]*[\s"']=/,
-  "unquoted value with a quote or =": /=[ \t\n\f\r]*[^\s"'>][^\s>]*["'=]/,
-  "empty comment": /<!---?>/,
-  "raw text end after whitespace": /<\/[ \t\n\f\r]+(?:script|style|textarea|title)\b/i,
-  "punctuation in a name": /<[a-zA-Z][^\s/>]*["'<=]|\s[^\s/>="'<]*["'<]/,
-};
+/**
+ * Ours in the shape of Angular's AST (DIVERGENCES.md "How Angular's AST holds a node"): it drops doctypes,
+ * and the bogus comments `<!` opens, which it reads as doctypes;
+ * it reads a bogus comment `<?` opens, and CDATA, as text, and trims comments.
+ */
+function angularShape(nodes: any[]): any[] {
+  const out = nodes
+    .filter((n) => n[0] !== "d" && !(n[0] === "bc" && n[2] === "<!"))
+    .map((n) => (n[0] === "x" ? ["t", n[1].slice(9, -3)] : n[0] === "bc" && n[2] === "<?" ? ["t", `<${n[1]}>`] : n));
+  return bogusAsComment(mergeTexts(out, true)).map((n) => (n[0] === "c" ? ["c", n[1].replace(/\r\n?/g, "\n").trim()] : n));
+}
 
 const DIALECTS: Record<string, DialectSpec> = {
   html: {
     tokens: HTML_TOKENS,
     wrap: (body) => body,
-    oracle: (source) => angularHtmlParserSig(source, { canSelfClose: true, allowHtmComponentClosingTags: true }),
+    oracle: angularHtmlParserSig,
     normalize: (sig) => mapNodes(sig, bogusAsComment),
     quirks: {
-      ...VOID_QUIRKS,
+      // `</` and whitespace open a bogus comment; angular-html-parser reads `</ div >` as an end tag.
+      "</ whitespace": /<\/[ \t\n\f\r]/,
+      // angular-html-parser does not close a void element before a doctype either.
+      "doctype after void": new RegExp(`${VOID_TAG}<!doctype`, "i"),
+      "implicit close after void": IMPLICIT_CLOSE_AFTER_VOID,
+      // Its tokenizer cannot see the namespace, so SVG `<title>` is raw text there, against its own tag table.
+      "svg title": /<svg\b(?:(?!<\/svg>)[^])*<title/i,
       // Implicit end tags follow WHATWG's optional tags, through omittable ancestors.
       "WHATWG optional end tags": whatwgClosing,
     },
+    // What angular-html-parser reads otherwise, as mutations form it.
     mutationQuirks: {
-      ...TAG_MUTATION_QUIRKS,
-      // The oracle reads Angular's bracketed attribute names in HTML too.
+      // It closes a comment at `-->` only ...
+      "--!>": /--!>/,
+      // ... and ends a script at its first `</script>`, even after `<!-- <script`.
+      "script escape": SCRIPT_ESCAPE,
+      "/> on non-void": new RegExp(`<(?!(?:${[...VOID].join("|")})[\\s/>])[a-zA-Z][^\\s/>]*(?:\\s[^<>]*)?/>`, "i"),
+      "= starts an attribute name": /<[a-zA-Z][^<>]*[\s"']=/,
+      "unquoted value with a quote or =": /=[ \t\n\f\r]*[^\s"'>][^\s>]*["'=]/,
+      "empty comment": /<!---?>/,
+      "raw text end after whitespace": /<\/[ \t\n\f\r]+(?:script|style|textarea|title)\b/i,
+      "punctuation in a name": new RegExp(`${PUNCTUATION_IN_TAG_NAME.source}|\\s[^\\s/>="'<]*["'<]`),
+      // It reads Angular's bracketed attribute names in HTML too.
       "bracketed attribute name": /\s\[[^\n=]*>/,
     },
   },
   angular: {
     tokens: ANGULAR_TOKENS,
     wrap: (body) => body,
-    oracle: (source) =>
-      angularHtmlParserSig(source, {
-        canSelfClose: true,
-        tokenizeAngularBlocks: true,
-        tokenizeAngularLetDeclaration: true,
-        allowStartTagComments: true,
-      }),
-    normalize: (sig) =>
-      mapNodes(sig, (nodes) =>
-        // The oracle collapses the whitespace without a line break in `else   if` and `default   never`, as Angular does.
-        bogusAsComment(mergeTexts(nodes, true)).map((n) =>
-          n[0] === "b"
-            ? ["b", n[1].replace(/^(else|default)[ \t\f]+(if|never)$/, "$1 $2"), n[2], n[3]]
-            : n,
-        ),
-      ),
+    oracle: angularCompilerSig,
+    normalize: (sig) => mapNodes(sig, angularShape),
     quirks: {
-      ...VOID_QUIRKS,
-      // angular-html-parser reads the whitespace after a body-less `@case` into its span.
+      "implicit close after void": IMPLICIT_CLOSE_AFTER_VOID,
+      // Angular reads the whitespace after a body-less `@case` into its span.
       "fallthrough case": /@(?:case|default)\b(?:[^{}@]*?\))?[ \t\n\f\r]+@/,
-      // The oracle reads a `{{` without `}}` before a tag or the end as text; we report it.
-      "unterminated interpolation": unterminatedInterpolation,
     },
-    mutationQuirks: TAG_MUTATION_QUIRKS,
+    mutationQuirks: {
+      // Angular ends a tag name at `= < ' "` too; ours, printed as written, keeps them in it.
+      "punctuation in a name": PUNCTUATION_IN_TAG_NAME,
+    },
     pending: {
       "@let": /@let\s/,
       ICU: /\{[^{}]*,\s*(?:plural|select|selectordinal)\s*,/,
@@ -428,23 +447,18 @@ const DIALECTS: Record<string, DialectSpec> = {
     quirks: {
       // Vue skips whitespace after `</` in a bogus comment's content.
       "</ whitespace": /<\/[ \t\n\f\r]/,
+      // Inside `v-pre`, Vue names `v-bind:` without its colon, and drops its value.
+      "directive without argument in v-pre": /\bv-pre\b[^]*\sv-[^\s=>/:]+:(?=[\s=>/])/,
+      // Vue drops a void element's end tag; we keep it in the text.
+      "</br>": new RegExp(`<\\/[ \\t\\n\\f\\r]*(?:${[...VOID].join("|")})[\\s/>]`),
     },
     mutationQuirks: {
-      ...ALL_MUTATION_QUIRKS,
-      // Vue reads a quote in a directive name; we report it.
-      "punctuation in a name": /(?:"[^"]*"|'[^']*'|\s[^\s/>="']*)["']/,
-      // A directive name without its argument (`v-slot:`, a lone `:`) is a plain attribute.
-      "directive without argument": /[\s"'](?:v-[^\s=>/:]+:|[:@#.])(?=[\s=>/"'])/,
+      // Vue's parser ends a script at its first `</script>`; its compiler reports any script in a template.
+      "script escape": SCRIPT_ESCAPE,
       // A root `<html>` or `<!doctype html>` makes the file HTML, as Prettier reads it.
       "html page": /<html\b|<!doctype\s+html\b/i,
-      // Vue ignores a `/` in a start tag that no `>` follows; we report it.
-      "/ in start tag": /<[a-zA-Z](?:[^>"']|"[^"]*"|'[^']*')*?\/(?!>)/,
-      // Vue reads `</br>` as `<br>`, as HTML tree construction does; we report it.
-      "</br>": /<\/br\b/i,
       // Vue drops a bogus comment `<!` opens, or reads it as text or on to a later `>`.
       "bogus comment": /<!(?!--|\[CDATA\[)/i,
-      // Vue misses an interpolation right after a `<` in RCDATA, and reads an unterminated one past its end.
-      "{{ }} in RCDATA": /<(title|textarea)\b[^>]*>(?:(?!<\/\1)[^])*?(?:<\{\{|\{\{(?:(?!\}\})[^])*?<\/\1)/i,
     },
   },
 };

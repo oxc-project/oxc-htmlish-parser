@@ -12,7 +12,11 @@ Root sfc=false
     @[34..38] "href" = [39..47] "/foo/bar"
     Text [48..49] "y" (-|-) content=[48..49] "y"
   Text [53..54] "\n" (nl|nl)
-  Element [55..56] "i" Html end_tag=[62..66] "</i>"
-    @[57..58] "c" = [59..60] "/"
-    Text [61..62] "z" (-|-) content=[61..62] "z"
-  Text [66..67] "\n" (nl|nl)
+  Element [55..61] "my-cmp" Html self_closing no_end_tag span_end=66
+    @[62..63] "c" = [64..64] ""
+  Text [66..68] "z\n" (-|nl) content=[66..67] "z"
+  Element [69..70] "a" Html end_tag=[78..82] "</a>"
+    @[71..72] "b" = [73..74] "c"
+    @[74..74] "" = [75..76] "d"
+    Text [77..78] "w" (-|-) content=[77..78] "w"
+  Text [82..83] "\n" (nl|nl)

@@ -8,9 +8,10 @@ impl Builder<'_> {
     pub(super) fn markup(&mut self) -> PResult<()> {
         let start = self.pos;
         match self.bytes[start + 1] {
-            // As in the HTML tokenizer, `</` without a name right after it is a bogus comment (`</ div>`);
+            // As in the HTML tokenizer, `</` without a name right after it is a bogus comment (`</3>`);
             // htm's `<//>` aside (DIVERGENCES.md#end-tag-without-a-name).
-            b'/' if self.byte(start + 2).is_some_and(|b| {
+            // Vue and Angular take whitespace before the name (`</ div>`, DIVERGENCES.md#end-tag-after-whitespace).
+            b'/' if self.byte(self.end_tag_name_start(start)).is_some_and(|b| {
                 !b.is_ascii_alphabetic() && b != b'>' && !(b == b'/' && self.rules.htm_closing)
             }) =>
             {
@@ -36,12 +37,13 @@ impl Builder<'_> {
     fn comment(&mut self) -> PResult<()> {
         let start = self.pos;
         let content_start = start + 4;
-        // `<!-->` and `<!--->` are empty comments, as in the HTML tokenizer
-        // (DIVERGENCES.md#abruptly-closed-empty-comment).
+        // `<!-->` and `<!--->` are empty comments, as in the HTML tokenizer;
+        // Angular's compiler reads on (DIVERGENCES.md#abruptly-closed-empty-comment).
+        let angular = self.rules.angular;
         let (close, end) = match &self.bytes[content_start..] {
-            [b'>', ..] => (content_start, content_start + 1),
-            [b'-', b'>', ..] => (content_start, content_start + 2),
-            // The first `>` after `--`, or `--!>` (DIVERGENCES.md#incorrectly-closed-comment)
+            [b'>', ..] if !angular => (content_start, content_start + 1),
+            [b'-', b'>', ..] if !angular => (content_start, content_start + 2),
+            // The first `>` after `--`, or `--!>` as browsers read it (DIVERGENCES.md#incorrectly-closed-comment)
             _ => {
                 let mut from = content_start;
                 loop {
@@ -53,7 +55,9 @@ impl Builder<'_> {
                     };
                     match &self.bytes[content_start..gt] {
                         [.., b'-', b'-'] => break (gt - 2, gt + 1),
-                        [.., b'-', b'-', b'!'] => break (gt - 3, gt + 1),
+                        [.., b'-', b'-', b'!'] if self.rules.bang_comment_end => {
+                            break (gt - 3, gt + 1);
+                        }
                         _ => from = gt + 1,
                     }
                 }

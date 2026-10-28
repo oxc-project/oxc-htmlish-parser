@@ -2,14 +2,14 @@
 source: crates/oxc_htmlish_parser/tests/ast.rs
 ---
 Root sfc=true
-  Element [1..9] "template" Html end_tag=[59..70] "</template>"
+  Element [1..9] "template" Html end_tag=[61..72] "</template>"
     Text [10..13] "\n  " (nl|nl)
     Element [14..17] "svg" Svg end_tag=[29..35] "</svg>"
       Element [19..21] "br" Svg void no_end_tag span_end=22
       Interpolation expression=[24..27] " a "
     Text [35..38] "\n  " (nl|nl)
-    Comment bogus content=[40..50] " not a tag"
-    Text [51..54] "\n  " (nl|nl)
-    Comment bogus content=[56..57] "3"
-    Text [58..59] "\n" (nl|nl)
-  Text [70..71] "\n" (nl|nl)
+    Comment bogus content=[40..52] " 3 not a tag"
+    Text [53..56] "\n  " (nl|nl)
+    Comment bogus content=[58..59] "3"
+    Text [60..61] "\n" (nl|nl)
+  Text [72..73] "\n" (nl|nl)

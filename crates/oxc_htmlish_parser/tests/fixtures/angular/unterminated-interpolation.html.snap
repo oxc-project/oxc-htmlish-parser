@@ -1,4 +1,9 @@
 ---
 source: crates/oxc_htmlish_parser/tests/ast.rs
 ---
-Error: unterminated interpolation at 3..5
+Root sfc=false
+  Element [1..2] "p" Html end_tag=[16..20] "</p>"
+    Text [3..8] "{{ a " (-|sp) content=[3..7] "{{ a"
+    Element [9..10] "b" Html end_tag=[12..16] "</b>"
+      Text [11..12] "x" (-|-) content=[11..12] "x"
+  Text [20..21] "\n" (nl|nl)
