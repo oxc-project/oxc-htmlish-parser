@@ -99,12 +99,21 @@ impl<'a> Builder<'a> {
     /// `@name (parameters) {`, or a block without a body; `pos` is at `@`.
     pub(super) fn block_start(&mut self) -> PResult<()> {
         let start = self.pos;
-        // The name may hold whitespace after its first character (`else if`)
+        // The name may hold whitespace after its first character (`else if`), Angular's whitespace included
         let name_start = start + 1;
-        let mut at = self.skip(name_start, |b| {
-            b.is_ascii_alphanumeric() || b == b'_' || b.is_ascii_whitespace()
-        });
-        let name_end = name_start + trim(&self.bytes[name_start..at]).1;
+        let (mut at, mut name_end) = (name_start, name_start);
+        loop {
+            match self.byte(at) {
+                Some(b) if b.is_ascii_alphanumeric() || b == b'_' => {
+                    at += 1;
+                    name_end = at;
+                }
+                _ => match self.ws_len(at) {
+                    0 => break,
+                    n => at += n,
+                },
+            }
+        }
         let mut parameters = ArenaVec::new_in(&self.allocator);
         let mut open_end = name_end;
         if self.byte(at) == Some(b'(') {

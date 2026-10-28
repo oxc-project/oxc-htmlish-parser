@@ -75,3 +75,9 @@ Root sfc=false
   Block name=[517..519] "if" parameters=["[521..530] \"f(\\\"a;b)\\\")\"", "[533..534] \"c\""] open=[516..537] "@if (f(\"a;b)\") ; c) {" close=[538..539] "}"
     Text [537..538] "x" (-|-) content=[537..538] "x"
   Text [539..540] "\n" (nl|nl)
+  Block name=[541..543] "if" parameters=["[545..546] \"a\""] open=[540..549] "@if (a) {" close=[550..551] "}"
+    Text [549..550] "x" (-|-) content=[549..550] "x"
+  Text [551..552] " " (sp|sp)
+  Block name=[553..561] "else\u{a0}if" parameters=["[563..564] \"b\""] open=[552..567] "@else\u{a0}if (b) {" close=[568..569] "}"
+    Text [567..568] "y" (-|-) content=[567..568] "y"
+  Text [569..570] "\n" (nl|nl)
