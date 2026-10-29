@@ -293,6 +293,27 @@ Both are blocks to a browser either way, so the whitespace a printer adds betwee
 `fixture: html/implicit-close.html`
 `runner: WHATWG optional end tags`
 
+### End tags of omitted `html`, `head` and `body`
+
+Ours: the end tag of an `html`, `head` or `body` whose start tag is omitted is a node of its own (`NodeKind::EndTag`),
+where WHATWG reads it without an error, at the document's top level:
+
+- `</head>` after head content only (`title`, `meta`, ...), nothing else open but a written `html`;
+- `</body>` and `</html>` past the open elements whose end tags may go (`p`, `li`, ...), which close there;
+- once, before what follows the element's end (a second `</body>`, or `</body>` after `</html>`, is an error).
+
+`angular-html-parser` reports them: the elements are not in its tree to close.
+
+```html
+<!doctype html><title>t</title></head><p>x</body></html>
+<!-- angular-html-parser: error; ours: doctype, title, </head>, p, </body>, </html> -->
+```
+
+The rest is read as before: content after `</body>`, which WHATWG puts back into the body with an error, follows it.
+In a conditional comment's content, which no browser parses, they stay an error.
+`decided by: 3`
+`fixture: html/omitted-element-end-tags.html`
+
 ## Angular
 
 ### Blocks without a body

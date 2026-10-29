@@ -1,0 +1,17 @@
+---
+source: crates/oxc_htmlish_parser/tests/ast.rs
+---
+Root sfc=false
+  DocType value=[10..14] "html"
+  Text [15..16] "\n" (nl|nl)
+  Element [17..22] "title" Html escapable end_tag=[24..32] "</title>"
+    Text [23..24] "t" (-|-) content=[23..24] "t"
+  Text [32..33] "\n" (nl|nl)
+  EndTag name=[35..39] "head"
+  Text [40..41] "\n" (nl|nl)
+  Element [42..43] "p" Html no_end_tag span_end=46
+    Text [44..46] "x\n" (-|nl) content=[44..45] "x"
+  EndTag name=[48..52] "body"
+  Text [53..54] "\n" (nl|nl)
+  EndTag name=[56..60] "html"
+  Text [61..62] "\n" (nl|nl)

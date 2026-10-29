@@ -86,6 +86,7 @@ Step 1 holds a printer to a norm's tree only where the input has no parse error.
   WHATWG's closers that would turn a written end tag into an error (`p` at `figure`: `<p><figure></figure></p>`) are left out, as in the oracle.
 - What a norm inserts without a parse error (`html`, `head`, `body`, `tbody`) is not inserted:
   a printer adds no tags, so the norm inserts them into the output again.
+  An end tag written for an inserted `html`, `head` or `body` is a node of its own after the content (DIVERGENCES.md#end-tags-of-omitted-html-head-and-body).
 - What a norm rebuilds on a parse error (anything its tree builder does on one: foster parenting, the adoption agency, nested `a`,
   breaking out of foreign content) is not rebuilt, as in the oracle:
   a template's source is no page a browser reads, and the rebuilt tree is none of the template's.

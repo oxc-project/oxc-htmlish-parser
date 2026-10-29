@@ -2,7 +2,7 @@
 //!
 //! One pass over the bytes builds the tree directly; there is no token stream.
 //! Tree construction is limited to the tag table (`tags.rs`):
-//! void elements, raw text, implicit closing.
+//! void elements, raw text, implicit closing, what `head` holds.
 
 use memchr::{memchr, memmem};
 
@@ -495,12 +495,12 @@ impl<'a> Builder<'a> {
             || matches!(&self.nodes[open.id.index()].kind, NodeKind::Element(el) if el.self_closing)
     }
 
-    /// Closes the open elements above `stack[index]` at `at`, when each is omittable;
+    /// Closes the open elements above the first `len` at `at`, when each is omittable;
     /// `false`, closing none, when one is not.
-    fn close_omitted_above(&mut self, index: usize, at: usize) -> bool {
-        let omittable = self.stack[index + 1..].iter().all(|open| self.omittable(open));
+    fn close_omitted_above(&mut self, len: usize, at: usize) -> bool {
+        let omittable = self.stack[len..].iter().all(|open| self.omittable(open));
         if omittable {
-            self.close_down_to(index + 1, at);
+            self.close_down_to(len, at);
         }
         omittable
     }
@@ -546,6 +546,14 @@ mod tests {
             ("<template><p><div></p></template>", Dialect::Vue, UnexpectedEndTag, 18),
             ("<docs>a", Dialect::Vue, UnterminatedRawText, 0),
             ("a<//>", Dialect::Html, UnexpectedEndTag, 1),
+            // An omitted element's end tag where WHATWG reads it with an error
+            ("<div></body>", Dialect::Html, UnexpectedEndTag, 5),
+            ("<p>x</p></head>", Dialect::Html, UnexpectedEndTag, 8),
+            ("<body></body></body>", Dialect::Html, UnexpectedEndTag, 13),
+            ("<html></html></body>", Dialect::Html, UnexpectedEndTag, 13),
+            ("</html></body>", Dialect::Html, UnexpectedEndTag, 7),
+            ("</head></head>", Dialect::Html, UnexpectedEndTag, 7),
+            ("<template></body></template>", Dialect::Vue, UnexpectedEndTag, 10),
         ] {
             let allocator = Allocator::default();
             let diagnostic = Parser::new(&allocator, source, dialect).parse().unwrap_err();
@@ -557,11 +565,12 @@ mod tests {
     #[test]
     fn unparsable_conditional_comment() {
         let allocator = Allocator::default();
-        let root =
-            Parser::new(&allocator, "<!--[if IE]></p><![endif]-->", Dialect::Html).parse().unwrap();
-        let (id, node) = root.children(NodeId::DOCUMENT).next().unwrap();
-        let NodeKind::ConditionalComment(comment) = &node.kind else { panic!() };
-        assert!(!comment.parsed);
-        assert!(root.children(id).next().is_none());
+        for source in ["<!--[if IE]></p><![endif]-->", "<!--[if IE]></body><![endif]-->"] {
+            let root = Parser::new(&allocator, source, Dialect::Html).parse().unwrap();
+            let (id, node) = root.children(NodeId::DOCUMENT).next().unwrap();
+            let NodeKind::ConditionalComment(comment) = &node.kind else { panic!() };
+            assert!(!comment.parsed, "{source:?}");
+            assert!(root.children(id).next().is_none());
+        }
     }
 }
