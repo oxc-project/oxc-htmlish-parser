@@ -16,10 +16,6 @@ fmt:
 bench:
     cargo bench -p oxc-htmlish-parser --bench parse
 
-# Check dependency advisories, licenses and sources
-deny:
-    cargo deny check
-
 # Regenerate snapshots against the pinned Prettier fixture corpus; review the diff.
 conformance *dialects:
     node tasks/conformance/run.ts {{ dialects }}

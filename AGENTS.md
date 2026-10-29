@@ -119,11 +119,11 @@ Step 1 holds a printer to a norm's tree only where the input has no parse error.
 | `just fuzz-panic <html\|vue\|angular> [count] [seed]` | arbitrary UTF-8 inputs: no crashes or broken AST invariants |
 | `just conformance [html\|vue\|angular]` | regenerate corpus snapshots against the pinned Prettier fixtures; review the diff |
 | `just bench` | Criterion benchmarks for each dialect and implicit-closing workloads; CI runs them with CodSpeed |
-| `just deny` | dependency advisories, licenses and sources, including benchmark features |
 | `just compare <html\|vue\|angular> <rev> <file>...` | this tree against `<rev>` on real files: what now fails, parses, or reads differently |
 
 First run: `npm ci --ignore-scripts` in `tasks/differential`.
-CI (`.github/workflows`) runs format, check (including WebAssembly), test, clippy, doc, typos, dependency checks, benchmarks and corpus snapshots.
+CI (`.github/workflows`) runs format, check (including WebAssembly), test, clippy, doc, typos, security, benchmarks and corpus snapshots.
+`security.yml` uses `oxc-project/security-action` for workflow analysis and the shared dependency policy when `Cargo.lock` changes.
 `differential.yml` runs structural fuzz for every dialect over seeds 0 to 2, plus panic fuzz with seed 0.
 The conformance corpus is Prettier's HTML, Vue and Angular fixtures at the oracle pin, fetched into the ignored
 `tasks/conformance/repos/`; `just conformance-clone` fetches it and `just conformance-clean` removes it.
