@@ -73,6 +73,7 @@ one not parsed yet is in "The one rule" and the differential's `pending`.
 Prettier's pin moves the oracles: `angular-html-parser` and `@angular/compiler` follow its `package.json`, the rest the versions that ship with it.
 
 1. Bump `tasks/differential/package.json` (exact versions, excluded from Renovate) and the table above.
+   Update the Prettier version and commit in `tasks/conformance/run.ts` together and regenerate its snapshots.
 2. Run `just differential` for every dialect, over several seeds, and `just differential-files` on local repos.
 3. A quirk that no longer fires is an entry to re-decide: delete it when the oracle now reads as we do.
    A new mismatch is decided as above, never exempted by reflex.
@@ -115,10 +116,18 @@ Step 1 holds a printer to a norm's tree only where the input has no parse error.
 | `cargo insta review` | accept snapshot changes after an intentional AST change |
 | `just differential <html\|vue\|angular> [count] [seed]` | structural fuzz against the oracles (`angular-html-parser`, `@vue/compiler-dom`, `@angular/compiler`) |
 | `just differential-files <html\|vue\|angular> <file>...` | the same comparison on real files |
+| `just fuzz-panic <html\|vue\|angular> [count] [seed]` | arbitrary UTF-8 inputs: no crashes or broken AST invariants |
+| `just conformance [html\|vue\|angular]` | regenerate corpus snapshots against the pinned Prettier fixtures; review the diff |
+| `just bench` | Criterion benchmarks for each dialect and implicit-closing workloads; CI runs them with CodSpeed |
+| `just deny` | dependency advisories, licenses and sources, including benchmark features |
 | `just compare <html\|vue\|angular> <rev> <file>...` | this tree against `<rev>` on real files: what now fails, parses, or reads differently |
 
-First run: `npm i` in `tasks/differential`.
-CI (`.github/workflows`) runs check, test, clippy, doc and typos, and `differential.yml` the fuzz for every dialect over seeds 0 to 2.
+First run: `npm ci --ignore-scripts` in `tasks/differential`.
+CI (`.github/workflows`) runs format, check (including WebAssembly), test, clippy, doc, typos, dependency checks, benchmarks and corpus snapshots.
+`differential.yml` runs structural fuzz for every dialect over seeds 0 to 2, plus panic fuzz with seed 0.
+The conformance corpus is Prettier's HTML, Vue and Angular fixtures at the oracle pin, fetched into the ignored
+`tasks/conformance/repos/`; `just conformance-clone` fetches it and `just conformance-clean` removes it.
+Snapshots count oracle matches, errors, documented quirks and pending features; `--check` rejects any change to the baseline.
 
 - `tests/fixtures/<dialect>/*` parse as that dialect (`html`, `vue`, `angular`); one compact tree per fixture.
 - Add a fixture when a change touches structure or facts.

@@ -12,6 +12,30 @@ test:
 fmt:
     cargo fmt
 
+# Run parser benchmarks (HTML, Vue and Angular)
+bench:
+    cargo bench -p oxc-htmlish-parser --bench parse
+
+# Check dependency advisories, licenses and sources
+deny:
+    cargo deny check
+
+# Regenerate snapshots against the pinned Prettier fixture corpus; review the diff.
+conformance *dialects:
+    node tasks/conformance/run.ts {{ dialects }}
+
+# Fetch the pinned corpus without running it
+conformance-clone:
+    node tasks/conformance/run.ts --clone
+
+# Remove the fetched corpus
+conformance-clean:
+    node tasks/conformance/run.ts --clean
+
+# Panic and AST-invariant fuzzing over arbitrary UTF-8
+fuzz-panic dialect count="10000" seed="0":
+    node tasks/differential/panic.ts {{ dialect }} {{ count }} {{ seed }}
+
 # Differential fuzz against the dialect's oracle.
 # Requires `npm install` in tasks/differential once, and Node >= 22.18.
 differential dialect count="5000" seed="0":
