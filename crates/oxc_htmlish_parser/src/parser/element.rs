@@ -27,7 +27,8 @@ impl<'a> Builder<'a> {
         let name = &self.source[name_start..name_end];
 
         let mut buf = [0; 16];
-        if self.tag(name, tags::lowercase(name, &mut buf), self.context().namespace, false).void {
+        let lowercase = tags::lowercase(name, &mut buf);
+        if self.tag(name, lowercase, self.context().namespace, false).void {
             return error(DiagnosticKind::VoidEndTag, tag.span);
         }
         // Every dialect so far matches end tags case-insensitively
@@ -37,14 +38,67 @@ impl<'a> Builder<'a> {
             self.stack.iter().rposition(|open| !open.block && open.name.eq_ignore_ascii_case(name))
         };
         let Some(index) = index else {
+            if self.omitted_element_end(tag, lowercase) {
+                return Ok(());
+            }
             return error(DiagnosticKind::UnexpectedEndTag, tag.span);
         };
-        if !self.close_omitted_above(index, start) {
+        if !self.close_omitted_above(index + 1, start) {
             return error(DiagnosticKind::UnexpectedEndTag, tag.span);
         }
         let open = self.stack.pop().expect("index < len");
         self.close(&open, Some(tag), start);
         Ok(())
+    }
+
+    /// The end tag of an `html`, `head` or `body` (`name`, lowercase) whose start tag is omitted,
+    /// where WHATWG reads it without an error: a node of its own after the content
+    /// (DIVERGENCES.md#end-tags-of-omitted-html-head-and-body).
+    #[inline(never)]
+    fn omitted_element_end(&mut self, tag: EndTag, name: &str) -> bool {
+        if !self.rules.whatwg
+            || self.base_parent != NodeId::DOCUMENT
+            || !matches!(name, "html" | "head" | "body")
+        {
+            return false;
+        }
+        // A written `<html>` holds `head` and `body`
+        let (keep, parent) = match self.stack.first() {
+            Some(open) if name != "html" && open.name.eq_ignore_ascii_case("html") => (1, open.id),
+            _ => (0, NodeId::DOCUMENT),
+        };
+        let mut before = std::iter::successors(self.nodes[parent.index()].first_child, |&id| {
+            self.nodes[id.index()].next
+        })
+        .map(|id| &self.nodes[id.index()]);
+        let valid = if name == "head" {
+            // Nothing of the body yet
+            self.stack.len() == keep
+                && before.all(|node| match &node.kind {
+                    NodeKind::Text(text) => text.is_whitespace_only(),
+                    NodeKind::Element(el) => tags::is_head_content(el.key),
+                    NodeKind::Comment(_)
+                    | NodeKind::ConditionalComment(_)
+                    | NodeKind::ConditionalStart(_)
+                    | NodeKind::ConditionalEnd
+                    | NodeKind::DocType(_) => true,
+                    _ => false,
+                })
+        } else {
+            // Once, before what follows the element's end; the open elements whose end tags may go close here
+            let after: &[&str] = if name == "html" { &["html"] } else { &["html", "body"] };
+            !before.any(|node| match &node.kind {
+                NodeKind::Element(el) => after.contains(&el.key),
+                NodeKind::EndTag(end) => {
+                    after.iter().any(|n| end.name.slice(self.source).eq_ignore_ascii_case(n))
+                }
+                _ => false,
+            }) && self.close_omitted_above(keep, tag.span.start as usize)
+        };
+        if valid {
+            self.push(NodeKind::EndTag(ArenaBox::new_in(tag, &self.allocator)), tag.span);
+        }
+        valid
     }
 
     pub(super) fn start_tag(&mut self) -> PResult<()> {

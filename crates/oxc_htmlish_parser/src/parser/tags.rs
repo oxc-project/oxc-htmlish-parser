@@ -113,6 +113,24 @@ pub fn is_void(lowercase: &str) -> bool {
     matches!(lowercase, void_names!())
 }
 
+/// What `head` holds before the body starts, by the lowercase name.
+pub fn is_head_content(lowercase: &str) -> bool {
+    matches!(
+        lowercase,
+        "base"
+            | "basefont"
+            | "bgsound"
+            | "link"
+            | "meta"
+            | "noframes"
+            | "noscript"
+            | "script"
+            | "style"
+            | "template"
+            | "title"
+    )
+}
+
 /// The namespace an element named `key` opens in, given the one its parent's children inherit.
 pub fn namespace(key: &str, inherited: Namespace) -> Namespace {
     match key {

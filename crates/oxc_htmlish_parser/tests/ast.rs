@@ -153,6 +153,7 @@ impl Printer<'_, '_> {
             NodeKind::ConditionalEnd => format!("ConditionalEnd {}", q(node.span)),
             NodeKind::DocType(n) => format!("DocType value={}", q(n.value)),
             NodeKind::Cdata => format!("Cdata {}", q(node.span)),
+            NodeKind::EndTag(tag) => format!("EndTag name={}", q(tag.name)),
             NodeKind::Block(b) => {
                 let parameters: Vec<_> = b.parameters.iter().map(|p| q(*p)).collect();
                 let close = b.close.map_or("no_body".to_string(), |c| format!("close={}", q(c)));

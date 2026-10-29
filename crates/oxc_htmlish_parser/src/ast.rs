@@ -93,6 +93,9 @@ pub enum NodeKind<'a> {
     Cdata,
     /// An Angular control flow block (`@if (a) { … }`); its content is the node's children.
     Block(ArenaBox<'a, Block<'a>>),
+    /// The end tag of an `html`, `head` or `body` whose start tag is omitted (`<title>t</title></head>`):
+    /// HTML inserts the element around the content, which stays where it is; the end tag follows it.
+    EndTag(ArenaBox<'a, EndTag>),
 }
 
 #[derive(Debug)]

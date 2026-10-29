@@ -182,7 +182,7 @@ impl<'a> Builder<'a> {
     pub(super) fn block_close(&mut self) -> PResult<()> {
         let at = self.pos;
         let index = self.stack.iter().rposition(|open| open.block);
-        if !index.is_some_and(|index| self.close_omitted_above(index, at)) {
+        if !index.is_some_and(|index| self.close_omitted_above(index + 1, at)) {
             return error(DiagnosticKind::UnexpectedBlockClose, span(at, at + 1));
         }
         let open = self.stack.pop().expect("the block is on the stack");
