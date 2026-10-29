@@ -274,3 +274,11 @@ pub struct DocType {
     /// After `<!doctype`, trimmed (`html`).
     pub value: Span,
 }
+
+#[cfg(target_pointer_width = "64")]
+const _: () = {
+    assert!(size_of::<Node<'static>>() == 40);
+    assert!(size_of::<NodeKind<'static>>() == 16);
+    assert!(size_of::<Element<'static>>() == 96);
+    assert!(size_of::<Attribute<'static>>() == 40);
+};
