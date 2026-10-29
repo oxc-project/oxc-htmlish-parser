@@ -225,6 +225,12 @@ struct Open<'a> {
     name: &'a str,
     block: bool,
     tag: Tag,
+    /// The element may go without an end tag when its parent's closes it
+    /// (closed by its parent, or a `/>` HTML ignored: `<my-el />`, closed as in browsers).
+    omittable: bool,
+    /// The nearest entry at or below this one that implicit closing (`start_tag`) checks:
+    /// with `whatwg`, it passes an omittable one no start tag closes (`<my-el />`).
+    look: Option<usize>,
     /// What the element's children inherit.
     context: Context,
 }
@@ -514,17 +520,10 @@ impl<'a> Builder<'a> {
         node.span = span(node.span.start as usize, end);
     }
 
-    /// Whether `open` may go without an end tag when its parent's closes it
-    /// (closed by its parent, or a `/>` HTML ignored: `<my-el />`, closed as in browsers).
-    fn omittable(&self, open: &Open<'a>) -> bool {
-        open.tag.closed_by_parent
-            || matches!(&self.nodes[open.id.index()].kind, NodeKind::Element(el) if el.self_closing)
-    }
-
     /// Closes the open elements above the first `len` at `at`, when each is omittable;
     /// `false`, closing none, when one is not.
     fn close_omitted_above(&mut self, len: usize, at: usize) -> bool {
-        let omittable = self.stack[len..].iter().all(|open| self.omittable(open));
+        let omittable = self.stack[len..].iter().all(|open| open.omittable);
         if omittable {
             self.close_down_to(len, at);
         }

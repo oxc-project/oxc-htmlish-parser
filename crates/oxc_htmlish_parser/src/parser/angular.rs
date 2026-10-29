@@ -144,7 +144,15 @@ impl<'a> Builder<'a> {
         self.pos = open_end;
         if body {
             let context = self.context();
-            self.stack.push(Open { id, name: "", block: true, tag: Tag::default(), context });
+            self.stack.push(Open {
+                id,
+                name: "",
+                block: true,
+                tag: Tag::default(),
+                omittable: false,
+                look: Some(self.stack.len()),
+                context,
+            });
         }
         Ok(())
     }

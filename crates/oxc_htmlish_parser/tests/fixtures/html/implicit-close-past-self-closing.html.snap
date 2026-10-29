@@ -1,0 +1,42 @@
+---
+source: crates/oxc_htmlish_parser/tests/ast.rs
+---
+Root sfc=false
+  Element [1..3] "ul" Html end_tag=[32..37] "</ul>"
+    Element [5..7] "li" Html no_end_tag span_end=27
+      Text [8..9] "a" (-|-) content=[8..9] "a"
+      Element [10..13] "x-a" Html self_closing no_end_tag span_end=27
+        Element [17..18] "p" Html no_end_tag span_end=27
+          Text [19..20] "b" (-|-) content=[19..20] "b"
+          Element [21..24] "x-b" Html self_closing no_end_tag span_end=27
+    Element [28..30] "li" Html no_end_tag span_end=32
+      Text [31..32] "c" (-|-) content=[31..32] "c"
+  Text [37..38] "\n" (nl|nl)
+  Element [39..44] "table" Html end_tag=[82..90] "</table>"
+    Element [46..48] "tr" Html no_end_tag span_end=73
+      Element [50..52] "td" Html no_end_tag span_end=61
+        Text [53..54] "a" (-|-) content=[53..54] "a"
+        Element [55..58] "x-a" Html self_closing no_end_tag span_end=61
+      Element [62..64] "td" Html no_end_tag span_end=73
+        Text [65..66] "b" (-|-) content=[65..66] "b"
+        Element [67..70] "x-b" Html self_closing no_end_tag span_end=73
+    Element [74..76] "tr" Html no_end_tag span_end=82
+      Element [78..80] "td" Html no_end_tag span_end=82
+        Text [81..82] "c" (-|-) content=[81..82] "c"
+  Text [90..91] "\n" (nl|nl)
+  Element [92..95] "div" Html end_tag=[126..132] "</div>"
+    Element [97..98] "p" Html no_end_tag span_end=114
+      Text [99..100] "a" (-|-) content=[99..100] "a"
+      Element [101..104] "x-a" Html self_closing no_end_tag span_end=114
+        Element [108..111] "x-b" Html self_closing no_end_tag span_end=114
+    Element [115..118] "div" Html end_tag=[120..126] "</div>"
+      Text [119..120] "b" (-|-) content=[119..120] "b"
+  Text [132..133] "\n" (nl|nl)
+  Element [134..136] "ul" Html end_tag=[167..172] "</ul>"
+    Element [138..140] "li" Html no_end_tag span_end=167
+      Text [141..142] "a" (-|-) content=[141..142] "a"
+      Element [143..147] "span" Html end_tag=[160..167] "</span>"
+        Element [149..152] "x-a" Html self_closing no_end_tag span_end=160
+          Element [156..158] "li" Html no_end_tag span_end=160
+            Text [159..160] "b" (-|-) content=[159..160] "b"
+  Text [172..173] "\n" (nl|nl)

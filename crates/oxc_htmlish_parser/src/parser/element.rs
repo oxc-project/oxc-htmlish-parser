@@ -165,13 +165,16 @@ impl<'a> Builder<'a> {
         // The outermost open element this start tag closes, through omittable ones with `whatwg`
         // (`<li><p>a<li>`, `<tbody><tr><td>a<tbody>`; DIVERGENCES.md#implicit-end-tags).
         let mut closed = None;
-        for (index, open) in self.stack.iter().enumerate().rev() {
+        let mut end = self.stack.len();
+        while let Some(index) = self.stack[..end].last().and_then(|open| open.look) {
+            let open = &self.stack[index];
             if open.tag.closed_by.contains(&key) {
                 closed = Some(index);
             }
-            if !(self.rules.whatwg && self.omittable(open)) {
+            if !(self.rules.whatwg && open.omittable) {
                 break;
             }
+            end = index;
         }
         if let Some(index) = closed {
             self.close_down_to(index, start);
@@ -226,11 +229,20 @@ impl<'a> Builder<'a> {
             end_tag: None,
         };
         let id = self.push(NodeKind::Element(ArenaBox::new_in(element, &self.allocator)), tag_span);
+        let omittable = tag.closed_by_parent || self_closing;
+        let passed = self.rules.whatwg && omittable && tag.closed_by.is_empty();
+        let look = if passed {
+            self.stack.last().and_then(|below| below.look)
+        } else {
+            Some(self.stack.len())
+        };
         let open = Open {
             id,
             name: name_str,
             block: false,
             tag,
+            omittable,
+            look,
             context: Context { namespace: tags::children_namespace(local, namespace), v_pre },
         };
         if closes_now {
