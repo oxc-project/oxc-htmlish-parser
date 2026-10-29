@@ -103,6 +103,8 @@ Step 1 holds a printer to a norm's tree only where the input has no parse error.
   formatter policy (CSS display, whitespace sensitivity) does not.
 - No dependency on `oxc_parser`: expressions are spans.
   Dialects that need a JS parse to find an expression's end take a validator from the caller.
+- A source built from a template (html-in-js) takes the caller's test for its placeholders (`ParserOptions::template_placeholder`).
+  No oracle reads such a source, so it is no divergence; the differential never sets it.
 
 ## Testing
 

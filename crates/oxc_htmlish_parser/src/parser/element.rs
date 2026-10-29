@@ -34,6 +34,10 @@ impl<'a> Builder<'a> {
         // Every dialect so far matches end tags case-insensitively
         let index = if htm {
             self.stack.len().checked_sub(1)
+        } else if self.is_template_placeholder(name) {
+            self.stack
+                .iter()
+                .rposition(|open| !open.block && self.is_template_placeholder(open.name))
         } else {
             self.stack.iter().rposition(|open| !open.block && open.name.eq_ignore_ascii_case(name))
         };
@@ -177,7 +181,10 @@ impl<'a> Builder<'a> {
         let namespace = prefixed.unwrap_or_else(|| tags::namespace(key, inherited.namespace));
         let tag = self.tag(name_str, lowercase, namespace, prefixed == Some(Namespace::Svg));
         let closes_now = tag.void
-            || (self_closing && (self.rules.self_close_any || namespace != Namespace::Html));
+            || (self_closing
+                && (self.rules.self_close_any
+                    || namespace != Namespace::Html
+                    || self.is_template_placeholder(name_str)));
 
         let v_pre = self.rules.vue
             && (inherited.v_pre || attributes.iter().any(|a| a.name.slice(self.source) == "v-pre"));

@@ -23,5 +23,5 @@ mod span;
 
 pub use diagnostic::{Diagnostic, DiagnosticKind};
 pub use oxc_allocator::Allocator;
-pub use parser::{Dialect, Parser};
+pub use parser::{Dialect, Parser, ParserOptions};
 pub use span::Span;

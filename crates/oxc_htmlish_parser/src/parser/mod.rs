@@ -39,11 +39,28 @@ pub struct Parser<'a> {
     allocator: &'a Allocator,
     source: &'a str,
     dialect: Dialect,
+    options: ParserOptions,
+}
+
+/// What the caller tells the parser besides the dialect.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct ParserOptions {
+    /// The caller's test for its placeholder of a template expression, which may name a tag
+    /// (html-in-js's `${}`: `<${Tag}>…</${Tag}>`).
+    /// Such an element written `/>` closes there, as htm reads a component,
+    /// and an end tag named by one closes the innermost element named by one: the expressions are not known here.
+    pub template_placeholder: Option<fn(&str) -> bool>,
 }
 
 impl<'a> Parser<'a> {
     pub fn new(allocator: &'a Allocator, source: &'a str, dialect: Dialect) -> Self {
-        Self { allocator, source, dialect }
+        Self { allocator, source, dialect, options: ParserOptions::default() }
+    }
+
+    #[must_use]
+    pub fn with_options(mut self, options: ParserOptions) -> Self {
+        self.options = options;
+        self
     }
 
     /// Front matter is not handled here: callers strip it before parsing.
@@ -72,7 +89,7 @@ impl<'a> Parser<'a> {
             last_child: None,
         });
         loop {
-            let mut builder = Builder::new(self.allocator, self.source, rules, nodes);
+            let mut builder = Builder::new(self.allocator, self.source, rules, self.options, nodes);
             match builder.run() {
                 Ok(()) => return Ok(Root { nodes: builder.nodes, sfc: rules.sfc }),
                 Err(Stop::Error(diagnostic)) => return Err(diagnostic),
@@ -218,6 +235,7 @@ struct Builder<'a> {
     /// The source up to where the current parse stops.
     bytes: &'a [u8],
     rules: Rules,
+    options: ParserOptions,
     /// What the bottom of the stack inherits, and where its nodes go.
     base: Context,
     base_parent: NodeId,
@@ -232,6 +250,7 @@ impl<'a> Builder<'a> {
         allocator: &'a Allocator,
         source: &'a str,
         rules: Rules,
+        options: ParserOptions,
         nodes: ArenaVec<'a, Node<'a>>,
     ) -> Self {
         Self {
@@ -239,6 +258,7 @@ impl<'a> Builder<'a> {
             source,
             bytes: source.as_bytes(),
             rules,
+            options,
             base: Context::ROOT,
             base_parent: NodeId::DOCUMENT,
             pos: 0,
@@ -277,6 +297,7 @@ impl<'a> Builder<'a> {
             source: self.source,
             bytes: &self.source.as_bytes()[..end],
             rules: self.rules,
+            options: self.options,
             base: self.context(),
             base_parent: parent,
             pos: start,
@@ -407,6 +428,11 @@ impl<'a> Builder<'a> {
     fn at_void_end_tag(&self, at: usize) -> bool {
         let name_start = self.end_tag_name_start(at);
         tags::is_void(&self.source[name_start..self.tag_name_end(name_start)])
+    }
+
+    /// `name` is the caller's placeholder of a template expression ([`ParserOptions::template_placeholder`]).
+    fn is_template_placeholder(&self, name: &str) -> bool {
+        self.options.template_placeholder.is_some_and(|is_placeholder| is_placeholder(name))
     }
 
     /// What the current element's next child inherits.
@@ -558,6 +584,45 @@ mod tests {
             let allocator = Allocator::default();
             let diagnostic = Parser::new(&allocator, source, dialect).parse().unwrap_err();
             assert_eq!((diagnostic.kind, diagnostic.span.start), (kind, at), "{source:?}");
+        }
+    }
+
+    /// Template placeholders (`PH0` as `${Tag}`): `/>` closes, and an end tag named by one closes the innermost one.
+    #[test]
+    fn template_placeholders() {
+        fn tree(source: &str, root: &Root<'_>, id: NodeId) -> String {
+            let children = root.children(id).map(|(child, node)| match &node.kind {
+                NodeKind::Element(el) => {
+                    format!("{}[{}]", el.name.slice(source), tree(source, root, child))
+                }
+                _ => node.span.slice(source).to_owned(),
+            });
+            children.collect::<Vec<_>>().join(" ")
+        }
+        let allocator = Allocator::default();
+        let parse = |source| {
+            Parser::new(&allocator, source, Dialect::Html)
+                .with_options(ParserOptions {
+                    template_placeholder: Some(|name| name.starts_with("PH")),
+                })
+                .parse()
+        };
+        for (source, expected) in [
+            ("<PH0 a=PH1><PH2 /><p>a</PH3><PH4>b<//>", "PH0[PH2[] p[a]] PH4[b]"),
+            ("<PH0><PH1>a</PH2></PH3>", "PH0[PH1[a]]"),
+        ] {
+            assert_eq!(
+                tree(source, &parse(source).unwrap(), NodeId::DOCUMENT),
+                expected,
+                "{source:?}"
+            );
+        }
+        for source in ["<div></PH0>", "<PH0></div>", "<PH0><span>a</PH1>"] {
+            assert_eq!(
+                parse(source).unwrap_err().kind,
+                DiagnosticKind::UnexpectedEndTag,
+                "{source:?}"
+            );
         }
     }
 
