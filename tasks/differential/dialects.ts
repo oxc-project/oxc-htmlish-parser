@@ -1,13 +1,9 @@
 // The dialects the differential compares: each one's oracle, our signature in its shape,
 // and the shapes DIVERGENCES.md documents, shared by `run.ts` and `probe.ts`.
-import { spawnSync } from "node:child_process";
-import path from "node:path";
 import { HtmlParser } from "@angular/compiler";
 import { parse as parseVue } from "@vue/compiler-dom";
 import { parseHtml } from "angular-html-parser";
-
-const ROOT = path.resolve(import.meta.dirname, "../..");
-const BIN = path.join(ROOT, "target/debug/sig-batch");
+import { buildSignature, signature } from "./harness.ts";
 
 export type Sig = unknown[] | string;
 
@@ -454,11 +450,8 @@ export const DIALECTS: Record<string, DialectSpec> = {
 };
 
 export function ours(dialect: string, inputs: string[]): Sig[] {
-  const build = spawnSync("cargo", ["build", "-q", "-p", "sig"], { cwd: ROOT, encoding: "utf8" });
-  if (build.status !== 0) throw new Error(build.stderr);
-  const r = spawnSync(BIN, [dialect], { input: JSON.stringify(inputs), encoding: "utf8", maxBuffer: 1 << 28 });
-  if (r.status !== 0) throw new Error(`sig-batch failed (a panic?):\n${r.stderr}`);
-  return JSON.parse(r.stdout);
+  buildSignature();
+  return signature(dialect, inputs);
 }
 
 /** The first shape of `table` that `source` has. */

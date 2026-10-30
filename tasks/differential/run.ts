@@ -20,23 +20,7 @@
 //   node tasks/differential/run.ts <html|vue|angular> --files <file>...
 import fs from "node:fs";
 import { DIALECTS, matchShape, ours, type Sig, UnknownNode, VOID } from "./dialects.ts";
-
-/** mulberry32: `Math.random` is unseedable, and the corpus must be reproducible. */
-class Rng {
-  #state: number;
-  constructor(seed: number) {
-    this.#state = seed >>> 0;
-  }
-  random(): number {
-    let t = (this.#state = (this.#state + 0x6d2b79f5) | 0);
-    t = Math.imul(t ^ (t >>> 15), t | 1);
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  }
-  int(lo: number, hi: number): number {
-    return lo + Math.floor(this.random() * (hi - lo + 1));
-  }
-}
+import { Rng } from "./harness.ts";
 
 // ---
 // Inputs

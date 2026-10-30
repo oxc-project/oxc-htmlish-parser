@@ -1,0 +1,9 @@
+Prettier 3.9.10 (1172b82c295c4f889fd787dc6c78c3e194ebf353)
+html: 148 files
+  bothError: 3
+  lenient: 1
+  quirk: namespace prefix: 1
+  same: 143
+
+lenient: cursor/cursor-3.html
+quirk: namespace prefix: tags/tags.html

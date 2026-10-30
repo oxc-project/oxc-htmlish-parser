@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <title>Parser benchmark</title>
+    <style>.card > h2 { color: rebeccapurple; }</style>
+  </head>
+  <body>
+    <!-- Attributes, entities, optional end tags, raw text and foreign content. -->
+    <main class="cards" data-label='A &amp; B'>
+      <section class="card">
+        <h2>Hello, 世界 🎉</h2>
+        <p>Text with <a href="/items?q=a&amp;b=c">a link</a> and <strong>markup</strong>.</p>
+        <ul><li>First<li>Second<li>Third</ul>
+        <table><tbody><tr><td>One<td>Two<tr><td>Three<td>Four</table>
+        <select><option>One<option>Two</select>
+        <pre>
+  preserve this whitespace
+        </pre>
+        <textarea>Text &amp; &lt;markup&gt;</textarea>
+        <svg viewBox="0 0 16 16"><path d="M0 0h16v16H0z"/><title>Icon</title></svg>
+      </section>
+    </main>
+    <script>const template = "<div>"; if (1 < 2) console.log(template);</script>
+  </body>
+</html>

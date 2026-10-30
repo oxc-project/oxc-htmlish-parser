@@ -1,0 +1,29 @@
+<section class="items" [class.active]="active">
+  <h1>{{ title }}</h1>
+  @if (items.length > 0) {
+    <ul>
+      @for (item of items; track item.id; let index = $index) {
+        <li>
+          <item-card [item]="item" (select)="select($event)">
+            <span>{{ index }}: {{ item.label }}</span>
+            <button type="button" (click)="remove(item)">Remove</button>
+          </item-card>
+        </li>
+      } @empty {
+        <li>No items</li>
+      }
+    </ul>
+  } @else {
+    <p>Loading…</p>
+  }
+  @switch (status) {
+    @case ('ready') { <strong>Ready</strong> }
+    @default { <span>Please wait</span> }
+  }
+  @defer (on idle) {
+    <details-panel [data]="data" />
+  } @placeholder {
+    <p>Loading details</p>
+  }
+  <input #query [value]="search" (input)="update(query.value)">
+</section>

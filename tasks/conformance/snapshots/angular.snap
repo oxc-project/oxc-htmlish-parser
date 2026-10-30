@@ -1,0 +1,28 @@
+Prettier 3.9.10 (1172b82c295c4f889fd787dc6c78c3e194ebf353)
+angular: 65 files
+  bothError: 1
+  lenient: 5
+  pending: @let: 2
+  pending: ICU: 8
+  pending: start-tag comment: 2
+  quirk: fallthrough case: 1
+  same: 46
+
+lenient: control-flow/boundary-error-parameters.html
+lenient: control-flow/boundary.html
+lenient: control-flow/content.html
+lenient: control-flow/default-never.html
+quirk: fallthrough case: control-flow/multiple-switch-cases.html
+pending: ICU: icu-expression/basic-plural-01.html
+pending: ICU: icu-expression/basic-plural-02.html
+pending: ICU: icu-expression/basic-plural-03.html
+pending: ICU: icu-expression/basic-plural-04.html
+pending: ICU: icu-expression/basic-select-01.html
+pending: ICU: icu-expression/basic-select-02.html
+pending: ICU: icu-expression/combination-01.html
+pending: ICU: icu-expression/issue-16914.html
+pending: @let: let-declaration/complex.html
+pending: @let: let-declaration/valid-from-tokenizer-test.html
+lenient: self-closing/self-closing.component.html
+pending: start-tag comment: start-tag-comments/merge-into-text.html
+pending: start-tag comment: start-tag-comments/start-tag-comments.html
