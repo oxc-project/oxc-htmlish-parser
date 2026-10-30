@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.1](https://github.com/oxc-project/oxc-htmlish-parser/compare/oxc-htmlish-parser-v0.0.0...oxc-htmlish-parser-v0.0.1) - 2026-10-30
+
+### Other
+
+- consolidate docs into AGENTS.md ([#10](https://github.com/oxc-project/oxc-htmlish-parser/pull/10))
+- release v0.0.0 ([#7](https://github.com/oxc-project/oxc-htmlish-parser/pull/7))
+
 ## [0.0.0](https://github.com/oxc-project/oxc-htmlish-parser/releases/tag/oxc-htmlish-parser-v0.0.0) - 2026-10-29
 
 ### Added
