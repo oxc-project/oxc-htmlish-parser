@@ -1,6 +1,6 @@
 //! AST snapshots: one compact tree per fixture, spans and facts included.
 //!
-//! `fixtures/<dialect>/*` parse as that dialect (`html`, `vue`, `angular`).
+//! `fixtures/<dialect>/*` parse as that dialect (`html`, `xhtml`, `vue`, `angular`).
 //! A fixture that fails to parse snapshots its diagnostic.
 //! Review with `cargo insta review` after an intentional AST change.
 
@@ -21,6 +21,7 @@ fn ast_snapshots() {
         let source = fs::read_to_string(path).unwrap();
         let dialect = match path.parent().unwrap().file_name().unwrap().to_str().unwrap() {
             "html" => Dialect::Html,
+            "xhtml" => Dialect::Xhtml,
             "vue" => Dialect::Vue,
             "angular" => Dialect::Angular,
             dir => panic!("no dialect for fixtures/{dir}"),

@@ -228,6 +228,7 @@ Prettier lays them out as the elements the prefix names (`oxc_formatter_htmlish`
 Ours: `/>` on a non-void HTML element is ignored, as in browsers (they keep it on void and foreign, SVG / MathML, elements).
 The written `/>` is kept as `Element::self_closing`.
 Prettier passes `canSelfClose: true`, so every element self-closes.
+In XHTML, which an XML parser may read, ours follows it: XML closes every element at `/>` too.
 
 ```html
 <div />after</div>

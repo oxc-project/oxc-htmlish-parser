@@ -11,9 +11,11 @@ Parse behavior targets each dialect's oracle (not the spec), judged against its 
 | Dialect | Oracle (the tree compared) | Norm (what reads the template; "without an error" means it reports none) |
 | --- | --- | --- |
 | html | `angular-html-parser` 10.12.0, with Prettier's options | WHATWG: parse5 7.3.0 reports its tokenizer's errors and a few of its tree builder's; the others are judged from the spec |
+| xhtml | html's | html's, but an XML parser closes every element at `/>` |
 | vue | `@vue/compiler-dom` 3.5.44 `parse`, in SFC mode | its `compile` of the root `<template>`'s content |
 | angular | `@angular/compiler` 22.0.6 `HtmlParser` | its `parseTemplate` |
 
+- xhtml has no `probe` or differential entry: it reads as html but at `/>`, where it follows the oracle.
 - A parse the oracle accepts may still fail to compile (a `<script>` in a Vue template): the norm's step is what "without an error" means.
   A warning (`[Vue warn]`) is no error.
 - parse5 7.3.0 predates WHATWG's customizable `<select>`, which keeps the markup in it: for `select`, the spec is the norm.
