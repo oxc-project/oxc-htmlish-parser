@@ -476,12 +476,16 @@ impl<'a> Builder<'a> {
                 if lowercase == "title" && markup { Content::Normal } else { table.content };
             return Tag { content, ..Tag::default() };
         }
-        // Vue: void tags and `pre` by exact name; raw text by any case, in HTML only; no implicit closing.
+        // Vue: void tags and `pre` by exact name; no implicit closing.
+        // Raw text in HTML only, by a name its tokenizer matches: the first two letters lowercase, the rest in any case
+        // (`<tiTLE>`; `<Title>` is a component).
         let exact = tags::html(name, false);
         let html = namespace == Namespace::Html;
+        let raw_text_name =
+            name.as_bytes().get(..2).is_some_and(|start| start.iter().all(u8::is_ascii_lowercase));
         Tag {
             void: exact.void,
-            content: if html { table.content } else { Content::Normal },
+            content: if html && raw_text_name { table.content } else { Content::Normal },
             ignores_first_lf: html && exact.ignores_first_lf,
             ..Tag::default()
         }
