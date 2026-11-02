@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.2](https://github.com/oxc-project/oxc-htmlish-parser/compare/oxc-htmlish-parser-v0.0.1...oxc-htmlish-parser-v0.0.2) - 2026-11-02
+
+### Added
+
+- *(parser)* add Xhtml dialect ([#11](https://github.com/oxc-project/oxc-htmlish-parser/pull/11))
+
 ## [0.0.1](https://github.com/oxc-project/oxc-htmlish-parser/compare/oxc-htmlish-parser-v0.0.0...oxc-htmlish-parser-v0.0.1) - 2026-10-30
 
 ### Other
