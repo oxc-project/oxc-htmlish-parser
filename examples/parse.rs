@@ -10,6 +10,11 @@ fn main() {
             Dialect::Vue
         } else if path.ends_with(".component.html") {
             Dialect::Angular
+        } else if std::path::Path::new(&path)
+            .extension()
+            .is_some_and(|e| e.eq_ignore_ascii_case("xhtml") || e.eq_ignore_ascii_case("xht"))
+        {
+            Dialect::Xhtml
         } else {
             Dialect::Html
         };

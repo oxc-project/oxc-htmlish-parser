@@ -25,6 +25,8 @@ mod vue;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Dialect {
     Html,
+    /// HTML an XML parser may read (`.xhtml`): `/>` closes every element, as in XML.
+    Xhtml,
     /// A Vue SFC.
     /// A file with a root `<html>` or `<!doctype html>` is read with HTML rules instead
     /// (`{{ }}` and directives are still Vue).
@@ -74,6 +76,7 @@ impl<'a> Parser<'a> {
         }
         let mut rules = match self.dialect {
             Dialect::Html => Rules::HTML,
+            Dialect::Xhtml => Rules::XHTML,
             Dialect::Vue => Rules::VUE,
             Dialect::Angular => Rules::ANGULAR,
         };
@@ -162,6 +165,8 @@ impl Rules {
         end_tag_whitespace: true,
         bang_comment_end: false,
     };
+
+    const XHTML: Self = Self { self_close_any: true, ..Self::HTML };
 
     /// A Vue file that turned out to be an HTML page.
     const VUE_HTML: Self = Self { vue: true, ..Self::HTML };

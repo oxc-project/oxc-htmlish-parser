@@ -1,0 +1,15 @@
+---
+source: crates/oxc_htmlish_parser/tests/ast.rs
+---
+Root sfc=false
+  Element [1..4] "div" Html self_closing no_end_tag span_end=7
+  Text [7..13] "after\n" (-|nl) content=[7..12] "after"
+  Element [14..15] "p" Html end_tag=[29..33] "</p>"
+    Element [17..22] "my-el" Html self_closing no_end_tag span_end=25
+    Text [25..29] "in p" (-|-) content=[25..29] "in p"
+  Text [33..34] "\n" (nl|nl)
+  Element [35..41] "script" Html self_closing no_end_tag span_end=51
+    @[42..45] "src" =" [47..48] "a"
+  Text [51..52] "\n" (nl|nl)
+  Element [53..61] "textarea" Html self_closing ignores_first_lf no_end_tag span_end=63
+  Text [63..64] "\n" (nl|nl)
