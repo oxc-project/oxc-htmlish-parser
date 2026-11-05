@@ -9,6 +9,7 @@ on:
       - main
     paths:
       - ".github/workflows/**"
+      - "Cargo.lock"
 
 permissions: {}
 

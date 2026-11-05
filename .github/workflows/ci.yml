@@ -36,6 +36,16 @@ env:
   RUSTFLAGS: "-D warnings"
 
 jobs:
+  fmt:
+    name: Format
+    runs-on: ubuntu-latest
+    steps:
+      - uses: taiki-e/checkout-action@7d1e50e93dc4fb3bba58f85018fadf77898aee8b # v1.4.2
+      - uses: oxc-project/setup-rust@3d6fb132fbe7cdcb66bf8ec193911c2945369d12 # v1.0.17
+        with:
+          components: rustfmt
+      - run: cargo fmt --all --check
+
   test:
     name: Test
     strategy:
@@ -64,6 +74,17 @@ jobs:
         with:
           components: clippy
       - run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+
+  wasm:
+    name: WebAssembly
+    runs-on: ubuntu-latest
+    steps:
+      - uses: taiki-e/checkout-action@7d1e50e93dc4fb3bba58f85018fadf77898aee8b # v1.4.2
+      - uses: oxc-project/setup-rust@3d6fb132fbe7cdcb66bf8ec193911c2945369d12 # v1.0.17
+        with:
+          save-cache: ${{ github.ref_name == 'main' }}
+      - run: rustup target add wasm32-unknown-unknown
+      - run: cargo check -p oxc-htmlish-parser --lib --target wasm32-unknown-unknown
 
   doc:
     name: Doc

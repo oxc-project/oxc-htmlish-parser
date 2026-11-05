@@ -74,3 +74,8 @@ jobs:
               node tasks/differential/run.ts $dialect 5000 $seed
             done
           done
+      - name: Panic-safety fuzz
+        run: |
+          for dialect in html vue angular; do
+            node tasks/differential/panic.ts $dialect 10000 0
+          done

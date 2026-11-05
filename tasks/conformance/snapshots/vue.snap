@@ -1,0 +1,22 @@
+Prettier 3.9.10 (1172b82c295c4f889fd787dc6c78c3e194ebf353)
+vue: 94 files
+  bothError: 2
+  lenient: 9
+  quirk: html page: 6
+  same: 77
+
+lenient: _errors_/unclosed_tag_in_template.vue
+quirk: html page: _errors_/upper-case.html
+quirk: html page: bracket-same-line/vue.html
+quirk: html page: html-vue/elastic-header.html
+quirk: html page: html-vue/hello-world.html
+lenient: html-vue/upper-case-2.html
+lenient: html-vue/upper-case-html-tag-2.html
+lenient: html-vue/upper-case-html-tag-3.html
+lenient: html-vue/upper-case-html-tag-4.html
+lenient: html-vue/upper-case-html-tag.html
+lenient: invalid/v-for.vue
+lenient: v-for/ts.vue
+lenient: vue/attributes.vue
+quirk: html page: vue/custom-block.vue
+quirk: html page: vue/template-dom.html

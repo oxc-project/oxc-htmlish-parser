@@ -1,2 +1,3 @@
 target/
 tasks/differential/node_modules/
+tasks/conformance/repos/
