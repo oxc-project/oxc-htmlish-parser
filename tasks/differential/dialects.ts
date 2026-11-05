@@ -41,6 +41,8 @@ const VUE_TOKENS = [
   "<div v-pre>", "<div a=b c>", "<div v-model.trim='m'>",
   "<pre>", "<pre>\n", "<textarea>\n{{ t }}</textarea>", "<title>{{ t }} <b></title>",
   "<script>a < b</script>", "<style>a>b{}</style>", "<svg>", "<svg><style>a<b</style></svg>",
+  "<Title><b>t</b></Title>", "<tItle><b>t</b></tItle>", "<tiTLE><b></tiTLE>",
+  "<Textarea>{{ t }}<b></Textarea>", "<Style><b>a</b></Style>",
   "<!-- c -->", "{{ a }}", "{{ a<b }}", "{{ '}}' }}", "{{", "}}", "{{ <div> }}",
   "</ div>", "<!-- c --!>", "</br>", "<C :=\"o\" v-bind:=\"p\">", "<title><{{ t }}</title>",
 ];
