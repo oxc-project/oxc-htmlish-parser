@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.3](https://github.com/oxc-project/oxc-htmlish-parser/compare/oxc-htmlish-parser-v0.0.2...oxc-htmlish-parser-v0.0.3) - 2026-11-05
+
+### Fixed
+
+- *(parser)* read Vue's raw text tags by its tokenizer's case rule ([#13](https://github.com/oxc-project/oxc-htmlish-parser/pull/13))
+
 ## [0.0.2](https://github.com/oxc-project/oxc-htmlish-parser/compare/oxc-htmlish-parser-v0.0.1...oxc-htmlish-parser-v0.0.2) - 2026-11-02
 
 ### Added
