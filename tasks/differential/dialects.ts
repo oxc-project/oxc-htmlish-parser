@@ -306,6 +306,8 @@ const IMPLICIT_CLOSE_AFTER_VOID = new RegExp(`${VOID_TAG}<(?:${ANGULAR_CLOSERS})
 const SCRIPT_ESCAPE = /<script\b[^>]*>(?:(?!<\/script)[^])*?<!--(?:(?!-->)[^])*?<script[\s/>]/i;
 /** A quote, `<` or `=` in a tag name. */
 const PUNCTUATION_IN_TAG_NAME = /<[a-zA-Z][^\s/>]*["'<=]/;
+/** A start tag, up to any point outside its quoted values: a shape after it is in the tag, not in text or a quoted value. */
+const IN_START_TAG = `<[a-zA-Z](?:[^<>"']|"[^"]*"|'[^']*')*?`;
 
 interface DialectSpec {
   tokens: readonly string[];
@@ -361,7 +363,8 @@ function whatwgClosing(source: string): boolean {
 /**
  * Ours in the shape of Angular's AST (DIVERGENCES.md "How Angular's AST holds a node"): it drops doctypes,
  * and the bogus comments `<!` opens, which it reads as doctypes;
- * it reads a bogus comment `<?` opens, and CDATA, as text, and trims comments.
+ * it reads a bogus comment `<?` opens, and CDATA, as text, trims comments,
+ * and names `else   if` and `default   never` with one space (ours is the name as written).
  */
 function angularShape(nodes: any[]): any[] {
   const out = nodes
@@ -369,6 +372,7 @@ function angularShape(nodes: any[]): any[] {
     .map((n) => (n[0] === "x" ? ["t", n[1].slice(9, -3)] : n[0] === "bc" && n[2] === "<?" ? ["t", `<${n[1]}>`] : n));
   return bogusAsComment(mergeTexts(out)).map((n) => {
     if (n[0] === "c") return ["c", n[1].replace(/\r\n?/g, "\n").trim()];
+    if (n[0] === "b") return ["b", n[1].replace(/^else[^\S\r\n]+if$/, "else if").replace(/^default[^\S\r\n]+never$/, "default never"), ...n.slice(2)];
     // Its lexer reads `{{ }}` in RCDATA as text; its compiler binds it all the same, as we read it
     if (n[0] === "el" && ["textarea", "title"].includes(n[1].toLowerCase())) return [...n.slice(0, 4), mergeTexts(n[4], true)];
     return n;
@@ -402,10 +406,11 @@ export const DIALECTS: Record<string, DialectSpec> = {
       "script escape": SCRIPT_ESCAPE,
       "/> on non-void": new RegExp(`<(?!(?:${[...VOID].join("|")})[\\s/>])[a-zA-Z][^\\s/>]*(?:\\s[^<>]*)?/>`, "i"),
       "= starts an attribute name": /<[a-zA-Z][^<>]*[\s"']=/,
-      "unquoted value with a quote or =": /=[ \t\n\f\r]*[^\s"'>][^\s>]*["'=]/,
+      "unquoted value with a quote or =": new RegExp(`${IN_START_TAG}=[ \\t\\n\\f\\r]*[^\\s"'>][^\\s>]*["'=]`),
       "empty comment": /<!---?>/,
       "raw text end after whitespace": /<\/[ \t\n\f\r]+(?:script|style|textarea|title)\b/i,
-      "punctuation in a name": new RegExp(`${PUNCTUATION_IN_TAG_NAME.source}|\\s[^\\s/>="'<]*["'<]`),
+      // A quote, `<` or `=` in a tag name, or a quote or `<` in an attribute name (after `= ` it is a value, not a name)
+      "punctuation in a name": new RegExp(`${PUNCTUATION_IN_TAG_NAME.source}|${IN_START_TAG}(?<![=\\s])\\s+[^\\s/>="'<]*["'<]`),
       // It reads Angular's bracketed attribute names in HTML too.
       "bracketed attribute name": /\s\[[^\n=]*>/,
     },
@@ -427,8 +432,8 @@ export const DIALECTS: Record<string, DialectSpec> = {
     pending: {
       "@let": /@let\s/,
       ICU: /\{[^{}]*,\s*(?:plural|select|selectordinal)\s*,/,
-      // Outside a quoted value: `href="https://…"` holds no comment
-      "start-tag comment": /<[a-zA-Z](?:[^<>"']|"[^"]*"|'[^']*')*?(?:\/\/|\/\*)/,
+      // `href="https://…"` holds no comment
+      "start-tag comment": new RegExp(`${IN_START_TAG}(?://|/\\*)`),
     },
   },
   vue: {

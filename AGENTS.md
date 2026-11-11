@@ -13,7 +13,7 @@ Parse behavior targets each dialect's oracle (not the spec), judged against its 
 | html | `angular-html-parser` 10.12.0, with Prettier's options | WHATWG: parse5 7.3.0 reports its tokenizer's errors and a few of its tree builder's; the others are judged from the spec |
 | xhtml | html's | html's, but an XML parser closes every element at `/>` |
 | vue | `@vue/compiler-dom` 3.5.44 `parse`, in SFC mode | its `compile` of the root `<template>`'s content |
-| angular | `@angular/compiler` 22.0.6 `HtmlParser` | its `parseTemplate` |
+| angular | `@angular/compiler` 22.2.5 `HtmlParser` | its `parseTemplate` |
 
 - xhtml has no `probe` or differential entry: it reads as html but at `/>`, where it follows the oracle.
 - A parse the oracle accepts may still fail to compile (a `<script>` in a Vue template): the norm's step is what "without an error" means.
@@ -25,7 +25,8 @@ Parse behavior targets each dialect's oracle (not the spec), judged against its 
   for Angular the fork's own.
 - HTML has no such compiler: browsers recover from any input, and an `.html` file is often a template whose source no browser reads.
   Prettier's parser is the oracle, and WHATWG the norm it is judged against.
-- Versions follow Prettier's pin (3.9.10): the `angular-html-parser` it bundles, the `@angular/compiler` it depends on.
+- Versions follow Prettier's pin (3.9.10): the `angular-html-parser` it bundles, and the `@angular/compiler` minor that fork is cut from.
+  The pin itself depends on 22.0.6 (for expressions), which reads no `@boundary` or `@content`, as the bundled fork does.
   A fix on an oracle's `main` is followed only as a `DIVERGENCES.md` entry citing it.
 - Not parsed yet: Angular's ICU expressions and start-tag comments, an error for now, and `@let`, read as text.
 
@@ -72,10 +73,12 @@ one not parsed yet is in "The one rule" and the differential's `pending`.
 
 ### Bumping the oracles
 
-Prettier's pin moves the oracles: `angular-html-parser` and `@angular/compiler` follow its `package.json`, the rest the versions that ship with it.
+Prettier's pin moves the oracles: `angular-html-parser` follows its `package.json`, the rest the versions that ship with it.
+`@angular/compiler` is the latest patch of the minor that fork is cut from: the `version` in `git show v<fork's version>:package.json` of `prettier/angular-html-parser`.
 
 1. Bump `tasks/differential/package.json` (exact versions, excluded from Renovate) and the table above.
-2. Run `just differential` for every dialect, over several seeds, and `just differential-files` on local repos.
+2. Run `just differential` for every dialect, over several seeds, and `just differential-files` on local repos, with `NO_QUIRKS=1` too:
+   a shape matches a whole file, so a new mismatch in a file it matches is exempted.
 3. A quirk that no longer fires is an entry to re-decide: delete it when the oracle now reads as we do.
    A new mismatch is decided as above, never exempted by reflex.
 
