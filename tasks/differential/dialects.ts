@@ -163,7 +163,7 @@ function angularCompilerSig(source: string): Sig {
       // Our parameters are trimmed (`Block::parameters`).
       case "Block":
         return ["b", n.name, n.parameters.map((p: any) => p.expression.replace(/^[ \t\n\f\r]+|[ \t\n\f\r]+$/g, "")), nodes(n.children)];
-      // Not parsed yet (AGENTS.md): text on our side.
+      // Not parsed yet (AGENTS.md): `@let` is text on our side, ICU an error.
       case "Expansion":
       case "LetDeclaration":
         return ["t", slice(n.sourceSpan)];
@@ -427,7 +427,8 @@ export const DIALECTS: Record<string, DialectSpec> = {
     pending: {
       "@let": /@let\s/,
       ICU: /\{[^{}]*,\s*(?:plural|select|selectordinal)\s*,/,
-      "start-tag comment": /<[a-zA-Z][^<>]*(?:\/\/|\/\*)/,
+      // Outside a quoted value: `href="https://…"` holds no comment
+      "start-tag comment": /<[a-zA-Z](?:[^<>"']|"[^"]*"|'[^']*')*?(?:\/\/|\/\*)/,
     },
   },
   vue: {

@@ -80,7 +80,7 @@ pub enum NodeKind<'a> {
     Element(ArenaBox<'a, Element<'a>>),
     /// Character data between markup, never empty. Whitespace-only text is kept.
     Text(Text),
-    /// Vue `{{ }}`.
+    /// `{{ }}` (Vue, Angular).
     Interpolation(Interpolation),
     Comment(Comment),
     /// `<!--[if IE]> … <![endif]-->`; its content is the node's children.
@@ -102,7 +102,8 @@ pub enum NodeKind<'a> {
 pub struct Element<'a> {
     /// The tag name as written.
     pub name: Span,
-    /// The name the tag table is keyed by: lowercased in HTML, as written in Vue.
+    /// The name the tag table is keyed by: lowercased in HTML and Angular, as written in a Vue SFC;
+    /// in Angular without its namespace prefix (`svg:rect` is `rect`).
     pub key: &'a str,
     pub namespace: Namespace,
     pub attributes: ArenaVec<'a, Attribute<'a>>,
@@ -141,7 +142,7 @@ pub enum Content {
     Normal,
     /// No markup until the end tag: `script`, `style`, a Vue SFC block.
     Raw,
-    /// No markup until the end tag, but Vue `{{ }}` still splits: `textarea`, `title`.
+    /// No markup until the end tag, but `{{ }}` still splits (Vue, Angular): `textarea`, `title`.
     Escapable,
 }
 
