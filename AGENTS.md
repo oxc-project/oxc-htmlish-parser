@@ -112,7 +112,7 @@ Step 1 holds a printer to a norm's tree only where the input has no parse error.
 
 | Command | Covers |
 | --- | --- |
-| `cargo test` | error table (`src/parser/mod.rs`), AST snapshots + span nesting (`tests/ast.rs`), `DIVERGENCES.md` against what it names (`tests/divergences.rs`) |
+| `cargo test` | error table (`src/parser/mod.rs`), AST snapshots + invariants (`tests/ast.rs`, `tests/check`), `DIVERGENCES.md` against what it names (`tests/divergences.rs`) |
 | `just probe <html\|vue\|angular\|all> <source>` | one input through every reader: ours (normalized, and raw where it differs), the oracle, the norm, browsers (html), Prettier at the pin |
 | `cargo insta review` | accept snapshot changes after an intentional AST change |
 | `just differential <html\|vue\|angular> [count] [seed]` | structural fuzz against the oracles (`angular-html-parser`, `@vue/compiler-dom`, `@angular/compiler`) |
@@ -122,7 +122,7 @@ Step 1 holds a printer to a norm's tree only where the input has no parse error.
 First run: `npm i` in `tasks/differential`.
 CI (`.github/workflows`) runs check, test, clippy, doc and typos, and `differential.yml` the fuzz for every dialect over seeds 0 to 2.
 
-- `tests/fixtures/<dialect>/*` parse as that dialect (`html`, `vue`, `angular`); one compact tree per fixture.
+- `tests/fixtures/<dialect>/*` parse as that dialect (`html`, `xhtml`, `vue`, `angular`); one compact tree per fixture.
 - Add a fixture when a change touches structure or facts.
 - The differential compares a signature (`tasks/sig/src/main.rs`, mirrored in `tasks/differential/dialects.ts`);
   what it generates and fails on is in `run.ts`'s header.

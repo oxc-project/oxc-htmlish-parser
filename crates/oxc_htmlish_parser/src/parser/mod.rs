@@ -128,7 +128,8 @@ struct Rules {
     /// `{{ }}` (closed outside quotes) and control flow blocks, and Angular's lexer in tags:
     /// its whitespace (VT, U+000E–U+001F, NBSP), namespace prefixes, `<!-->` read on to `-->`,
     /// whitespace around a raw text element's end tag name and no script data escapes,
-    /// `=` ending an unquoted value and opening a nameless attribute.
+    /// `=` ending an unquoted value and opening a nameless attribute,
+    /// a `[` attribute name running while its brackets are open (`[class.[&>svg]:w-4]`).
     angular: bool,
     /// Whitespace may come before an end tag's name (`</ div>`), as Vue's and Angular's compilers read it;
     /// otherwise `</` and whitespace open a bogus comment, as in the HTML tokenizer.
@@ -517,7 +518,7 @@ impl<'a> Builder<'a> {
     fn element_mut(&mut self, id: NodeId) -> &mut Element<'a> {
         match &mut self.nodes[id.index()].kind {
             NodeKind::Element(el) => el,
-            _ => unreachable!("only elements are opened"),
+            _ => unreachable!("`id` is an element's"),
         }
     }
 

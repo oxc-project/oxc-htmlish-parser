@@ -147,8 +147,10 @@ corpus.forEach((source, i) => {
   else if (aError) kind = "oursError";
   else kind = JSON.stringify(a) === JSON.stringify(b) ? "same" : "mismatch";
   if (kind === "oursError" || kind === "mismatch") {
-    const pending = matchShape(spec.pending ?? {}, source);
-    const quirk = process.env.NO_QUIRKS ? undefined : matchShape(loose[i] ? looseQuirks : spec.quirks, source);
+    // `NO_QUIRKS=1` lifts both tables
+    const exempts = !process.env.NO_QUIRKS;
+    const pending = exempts && matchShape(spec.pending ?? {}, source);
+    const quirk = exempts && matchShape(loose[i] ? looseQuirks : spec.quirks, source);
     if (pending) kind = `pending: ${pending}`;
     else if (quirk) kind = `quirk: ${quirk}`;
   }

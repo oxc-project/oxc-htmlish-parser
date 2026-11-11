@@ -186,16 +186,19 @@ impl Printer<'_, '_> {
             };
             write!(line, " ={quote} {}", quoted(self.source, value.span)).unwrap();
         }
-        if let AttributeKind::Vue(directive) = &attribute.kind {
-            write!(line, " vue name={:?}", directive.name.slice(self.source)).unwrap();
-            if let Some(argument) = directive.argument {
-                let dynamic = if argument.dynamic { " dynamic" } else { "" };
-                write!(line, " arg={:?}{dynamic}", argument.span.slice(self.source)).unwrap();
-            }
-            if !directive.modifiers.is_empty() {
-                let modifiers: Vec<_> =
-                    directive.modifiers.iter().map(|m| m.slice(self.source)).collect();
-                write!(line, " modifiers={modifiers:?}").unwrap();
+        match &attribute.kind {
+            AttributeKind::Plain => {}
+            AttributeKind::Vue(directive) => {
+                write!(line, " vue name={:?}", directive.name.slice(self.source)).unwrap();
+                if let Some(argument) = directive.argument {
+                    let dynamic = if argument.dynamic { " dynamic" } else { "" };
+                    write!(line, " arg={:?}{dynamic}", argument.span.slice(self.source)).unwrap();
+                }
+                if !directive.modifiers.is_empty() {
+                    let modifiers: Vec<_> =
+                        directive.modifiers.iter().map(|m| m.slice(self.source)).collect();
+                    write!(line, " modifiers={modifiers:?}").unwrap();
+                }
             }
         }
         self.line(&line);
