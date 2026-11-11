@@ -4,7 +4,7 @@ use oxc_allocator::ArenaBox;
 
 use super::*;
 
-/// The block names `angular-html-parser` starts a block at, by prefix (`@iffy` is a block named `iffy`).
+/// The block names Angular's lexer starts a block at, by prefix (`@iffy` is a block named `iffy`).
 const BLOCK_NAMES: [&[u8]; 13] = [
     b"if",
     b"else",

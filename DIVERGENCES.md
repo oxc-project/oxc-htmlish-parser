@@ -337,10 +337,11 @@ so a fallthrough `@case` takes the whitespace up to the next `@case` into its sp
 
 Ours: every node as written: a doctype, a CDATA section, a comment's raw content,
 and what `<!` or `<?` opens without a comment or CDATA as a bogus comment up to its `>`, as in the HTML tokenizer (`<!x>`, `<?xml ?>`).
-Angular's compiler drops doctypes, and reads `<!x>` as one; it reads CDATA and `<?xml ?>` as text, and trims a comment.
+Angular's compiler drops doctypes, and reads `<!x>` as one; it reads CDATA and `<?xml ?>` as text, trims a comment,
+and names `@else   if` and `@default   never` with one space.
 Printed as written, the output reads to Angular as the input did.
 `decided by: representation`
-`fixture: angular/compiler-readings.html`
+`fixture: angular/compiler-readings.html`, `fixture: angular/blocks.html`
 
 ### Self-closing native elements
 
