@@ -9,6 +9,7 @@
 //! - `["t" | "i" | "d" | "x", raw]`: text, interpolation, doctype, CDATA
 //! - `["c", content]`: comment, without its delimiters; `["bc", content, opening]` a bogus one (`<!x>`, `<?x>`, `</ x>`)
 //! - `["b", name, parameters, children]`: Angular block
+//! - `["l", name, value]`: Angular `@let`
 
 #[path = "../../../crates/oxc_htmlish_parser/tests/check/mod.rs"]
 mod check;
@@ -77,6 +78,7 @@ fn node(source: &str, root: &Root<'_>, id: NodeId) -> Value {
             let parameters: Vec<&str> = b.parameters.iter().map(|p| p.slice(source)).collect();
             json!(["b", b.name.slice(source), parameters, children(source, root, id)])
         }
+        NodeKind::LetDeclaration(n) => json!(["l", n.name.slice(source), n.value.slice(source)]),
     }
 }
 

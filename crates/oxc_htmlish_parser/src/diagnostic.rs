@@ -48,6 +48,8 @@ pub enum DiagnosticKind {
     UnexpectedBlockClose,
     /// Angular: a block without its `}`.
     UnclosedBlock,
+    /// Angular: `@let` not followed by whitespace, a name, `=`, and a value up to `;`.
+    IncompleteLet,
 }
 
 impl Display for Diagnostic {
@@ -68,6 +70,7 @@ impl Display for Diagnostic {
             DiagnosticKind::IncompleteBlock => "incomplete block",
             DiagnosticKind::UnexpectedBlockClose => "unexpected block close",
             DiagnosticKind::UnclosedBlock => "unclosed block",
+            DiagnosticKind::IncompleteLet => "incomplete @let declaration",
         };
         write!(f, "{message} at {}..{}", self.span.start, self.span.end)
     }

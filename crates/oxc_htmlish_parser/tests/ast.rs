@@ -164,6 +164,9 @@ impl Printer<'_, '_> {
                     q(b.open)
                 )
             }
+            NodeKind::LetDeclaration(n) => {
+                format!("LetDeclaration name={} value={}", q(n.name), q(n.value))
+            }
         };
         self.line(&head);
         if let NodeKind::Element(el) = &node.kind {

@@ -32,8 +32,8 @@ pub enum Dialect {
     /// (`{{ }}` and directives are still Vue).
     Vue,
     /// An Angular template.
-    /// HTML with `{{ }}`, control flow blocks (`@if (a) { … }`), and `/>` closing any element.
-    /// TODO: ICU expressions and start-tag comments are not parsed yet (an error), nor `@let` (plain text).
+    /// HTML with `{{ }}`, control flow blocks (`@if (a) { … }`), `@let`, and `/>` closing any element.
+    /// TODO: ICU expressions and start-tag comments are not parsed yet (an error).
     Angular,
 }
 
@@ -125,7 +125,7 @@ struct Rules {
     /// a void element's end tag is text, a quote may open an attribute name or sit in a directive name, `</` ends a start tag,
     /// and RCDATA reads `{{ }}` as that tokenizer does.
     sfc: bool,
-    /// `{{ }}` (closed outside quotes) and control flow blocks, and Angular's lexer in tags:
+    /// `{{ }}` (closed outside quotes), control flow blocks and `@let`, and Angular's lexer in tags:
     /// its whitespace (VT, U+000E–U+001F, NBSP), namespace prefixes, `<!-->` read on to `-->`,
     /// whitespace around a raw text element's end tag name and no script data escapes,
     /// `=` ending an unquoted value and opening a nameless attribute,
@@ -565,6 +565,11 @@ mod tests {
             ("</div", Dialect::Html, UnterminatedEndTag, 0),
             // Angular reads the `{{` as text, then the `}` closes no block
             ("{{ '<b>' }}", Dialect::Angular, UnexpectedBlockClose, 9),
+            ("a @letter", Dialect::Angular, IncompleteLet, 2),
+            ("@let 1 = 2;", Dialect::Angular, IncompleteLet, 0),
+            ("@let a-b = 1;", Dialect::Angular, IncompleteLet, 0),
+            ("@let a = 1", Dialect::Angular, IncompleteLet, 0),
+            ("@let a = ';'", Dialect::Angular, IncompleteLet, 0),
             ("<a b='c>", Dialect::Html, UnterminatedAttributeValue, 5),
             ("<a / b>", Dialect::Html, UnexpectedCharacterInTag, 3),
             ("<a \"b\">", Dialect::Html, UnexpectedCharacterInTag, 3),

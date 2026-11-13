@@ -9,7 +9,7 @@
 //! - Formatter policy (CSS display, whitespace sensitivity) stays out.
 //!
 //! Dialect constructs that are not parsed yet slot in as new [`NodeKind`] / [`AttributeKind`] variants:
-//! Angular `@let` and ICU;
+//! Angular ICU;
 //! Svelte `{expr}` tags and blocks;
 //! Astro `{expr}` holding htmlish chunks.
 
@@ -93,6 +93,8 @@ pub enum NodeKind<'a> {
     Cdata,
     /// An Angular control flow block (`@if (a) { … }`); its content is the node's children.
     Block(ArenaBox<'a, Block<'a>>),
+    /// `@let name = value;` (Angular).
+    LetDeclaration(ArenaBox<'a, LetDeclaration>),
     /// The end tag of an `html`, `head` or `body` whose start tag is omitted (`<title>t</title></head>`):
     /// HTML inserts the element around the content, which stays where it is; the end tag follows it.
     EndTag(ArenaBox<'a, EndTag>),
@@ -289,6 +291,14 @@ pub struct Block<'a> {
     /// The `}`; `None` for a block without a body
     /// (`@case (a)` right before another case, `@default never;`).
     pub close: Option<Span>,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct LetDeclaration {
+    /// After `@let` and whitespace; empty when none is written (`@let = 1;`).
+    pub name: Span,
+    /// Between `=` and `;`, trimmed.
+    pub value: Span,
 }
 
 #[derive(Clone, Copy, Debug)]

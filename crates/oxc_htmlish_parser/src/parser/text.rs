@@ -1,4 +1,4 @@
-//! Text, split at `{{ }}` (and Angular blocks).
+//! Text, split at `{{ }}` (and Angular blocks and `@let`).
 
 use memchr::{memchr2, memrchr};
 
@@ -6,7 +6,7 @@ use super::*;
 
 impl Builder<'_> {
     /// Text from `pos` up to `limit`, or to the next markup when `markup_ends`.
-    /// `{{ }}` and Angular blocks split it.
+    /// `{{ }}`, Angular blocks and `@let` split it.
     pub(super) fn text(&mut self, limit: usize, markup_ends: bool) -> PResult<()> {
         let interpolate = self.interpolates();
         let blocks = self.rules.angular && markup_ends;
@@ -36,9 +36,9 @@ impl Builder<'_> {
                     self.pos += 1;
                     continue;
                 }
-                b'@' if blocks && self.at_block(self.pos) => {
+                b'@' if blocks && (self.at_let(self.pos) || self.at_block(self.pos)) => {
                     self.push_text(start, self.pos);
-                    self.block_start()?;
+                    self.let_or_block()?;
                     start = self.pos;
                     continue;
                 }

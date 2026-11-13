@@ -1,4 +1,4 @@
-//! Angular: `{{ }}` closed outside string literals, and control flow blocks (`@if (a) { … }`).
+//! Angular: `{{ }}` closed outside string literals, control flow blocks (`@if (a) { … }`), and `@let`.
 
 use oxc_allocator::ArenaBox;
 
@@ -26,6 +26,16 @@ impl<'a> Builder<'a> {
     pub(super) fn at_block(&self, at: usize) -> bool {
         self.byte(at) == Some(b'@')
             && BLOCK_NAMES.iter().any(|name| self.bytes[at + 1..].starts_with(name))
+    }
+
+    /// `@let` starts at `at`, even without the whitespace after it (`@letter` is an incomplete one).
+    pub(super) fn at_let(&self, at: usize) -> bool {
+        self.bytes[at..].starts_with(b"@let")
+    }
+
+    /// `@let`, or else a block, as Angular's lexer tries them; `pos` is at `@`.
+    pub(super) fn let_or_block(&mut self) -> PResult<()> {
+        if self.at_let(self.pos) { self.let_declaration() } else { self.block_start() }
     }
 
     /// The offsets in `[from, limit)` outside string literals, as Angular expressions read them:
@@ -184,6 +194,49 @@ impl<'a> Builder<'a> {
             }
         }
         error(DiagnosticKind::IncompleteBlock, span(from - 1, self.bytes.len()))
+    }
+
+    /// `@let name = value;`; `pos` is at `@`.
+    /// As Angular's lexer reads it: the value runs to the first `;` outside string literals, markup included.
+    pub(super) fn let_declaration(&mut self) -> PResult<()> {
+        let start = self.pos;
+        let incomplete = |end| error(DiagnosticKind::IncompleteLet, span(start, end));
+        let name_start = self.skip_ws(start + 4);
+        if name_start == start + 4 {
+            return incomplete(name_start);
+        }
+        let name_end = if self.byte(name_start).is_some_and(|b| b.is_ascii_digit()) {
+            name_start
+        } else {
+            self.skip(name_start, |b| b.is_ascii_alphanumeric() || matches!(b, b'$' | b'_'))
+        };
+        let eq = self.skip_ws(name_end);
+        if self.byte(eq) != Some(b'=') {
+            return incomplete(eq);
+        }
+        let value_start = self.skip_ws(eq + 1);
+        // Unlike in an interpolation, a `\` escapes inside a string only
+        let mut quote = None;
+        let mut at = value_start;
+        let semicolon = loop {
+            let Some(b) = self.byte(at) else { return incomplete(at.min(self.bytes.len())) };
+            match b {
+                b';' if quote.is_none() => break at,
+                b'\\' if quote.is_none() => at += 1,
+                _ => at += string_step(b, &mut quote, true).0,
+            }
+        };
+        let value_end = value_start + self.bytes[value_start..semicolon].trim_ascii_end().len();
+        let declaration = LetDeclaration {
+            name: span(name_start, name_end),
+            value: span(value_start, value_end),
+        };
+        self.pos = semicolon + 1;
+        self.push(
+            NodeKind::LetDeclaration(ArenaBox::new_in(declaration, &self.allocator)),
+            span(start, self.pos),
+        );
+        Ok(())
     }
 
     /// `}`: closes the innermost block, and the elements in it whose end tag may be omitted.

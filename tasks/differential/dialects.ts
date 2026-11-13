@@ -59,6 +59,7 @@ const ANGULAR_TOKENS = [
   "@switch (a) {", "@case (1)", "@case (2) {", "@default {", "@defer (on idle) {", "@placeholder {",
   "</ div>", "<!-- c --!>", "<!-->", "<style>a</ style >", "<svg:g>", "<svg:rect/>", "<svg><title><b>t</b></title></svg>",
   "<div\u00a0a=b\u00a0c>", "{{ a",
+  "@let a = b;", "@let x = '}';",
 ];
 
 // ---
@@ -166,9 +167,11 @@ function angularCompilerSig(source: string): Sig {
       // Our parameters are trimmed (`Block::parameters`).
       case "Block":
         return ["b", n.name, n.parameters.map((p: any) => p.expression.replace(/^[ \t\n\f\r]+|[ \t\n\f\r]+$/g, "")), nodes(n.children)];
-      // Not parsed yet (AGENTS.md): `@let` is text on our side, ICU an error.
-      case "Expansion":
+      // Our value is trimmed (`LetDeclaration::value`).
       case "LetDeclaration":
+        return ["l", n.name, n.value.replace(/[ \t\n\f\r]+$/, "")];
+      // Not parsed yet (AGENTS.md): ICU is an error on our side.
+      case "Expansion":
         return ["t", slice(n.sourceSpan)];
       default:
         throw new UnknownNode(`unexpected node ${n.constructor.name}`);
@@ -438,7 +441,6 @@ export const DIALECTS: Record<string, DialectSpec> = {
       "punctuation in a name": PUNCTUATION_IN_TAG_NAME,
     },
     pending: {
-      "@let": /@let\s/,
       ICU: /\{[^{}]*,\s*(?:plural|select|selectordinal)\s*,/,
       // `href="https://…"` holds no comment
       "start-tag comment": new RegExp(`${IN_START_TAG}(?://|/\\*)`),
