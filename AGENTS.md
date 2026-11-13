@@ -103,7 +103,7 @@ Step 1 holds a printer to a norm's tree only where the input has no parse error.
 ## Scope
 
 - No cooked values: spans into the original source; entities are never decoded.
-- Facts that need no formatting option belong here (whitespace around text, how a tag was written, directive parts, `pre`'s ignored first line break);
+- Facts that need no formatting option belong here (whitespace around text, how a tag was written, directive parts, `v-for`'s split, `pre`'s ignored first line break);
   formatter policy (CSS display, whitespace sensitivity) does not.
 - No dependency on `oxc_parser`: expressions are spans.
   Dialects that need a JS parse to find an expression's end take a validator from the caller.

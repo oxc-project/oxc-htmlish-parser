@@ -4,7 +4,8 @@
 //! The subprocess bridge for `tasks/differential/run.ts`, which builds the same shape from the oracle.
 //!
 //! - element: `["el", name, flags, attrs, children]`, flags from `/` (written `/>`), `e` (end tag), `lf` (ignored first line break)
-//! - attribute: `[name, value | null]`, plus `dir, arg | null, dynamic, modifiers` for a Vue directive
+//! - attribute: `[name, value | null]`, plus `dir, arg | null, dynamic, modifiers, for` for a Vue directive,
+//!   `for` being `[value, key, index, source]` (each `null` when missing) or `null`
 //! - `["t" | "i" | "d" | "x", raw]`: text, interpolation, doctype, CDATA
 //! - `["c", content]`: comment, without its delimiters; `["bc", content, opening]` a bogus one (`<!x>`, `<?x>`, `</ x>`)
 //! - `["b", name, parameters, children]`: Angular block
@@ -114,7 +115,12 @@ fn element(source: &str, root: &Root<'_>, id: NodeId, el: &Element<'_>) -> Value
                         .collect();
                     let arg = d.argument.map(|arg| arg.span.slice(source));
                     let dynamic = d.argument.is_some_and(|arg| arg.dynamic);
-                    json!([name, value, dir, arg, dynamic, modifiers])
+                    let part =
+                        |part: Option<oxc_htmlish_parser::Span>| part.map(|p| p.slice(source));
+                    let v_for = d.for_expression.as_ref().map(|f| {
+                        json!([part(f.value), part(f.key), part(f.index), f.source.slice(source)])
+                    });
+                    json!([name, value, dir, arg, dynamic, modifiers, v_for])
                 }
             }
         })

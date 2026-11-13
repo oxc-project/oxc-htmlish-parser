@@ -199,6 +199,20 @@ impl Printer<'_, '_> {
                         directive.modifiers.iter().map(|m| m.slice(self.source)).collect();
                     write!(line, " modifiers={modifiers:?}").unwrap();
                 }
+                if let Some(v_for) = &directive.for_expression {
+                    let part = |part: Option<Span>| part.map(|part| part.slice(self.source));
+                    write!(
+                        line,
+                        " for=({:?} {:?} {:?} {:?} {} {:?})",
+                        v_for.aliases.slice(self.source),
+                        part(v_for.value),
+                        part(v_for.key),
+                        part(v_for.index),
+                        v_for.operator.slice(self.source),
+                        v_for.source.slice(self.source),
+                    )
+                    .unwrap();
+                }
             }
         }
         self.line(&line);
