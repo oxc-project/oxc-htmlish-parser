@@ -1,0 +1,64 @@
+---
+source: crates/oxc_htmlish_parser/tests/ast.rs
+---
+Root sfc=true
+  Element [1..9] "template" Html end_tag=[578..589] "</template>"
+    Text [10..13] "\n  " (nl|nl)
+    Element [14..16] "li" Html self_closing no_end_tag span_end=35
+      @[17..22] "v-for" =" [24..31] "x in xs" vue name="for" for=("x" Some("x") None None in "xs")
+    Text [35..38] "\n  " (nl|nl)
+    Element [39..41] "li" Html self_closing no_end_tag span_end=66
+      @[42..47] "v-for" =" [49..62] "item of items" vue name="for" for=("item" Some("item") None None of "items")
+    Text [66..69] "\n  " (nl|nl)
+    Element [70..72] "li" Html self_closing no_end_tag span_end=106
+      @[73..78] "v-for" =" [80..102] "(item, index) in items" vue name="for" for=("item, index" Some("item") Some("index") None in "items")
+    Text [106..109] "\n  " (nl|nl)
+    Element [110..112] "li" Html self_closing no_end_tag span_end=163
+      @[113..118] "v-for" =" [120..159] "  ( value , key , index )  in  object  " vue name="for" for=("value , key , index" Some("value") Some("key") Some("index") in "object")
+    Text [163..166] "\n  " (nl|nl)
+    Element [167..169] "li" Html self_closing no_end_tag span_end=198
+      @[170..175] "v-for" =" [177..194] "{ a, b }, i in xs" vue name="for" for=("{ a, b }, i" Some("{ a, b }") Some("i") None in "xs")
+    Text [198..201] "\n  " (nl|nl)
+    Element [202..204] "li" Html self_closing no_end_tag span_end=234
+      @[205..210] "v-for" =" [212..230] "[a, b], k, i in xs" vue name="for" for=("[a, b], k, i" Some("[a, b]") Some("k") Some("i") in "xs")
+    Text [234..237] "\n  " (nl|nl)
+    Element [238..240] "li" Html self_closing no_end_tag span_end=268
+      @[241..246] "v-for" =" [248..264] "a, b, c, d in xs" vue name="for" for=("a, b, c, d" Some("a, b") Some("c") Some("d") in "xs")
+    Text [268..271] "\n  " (nl|nl)
+    Element [272..274] "li" Html self_closing no_end_tag span_end=297
+      @[275..280] "v-for" =" [282..293] "(, i) in xs" vue name="for" for=(", i" None Some("i") None in "xs")
+    Text [297..300] "\n  " (nl|nl)
+    Element [301..303] "li" Html self_closing no_end_tag span_end=323
+      @[304..309] "v-for" =" [311..319] "(a in xs" vue name="for" for=("a" Some("a") None None in "xs")
+    Text [323..326] "\n  " (nl|nl)
+    Element [327..329] "li" Html self_closing no_end_tag span_end=354
+      @[330..335] "v-for" =" [337..350] "'k'in o in xs" vue name="for" for=("'k'in o" Some("'k'in o") None None in "xs")
+    Text [354..357] "\n  " (nl|nl)
+    Element [358..360] "li" Html self_closing no_end_tag span_end=387
+      @[361..366] "v-for" =" [368..383] "x\n    in\n    xs" vue name="for" for=("x" Some("x") None None in "xs")
+    Text [387..390] "\n  " (nl|nl)
+    Element [391..393] "li" Html self_closing no_end_tag span_end=411
+      @[394..399] "v-for" =" [401..407] "x inxs" vue name="for"
+    Text [411..414] "\n  " (nl|nl)
+    Element [415..417] "li" Html self_closing no_end_tag span_end=434
+      @[418..423] "v-for" =" [425..430] "x in " vue name="for"
+    Text [434..437] "\n  " (nl|nl)
+    Element [438..440] "li" Html self_closing no_end_tag span_end=452
+      @[441..446] "v-for" =" [448..448] "" vue name="for"
+    Text [452..455] "\n  " (nl|nl)
+    Element [456..458] "li" Html self_closing no_end_tag span_end=467
+      @[459..464] "v-for" vue name="for"
+    Text [467..470] "\n  " (nl|nl)
+    Element [471..473] "li" Html self_closing no_end_tag span_end=500
+      @[474..487] "v-for:arg.mod" =" [489..496] "x of xs" vue name="for" arg="arg" modifiers=["mod"] for=("x" Some("x") None None of "xs")
+    Text [500..503] "\n  " (nl|nl)
+    Element [504..506] "li" Html self_closing no_end_tag span_end=524
+      @[507..511] "v-if" =" [513..520] "x in xs" vue name="if"
+    Text [524..527] "\n  " (nl|nl)
+    Element [528..530] "li" Html self_closing no_end_tag span_end=548
+      @[531..536] "v-for" =" [538..544] " in xs" vue name="for" for=("" None None None in "xs")
+    Text [548..551] "\n  " (nl|nl)
+    Element [552..554] "li" Html self_closing no_end_tag span_end=577
+      @[555..560] "v-for" =" [562..573] "a in b in c" vue name="for" for=("a" Some("a") None None in "b in c")
+    Text [577..578] "\n" (nl|nl)
+  Text [589..590] "\n" (nl|nl)

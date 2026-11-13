@@ -39,6 +39,8 @@ const VUE_TOKENS = [
   "<div :a=\"b\" @click.stop=\"f\" v-if=\"x\">", "<C #default=\"{ i }\" #item.name v-slot:h>",
   "<C v-bind:[k].camel=\"v\" .p=\"v\" @[e]=\"h\" v-on:keyup.enter.prevent=\"g\">",
   "<div v-pre>", "<div a=b c>", "<div v-model.trim='m'>",
+  "<li v-for=\"(x, i) in xs\">", "<li v-for='x of xs'>", "<li v-for=\" { a, b }, k , i  in\n o \">",
+  "<li v-for=\"[a, b], k, i, j in xs\">", "<li v-for=\"(, i) in xs\">", "<li v-for=\"x inxs\">", "<li v-for=\" in xs\">",
   "<pre>", "<pre>\n", "<textarea>\n{{ t }}</textarea>", "<title>{{ t }} <b></title>",
   "<script>a < b</script>", "<style>a>b{}</style>", "<svg>", "<svg><style>a<b</style></svg>",
   "<Title><b>t</b></Title>", "<tItle><b>t</b></tItle>", "<tiTLE><b></tiTLE>",
@@ -221,7 +223,9 @@ function vueOracle(source: string): Sig {
           }
           const arg = p.arg ? p.arg.loc.source : null;
           const modifiers = p.modifiers.map((m: any) => m.content);
-          return [p.rawName, value(p, p.rawName.length), p.name, arg, p.arg ? !p.arg.isStatic : false, modifiers];
+          const f = p.forParseResult;
+          const vFor = f ? [f.value?.content ?? null, f.key?.content ?? null, f.index?.content ?? null, f.source.content] : null;
+          return [p.rawName, value(p, p.rawName.length), p.name, arg, p.arg ? !p.arg.isStatic : false, modifiers, vFor];
         });
         return ["el", n.tag, flags, attrs, children];
       }

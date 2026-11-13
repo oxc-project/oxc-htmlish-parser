@@ -193,7 +193,9 @@ impl<'a> Builder<'a> {
             && (inherited.v_pre || attributes.iter().any(|a| a.name.slice(self.source) == "v-pre"));
         if self.rules.vue && !v_pre {
             for attribute in &mut attributes {
-                if let Some(directive) = vue::directive(self.allocator, self.source, attribute.name)
+                let value = attribute.value.map(|value| value.span);
+                if let Some(directive) =
+                    vue::directive(self.allocator, self.source, attribute.name, value)
                 {
                     attribute.kind =
                         AttributeKind::Vue(ArenaBox::new_in(directive, &self.allocator));

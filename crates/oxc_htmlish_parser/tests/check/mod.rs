@@ -1,7 +1,7 @@
 //! The AST invariants a formatter relies on, shared by `tests/ast.rs` and `tasks/sig` (the differential fuzz):
 //! links are consistent (`next` chains end at `last_child`);
 //! siblings are ordered and disjoint, inside their parent, and so are attributes inside the start tag;
-//! an attribute holds its name, then its value; a directive's parts are in the name, in order.
+//! an attribute holds its name, then its value; a directive's parts are in the name, in order, and `v-for`'s in the value.
 
 use oxc_htmlish_parser::{
     Span,
@@ -28,10 +28,28 @@ pub fn check(root: &Root<'_>, id: NodeId) -> Result<(), String> {
                 // A new kind lists its own parts here
                 let parts: Vec<Span> = match &attribute.kind {
                     AttributeKind::Plain => Vec::new(),
-                    AttributeKind::Vue(directive) => std::iter::once(directive.name)
-                        .chain(directive.argument.map(|argument| argument.span))
-                        .chain(directive.modifiers.iter().copied())
-                        .collect(),
+                    AttributeKind::Vue(directive) => {
+                        if let Some(v_for) = &directive.for_expression {
+                            let aliases =
+                                [v_for.value, v_for.key, v_for.index].into_iter().flatten();
+                            let bounds = [value.start, v_for.aliases.start]
+                                .into_iter()
+                                .chain(aliases.flat_map(|part| [part.start, part.end]))
+                                .chain([
+                                    v_for.aliases.end,
+                                    v_for.operator.start,
+                                    v_for.operator.end,
+                                ])
+                                .chain([v_for.source.start, v_for.source.end, value.end]);
+                            if !bounds.is_sorted() {
+                                return Err(format!("v-for parts {v_for:?} in {value:?}"));
+                            }
+                        }
+                        std::iter::once(directive.name)
+                            .chain(directive.argument.map(|argument| argument.span))
+                            .chain(directive.modifiers.iter().copied())
+                            .collect()
+                    }
                 };
                 let bounds = parts.iter().flat_map(|part| [part.start, part.end]);
                 if !std::iter::once(name.start).chain(bounds).chain([name.end]).is_sorted() {

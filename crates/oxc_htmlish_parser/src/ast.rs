@@ -192,6 +192,26 @@ pub struct VueDirective<'a> {
     /// Without the dots.
     /// Always empty for slots (`#a.b` / `v-slot:a.b`): Vue reads the dots as part of the argument.
     pub modifiers: ArenaVec<'a, Span>,
+    /// `v-for`'s value, split; `None` for another directive, a `v-for` without a value,
+    /// or a value Vue does not read as `aliases in source`.
+    pub for_expression: Option<ArenaBox<'a, VueFor>>,
+}
+
+/// `v-for`'s value split as Vue's `parseForExpression` does, each part trimmed, spans inside [`Attribute::value`].
+///
+/// Split as written: Vue splits the value with its entities decoded, so `&#44;` is a comma there, but not here.
+#[derive(Clone, Copy, Debug)]
+pub struct VueFor {
+    /// What comes before the operator, without the parens around it (`item, index` of `(item, index) in items`).
+    pub aliases: Span,
+    /// The aliases Vue reads in `aliases`, split at its last one or two commas with no `]` / `}` after them.
+    /// Each is `None` when empty (`, i`).
+    pub value: Option<Span>,
+    pub key: Option<Span>,
+    pub index: Option<Span>,
+    /// `in` or `of`.
+    pub operator: Span,
+    pub source: Span,
 }
 
 #[derive(Clone, Copy, Debug)]

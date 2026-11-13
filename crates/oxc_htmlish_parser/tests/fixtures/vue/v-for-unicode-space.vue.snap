@@ -1,0 +1,10 @@
+---
+source: crates/oxc_htmlish_parser/tests/ast.rs
+---
+Root sfc=true
+  Element [1..9] "template" Html end_tag=[42..53] "</template>"
+    Text [10..13] "\n  " (nl|nl)
+    Element [14..16] "li" Html self_closing no_end_tag span_end=41
+      @[17..22] "v-for" =" [24..37] "x\u{a0}in\u{3000}xs\u{200b}" vue name="for" for=("x" Some("x") None None in "xs\u{200b}")
+    Text [41..42] "\n" (nl|nl)
+  Text [53..54] "\n" (nl|nl)
