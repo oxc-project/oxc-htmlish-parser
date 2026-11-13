@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.4](https://github.com/oxc-project/oxc-htmlish-parser/compare/oxc-htmlish-parser-v0.0.3...oxc-htmlish-parser-v0.0.4) - 2026-11-13
+
+### Added
+
+- *(parser)* split Vue v-for value as AST ([#23](https://github.com/oxc-project/oxc-htmlish-parser/pull/23))
+
+### Fixed
+
+- *(parser)* read v-pre with argument and slot dots ([#24](https://github.com/oxc-project/oxc-htmlish-parser/pull/24))
+
+### Other
+
+- bump Angular's oracle to 22.2.5, keep quirk shapes inside a start tag ([#19](https://github.com/oxc-project/oxc-htmlish-parser/pull/19))
+- check attribute invariants, tighten the differential's pending ([#17](https://github.com/oxc-project/oxc-htmlish-parser/pull/17))
+
 ## [0.0.3](https://github.com/oxc-project/oxc-htmlish-parser/compare/oxc-htmlish-parser-v0.0.2...oxc-htmlish-parser-v0.0.3) - 2026-11-05
 
 ### Fixed
