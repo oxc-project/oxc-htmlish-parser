@@ -197,6 +197,39 @@ pub enum AttributeKind<'a> {
     /// An Angular start-tag comment, among the attributes as written: [`Attribute::name`] is all of it, and there is no value.
     /// `//` up to the line break, its trailing whitespace left out (the `>` it runs past is in it: `<div // c>`), or `/*` through `*/`.
     Comment,
+    Angular(AngularAttribute),
+}
+
+/// An Angular binding or i18n marker.
+///
+/// Read as the compiler's `parseAttribute` tells a binding from a plain attribute.
+/// Its other prefixes stay [`AttributeKind::Plain`] (`#ref`, `let-x`, `@animation`, and the old `bind-`, `on-`, `bindon-`, `ref-`),
+/// and so do the delimiters around an empty name (`[]`) or that do not close (`[(x]`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AngularAttribute {
+    /// `[x]`.
+    Property,
+    /// `(x)`.
+    Event,
+    /// `[(x)]`.
+    TwoWay,
+    /// `*x`: a structural directive's microsyntax.
+    Template,
+    /// `i18n`, or `i18n-x`, which marks the attribute `x` for translation.
+    I18n,
+}
+
+impl AngularAttribute {
+    /// The part of `name` (the attribute's) between the delimiters: `x` of `[(x)]`, `i18n-x` and `*x`; empty for `i18n`.
+    pub fn target(self, name: Span) -> Span {
+        let (start, end) = match self {
+            Self::Property | Self::Event => (1, 1),
+            Self::TwoWay => (2, 2),
+            Self::Template => (1, 0),
+            Self::I18n => ((name.end - name.start).min(5), 0),
+        };
+        Span::new(name.start + start, name.end - end)
+    }
 }
 
 /// A Vue directive name split into its parts, each a span inside [`Attribute::name`].

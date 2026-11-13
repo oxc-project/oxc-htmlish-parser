@@ -294,9 +294,16 @@ impl<'a> Builder<'a> {
             return error(DiagnosticKind::UnexpectedCharacterInTag, span(name_end, name_end + 1));
         }
         let name = span(start, name_end);
+        let kind = if self.rules.angular
+            && let Some(kind) = angular::attribute(name.slice(self.source))
+        {
+            AttributeKind::Angular(kind)
+        } else {
+            AttributeKind::Plain
+        };
         let eq = self.skip_ws(name_end);
         if self.byte(eq) != Some(b'=') {
-            return Ok(Attribute { name, value: None, kind: AttributeKind::Plain });
+            return Ok(Attribute { name, value: None, kind });
         }
 
         let value_start = self.skip_ws(eq + 1);
@@ -326,7 +333,7 @@ impl<'a> Builder<'a> {
             };
             AttributeValue { span: span(value_start, value_end), quote: Quote::None }
         };
-        Ok(Attribute { name, value: Some(value), kind: AttributeKind::Plain })
+        Ok(Attribute { name, value: Some(value), kind })
     }
 
     /// Angular: a comment where an attribute could start in the start tag at `tag_start`, `at` at its `/`:

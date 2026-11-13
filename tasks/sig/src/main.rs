@@ -109,7 +109,7 @@ fn element(source: &str, root: &Root<'_>, id: NodeId, el: &Element<'_>) -> Value
             let name = a.name.slice(source);
             let value = a.value.map(|v| v.span.slice(source));
             match &a.kind {
-                AttributeKind::Plain => json!([name, value]),
+                AttributeKind::Plain | AttributeKind::Angular(_) => json!([name, value]),
                 AttributeKind::Comment => json!(["comment", name]),
                 AttributeKind::Vue(d) => {
                     let shorthand = d.name.slice(source);

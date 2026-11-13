@@ -28,6 +28,7 @@ pub fn check(root: &Root<'_>, id: NodeId) -> Result<(), String> {
                 // A new kind lists its own parts here
                 let parts: Vec<Span> = match &attribute.kind {
                     AttributeKind::Plain | AttributeKind::Comment => Vec::new(),
+                    AttributeKind::Angular(kind) => vec![kind.target(name)],
                     AttributeKind::Vue(directive) => {
                         if let Some(v_for) = &directive.for_expression {
                             let aliases =

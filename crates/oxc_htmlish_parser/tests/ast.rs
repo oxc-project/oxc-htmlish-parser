@@ -198,6 +198,14 @@ impl Printer<'_, '_> {
         match &attribute.kind {
             AttributeKind::Plain => {}
             AttributeKind::Comment => line.push_str(" comment"),
+            AttributeKind::Angular(kind) => {
+                write!(
+                    line,
+                    " {kind:?} target={:?}",
+                    kind.target(attribute.name).slice(self.source)
+                )
+                .unwrap();
+            }
             AttributeKind::Vue(directive) => {
                 write!(line, " vue name={:?}", directive.name.slice(self.source)).unwrap();
                 if let Some(argument) = directive.argument {

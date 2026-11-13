@@ -64,7 +64,7 @@ Root sfc=false
   Element [431..434] "div" Html end_tag=[486..492] "</div>"
     Block name=[436..438] "if" parameters=["[440..441] \"a\""] open=[435..444] "@if (a) {" close=[467..468] "}"
       Element [445..456] "nz-progress" Html self_closing no_end_tag span_end=467
-        @[457..460] "[x]" =" [462..463] "y"
+        @[457..460] "[x]" =" [462..463] "y" Property target="x"
     Text [468..469] " " (sp|sp)
     Block name=[470..474] "else" parameters=[] open=[469..476] "@else {" close=[485..486] "}"
       Element [477..483] "app-c1" Html self_closing no_end_tag span_end=485

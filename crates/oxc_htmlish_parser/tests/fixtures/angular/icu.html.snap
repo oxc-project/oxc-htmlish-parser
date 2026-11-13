@@ -3,7 +3,7 @@ source: crates/oxc_htmlish_parser/tests/ast.rs
 ---
 Root sfc=false
   Element [1..5] "span" Html end_tag=[104..111] "</span>"
-    @[6..10] "i18n"
+    @[6..10] "i18n" I18n target=""
     Icu expression=[13..18] "count" type=[21..27] "plural"
       IcuCase value=[32..34] "=0" open=35
         Text [36..40] "none" (-|-) content=[36..40] "none"

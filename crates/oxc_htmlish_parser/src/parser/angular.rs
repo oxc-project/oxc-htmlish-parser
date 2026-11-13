@@ -1,5 +1,5 @@
 //! Angular: `{{ }}` closed outside string literals, control flow blocks (`@if (a) { … }`), `@let`,
-//! and ICU expressions (`{n, plural, =0 {none}}`).
+//! ICU expressions (`{n, plural, =0 {none}}`), and binding and i18n attribute names (`[x]`, `i18n-x`).
 
 use oxc_allocator::ArenaBox;
 
@@ -316,6 +316,21 @@ impl<'a> Builder<'a> {
         self.close_container(at);
         if icu { self.icu_next_case() } else { Ok(()) }
     }
+}
+
+/// `name`'s kind, as Angular's compiler reads it (see [`AngularAttribute`]).
+/// Its keyword prefixes (`#`, `let-`, …) start with none of the delimiters, so they fall through to `None`.
+pub(super) fn attribute(name: &str) -> Option<AngularAttribute> {
+    let (kind, close) = match name.as_bytes().first()? {
+        b'*' => return Some(AngularAttribute::Template),
+        b'[' if name.starts_with("[(") => (AngularAttribute::TwoWay, ")]"),
+        b'[' => (AngularAttribute::Property, "]"),
+        b'(' => (AngularAttribute::Event, ")"),
+        _ => {
+            return (name == "i18n" || name.starts_with("i18n-")).then_some(AngularAttribute::I18n);
+        }
+    };
+    (name.ends_with(close) && name.len() > close.len() * 2).then_some(kind)
 }
 
 /// One step through Angular expression text: string literals open at `'`, `"` and `` ` `` (when `opens`),
