@@ -17,3 +17,6 @@ path = "src/main.rs"
 [dependencies]
 oxc-htmlish-parser = { path = "../../crates/oxc_htmlish_parser" }
 serde_json = "1"
+
+[lints]
+workspace = true

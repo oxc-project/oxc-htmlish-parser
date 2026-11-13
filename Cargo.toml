@@ -3,7 +3,7 @@ resolver = "3"
 members = ["crates/oxc_htmlish_parser", "tasks/sig"]
 
 [workspace.package]
-rust-version = "1.95.0"
+rust-version = "1.98.0"
 
 # <https://doc.rust-lang.org/rustc/lints/listing/allowed-by-default.html>
 [workspace.lints.rust]
