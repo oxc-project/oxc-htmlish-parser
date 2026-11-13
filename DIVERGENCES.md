@@ -343,6 +343,23 @@ Printed as written, the output reads to Angular as the input did.
 `decided by: representation`
 `fixture: angular/compiler-readings.html`, `fixture: angular/blocks.html`
 
+### Block names read by prefix
+
+Ours: `else if` and `default never` are the whole name, whitespace between the words aside.
+Angular's compiler matches them by prefix (`/^else[^\S\r\n]+if/`, `/^default[^\S\r\n]+never/`) and compiles a typo:
+`@else iffy (b) {}` is an `@else if`, and `@default nevermore;` a `@default never;`.
+Ours reads the first as a block named `else iffy`, printed as written, which Angular reads as it did;
+the second is an error (`IncompleteBlock`), as a shape no template means and none of the local corpora holds.
+
+```html
+@if (a) {x} @else iffy (b) {y}
+@switch (a) { @case (1) {x} @default nevermore; }
+<!-- Angular: an @else if, and a @default never; ours: a block named "else iffy", and an error -->
+```
+
+`decided by: representation for else if, 3, cost for default never`
+`fixture: angular/blocks.html`, `fixture: angular/default-never-prefix.html`
+
 ### Self-closing native elements
 
 Ours: `/>` closes any element.

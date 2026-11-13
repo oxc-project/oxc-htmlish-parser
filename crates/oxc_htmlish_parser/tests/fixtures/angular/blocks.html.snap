@@ -81,3 +81,9 @@ Root sfc=false
   Block name=[553..561] "else\u{a0}if" parameters=["[563..564] \"b\""] open=[552..567] "@else\u{a0}if (b) {" close=[568..569] "}"
     Text [567..568] "y" (-|-) content=[567..568] "y"
   Text [569..570] "\n" (nl|nl)
+  Block name=[571..573] "if" parameters=["[575..576] \"a\""] open=[570..579] "@if (a) {" close=[580..581] "}"
+    Text [579..580] "x" (-|-) content=[579..580] "x"
+  Text [581..582] " " (sp|sp)
+  Block name=[583..592] "else iffy" parameters=["[594..595] \"b\""] open=[582..598] "@else iffy (b) {" close=[599..600] "}"
+    Text [598..599] "y" (-|-) content=[598..599] "y"
+  Text [600..601] "\n" (nl|nl)
