@@ -60,6 +60,7 @@ pub fn check(root: &Root<'_>, id: NodeId) -> Result<(), String> {
         }
         NodeKind::ConditionalComment(n) => n.content,
         NodeKind::Block(b) => Span::new(b.open.end, b.close.map_or(parent.span.end, |c| c.start)),
+        NodeKind::IcuCase(c) => Span::new(c.open + 1, parent.span.end - 1),
         _ => parent.span,
     };
     let mut at = inner.start;

@@ -11,6 +11,7 @@
 //! - `["c", content]`: comment, without its delimiters; `["bc", content, opening]` a bogus one (`<!x>`, `<?x>`, `</ x>`)
 //! - `["b", name, parameters, children]`: Angular block
 //! - `["l", name, value]`: Angular `@let`
+//! - `["icu", expression, type, cases]`, `["case", value, children]`: Angular ICU expression
 
 #[path = "../../../crates/oxc_htmlish_parser/tests/check/mod.rs"]
 mod check;
@@ -80,6 +81,13 @@ fn node(source: &str, root: &Root<'_>, id: NodeId) -> Value {
             json!(["b", b.name.slice(source), parameters, children(source, root, id)])
         }
         NodeKind::LetDeclaration(n) => json!(["l", n.name.slice(source), n.value.slice(source)]),
+        NodeKind::Icu(n) => json!([
+            "icu",
+            n.expression.slice(source),
+            n.type_name.slice(source),
+            children(source, root, id)
+        ]),
+        NodeKind::IcuCase(n) => json!(["case", n.value.slice(source), children(source, root, id)]),
     }
 }
 

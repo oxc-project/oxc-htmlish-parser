@@ -1,4 +1,5 @@
-//! Angular: `{{ }}` closed outside string literals, control flow blocks (`@if (a) { … }`), and `@let`.
+//! Angular: `{{ }}` closed outside string literals, control flow blocks (`@if (a) { … }`), `@let`,
+//! and ICU expressions (`{n, plural, =0 {none}}`).
 
 use oxc_allocator::ArenaBox;
 
@@ -153,18 +154,72 @@ impl<'a> Builder<'a> {
             .push(NodeKind::Block(ArenaBox::new_in(block, &self.allocator)), span(start, open_end));
         self.pos = open_end;
         if body {
-            let context = self.context();
-            self.stack.push(Open {
-                id,
-                name: "",
-                block: true,
-                tag: Tag::default(),
-                omittable: false,
-                look: Some(self.stack.len()),
-                context,
-            });
+            self.open_container(id, false);
         }
         Ok(())
+    }
+
+    /// Opens a block, an ICU expression or a case at `id`; `icu`: its content is a case's.
+    fn open_container(&mut self, id: NodeId, icu: bool) {
+        let context = Context { icu, ..self.context() };
+        self.stack.push(Open {
+            id,
+            name: "",
+            block: true,
+            tag: Tag::default(),
+            omittable: false,
+            look: Some(self.stack.len()),
+            context,
+        });
+    }
+
+    /// `{expression, type,`, then its first case; `pos` is at `{`.
+    /// As Angular's lexer reads it: the expression and the type run to the next `,`, markup included.
+    pub(super) fn icu_start(&mut self) -> PResult<()> {
+        let start = self.pos;
+        let len = self.bytes.len();
+        let invalid = || error(DiagnosticKind::InvalidIcu, span(start, start + 1));
+        let Some(comma) = self.find(start + 1, len, b",") else { return invalid() };
+        let type_start = self.skip_ws(comma + 1);
+        let Some(type_end) = self.find(type_start, len, b",") else { return invalid() };
+        let icu = Icu {
+            expression: self.trimmed(start + 1, comma),
+            type_name: self.trimmed(type_start, type_end),
+        };
+        let id = self
+            .push(NodeKind::Icu(ArenaBox::new_in(icu, &self.allocator)), span(start, type_end + 1));
+        self.open_container(id, true);
+        self.pos = type_end + 1;
+        self.icu_next_case()
+    }
+
+    /// After an ICU expression's head or one of its cases: the next case up to its `{`, or the `}` closing the expression.
+    /// The whitespace before either is skipped, as Angular's lexer does.
+    fn icu_next_case(&mut self) -> PResult<()> {
+        let at = self.skip_ws(self.pos);
+        if self.byte(at) == Some(b'}') {
+            self.close_container(at);
+            return Ok(());
+        }
+        let Some(open) = self.find(at, self.bytes.len(), b"{") else {
+            return error(DiagnosticKind::InvalidIcu, span(at, at + 1));
+        };
+        let case = IcuCase { value: self.trimmed(at, open), open: span(open, open + 1).start };
+        let id = self.push(NodeKind::IcuCase(case), span(at, open + 1));
+        self.open_container(id, true);
+        self.pos = open + 1;
+        Ok(())
+    }
+
+    /// Closes the container on top of the stack at the `}` at `at`.
+    fn close_container(&mut self, at: usize) {
+        let open = self.stack.pop().expect("a container is open");
+        let node = &mut self.nodes[open.id.index()];
+        node.span = span(node.span.start as usize, at + 1);
+        if let NodeKind::Block(block) = &mut node.kind {
+            block.close = Some(span(at, at + 1));
+        }
+        self.pos = at + 1;
     }
 
     /// The parameters after `(`, up to the `)`, which the returned offset follows.
@@ -239,21 +294,27 @@ impl<'a> Builder<'a> {
         Ok(())
     }
 
-    /// `}`: closes the innermost block, and the elements in it whose end tag may be omitted.
+    /// `}`: closes the innermost block, and the elements in it whose end tag may be omitted;
+    /// in an ICU case, the case and every element left open in it, as Angular builds a case's content on its own,
+    /// then reads the next case.
     pub(super) fn block_close(&mut self) -> PResult<()> {
         let at = self.pos;
+        let icu = self.context().icu;
+        // None in a conditional comment's content, parsed apart
         let index = self.stack.iter().rposition(|open| open.block);
-        if !index.is_some_and(|index| self.close_omitted_above(index + 1, at)) {
+        let closed = index.is_some_and(|index| {
+            if icu {
+                self.close_down_to(index + 1, at);
+                true
+            } else {
+                self.close_omitted_above(index + 1, at)
+            }
+        });
+        if !closed {
             return error(DiagnosticKind::UnexpectedBlockClose, span(at, at + 1));
         }
-        let open = self.stack.pop().expect("the block is on the stack");
-        let node = &mut self.nodes[open.id.index()];
-        node.span = span(node.span.start as usize, at + 1);
-        if let NodeKind::Block(block) = &mut node.kind {
-            block.close = Some(span(at, at + 1));
-        }
-        self.pos = at + 1;
-        Ok(())
+        self.close_container(at);
+        if icu { self.icu_next_case() } else { Ok(()) }
     }
 }
 

@@ -134,8 +134,7 @@ impl Builder<'_> {
             return error(DiagnosticKind::UnterminatedDocType, span(start, value_from));
         };
         self.pos = close + 1;
-        let (lead, trail) = trim(&self.bytes[value_from..close]);
-        let value = span(value_from + lead, value_from + lead.max(trail));
+        let value = self.trimmed(value_from, close);
         if self.at_sfc_root() && value.slice(self.source) == "html" {
             return Err(Stop::Html);
         }

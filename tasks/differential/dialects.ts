@@ -60,6 +60,8 @@ const ANGULAR_TOKENS = [
   "</ div>", "<!-- c --!>", "<!-->", "<style>a</ style >", "<svg:g>", "<svg:rect/>", "<svg><title><b>t</b></title></svg>",
   "<div\u00a0a=b\u00a0c>", "{{ a",
   "@let a = b;", "@let x = '}';",
+  "{n, plural, =0 {none} other {{{ n }} items}}", "{a, select, x {<b>X} y {<i>Y</i>}}", "{a, select, x {{b, plural, =1 {one}}}}",
+  "{n, plural, =0 {", "} other {", "}}",
   "<div a // c\n>", "<div /* c */ a>", "<div a=b/* c */>",
 ];
 
@@ -177,9 +179,9 @@ function angularCompilerSig(source: string): Sig {
       // Our value is trimmed (`LetDeclaration::value`).
       case "LetDeclaration":
         return ["l", n.name, n.value.replace(/[ \t\n\f\r]+$/, "")];
-      // Not parsed yet (AGENTS.md): ICU is an error on our side.
+      // Ours are trimmed (`Icu`, `IcuCase`); Angular's lexer skips the whitespace at the start of a case.
       case "Expansion":
-        return ["t", slice(n.sourceSpan)];
+        return ["icu", n.switchValue.trim(), n.type.trim(), n.cases.map((c: any) => ["case", c.value, nodes(c.expression)])];
       default:
         throw new UnknownNode(`unexpected node ${n.constructor.name}`);
     }
@@ -298,6 +300,7 @@ function mapNodes(nodes: any[], f: (nodes: any[]) => any[]): any[] {
   for (const n of nodes) {
     if (n[0] === "el") n[4] = mapNodes(n[4], f);
     if (n[0] === "b") n[3] = mapNodes(n[3], f);
+    if (n[0] === "icu") for (const c of n[3]) c[2] = mapNodes(c[2], f);
   }
   return f(nodes);
 }
@@ -391,6 +394,15 @@ function angularShape(nodes: any[]): any[] {
   return bogusAsComment(mergeTexts(out)).map((n) => {
     if (n[0] === "c") return ["c", n[1].replace(/\r\n?/g, "\n").trim()];
     if (n[0] === "b") return ["b", n[1].replace(/^else[^\S\r\n]+if$/, "else if").replace(/^default[^\S\r\n]+never$/, "default never"), ...n.slice(2)];
+    // Its lexer skips the whitespace at the start of a case
+    if (n[0] === "icu") {
+      for (const c of n[3]) {
+        const first = c[2][0];
+        if (first?.[0] !== "t") continue;
+        first[1] = first[1].replace(/^[\t-\r \xa0]+/, "");
+        if (first[1] === "") c[2].shift();
+      }
+    }
     // Its lexer reads `{{ }}` in RCDATA as text; its compiler binds it all the same, as we read it
     if (n[0] === "el" && ["textarea", "title"].includes(n[1].toLowerCase())) return [...n.slice(0, 4), mergeTexts(n[4], true)];
     return n;
@@ -440,15 +452,16 @@ export const DIALECTS: Record<string, DialectSpec> = {
     normalize: (sig) => mapNodes(sig, angularShape),
     quirks: {
       "implicit close after void": IMPLICIT_CLOSE_AFTER_VOID,
+      // ... and an ICU expression right after it becomes its child.
+      "ICU after void": new RegExp(`${VOID_TAG}\\x7b(?!\\x7b)`, "i"),
+      // Its lexer starts `@let` in an ICU case where a token starts (`\x7b` and `\x7d` keep the braces out of `tests/divergences.rs`'s count).
+      "@let in an ICU case": /\x7b[^\x7b\x7d]*,[^\x7b\x7d]*,[^]*\x7b[^]*@let\s/,
       // Angular reads the whitespace after a body-less `@case` into its span.
       "fallthrough case": /@(?:case|default)\b(?:[^{}@]*?\))?[ \t\n\f\r]+@/,
     },
     mutationQuirks: {
       // Angular ends a tag name at `= < ' "` too; ours, printed as written, keeps them in it.
       "punctuation in a name": PUNCTUATION_IN_TAG_NAME,
-    },
-    pending: {
-      ICU: /\{[^{}]*,\s*(?:plural|select|selectordinal)\s*,/,
     },
   },
   vue: {

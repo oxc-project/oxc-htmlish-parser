@@ -32,9 +32,9 @@ pub enum Dialect {
     /// (`{{ }}` and directives are still Vue).
     Vue,
     /// An Angular template.
-    /// HTML with `{{ }}`, control flow blocks (`@if (a) { … }`), `@let`, and `/>` closing any element.
+    /// HTML with `{{ }}`, control flow blocks (`@if (a) { … }`), `@let`, ICU expressions (`{n, plural, =0 {none}}`),
+    /// and `/>` closing any element.
     /// Start-tag comments (`//` and `/* */`) sit among the attributes.
-    /// TODO: ICU expressions are not parsed yet (an error).
     Angular,
 }
 
@@ -126,7 +126,7 @@ struct Rules {
     /// a void element's end tag is text, a quote may open an attribute name or sit in a directive name, `</` ends a start tag,
     /// and RCDATA reads `{{ }}` as that tokenizer does.
     sfc: bool,
-    /// `{{ }}` (closed outside quotes), control flow blocks and `@let`, and Angular's lexer in tags:
+    /// `{{ }}` (closed outside quotes), control flow blocks, `@let` and ICU expressions, and Angular's lexer in tags:
     /// its whitespace (VT, U+000E–U+001F, NBSP), namespace prefixes, `<!-->` read on to `-->`,
     /// whitespace around a raw text element's end tag name and no script data escapes,
     /// `=` ending an unquoted value and opening a nameless attribute,
@@ -191,10 +191,12 @@ impl Rules {
 struct Context {
     namespace: Namespace,
     v_pre: bool,
+    /// Inside an Angular ICU case: `}` closes it, and blocks and `@let` do not start.
+    icu: bool,
 }
 
 impl Context {
-    const ROOT: Self = Self { namespace: Namespace::Html, v_pre: false };
+    const ROOT: Self = Self { namespace: Namespace::Html, v_pre: false, icu: false };
 }
 
 enum Stop {
@@ -219,17 +221,26 @@ fn ends_attribute_name(b: u8) -> bool {
     matches!(b, b'>' | b'/' | b'=' | b'"' | b'\'')
 }
 
+impl Builder<'_> {
+    /// `[from, to)` without ASCII whitespace at its edges; empty at `to` for whitespace only.
+    fn trimmed(&self, from: usize, to: usize) -> Span {
+        let (lead, trail) = trim(&self.bytes[from..to]);
+        span(from + lead, from + lead.max(trail))
+    }
+}
+
 /// Where the leading ASCII whitespace of `bytes` ends and the trailing one starts.
 /// For whitespace-only input they cross (`(len, 0)`): the content is `lead..lead.max(trail)`.
 fn trim(bytes: &[u8]) -> (usize, usize) {
     (bytes.len() - bytes.trim_ascii_start().len(), bytes.trim_ascii_end().len())
 }
 
-/// An element (or an Angular block) whose end has not been seen yet.
+/// An element (or an Angular block or ICU) whose end has not been seen yet.
 struct Open<'a> {
     id: NodeId,
     /// The tag name as written, for matching end tags; empty for a block.
     name: &'a str,
+    /// A block, an ICU expression or one of its cases: `}` closes it, and no end tag.
     block: bool,
     tag: Tag,
     /// The element may go without an end tag when its parent's closes it
@@ -293,8 +304,14 @@ impl<'a> Builder<'a> {
         }
         while let Some(open) = self.stack.pop() {
             if open.block {
-                let start = self.nodes[open.id.index()].span.start as usize;
-                return error(DiagnosticKind::UnclosedBlock, span(start, start + 1));
+                let node = &self.nodes[open.id.index()];
+                let kind = if matches!(node.kind, NodeKind::Block(_)) {
+                    DiagnosticKind::UnclosedBlock
+                } else {
+                    DiagnosticKind::InvalidIcu
+                };
+                let start = node.span.start as usize;
+                return error(kind, span(start, start + 1));
             }
             self.close(&open, None, self.bytes.len());
         }

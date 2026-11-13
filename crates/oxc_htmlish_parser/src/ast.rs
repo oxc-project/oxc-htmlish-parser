@@ -9,7 +9,6 @@
 //! - Formatter policy (CSS display, whitespace sensitivity) stays out.
 //!
 //! Dialect constructs that are not parsed yet slot in as new [`NodeKind`] / [`AttributeKind`] variants:
-//! Angular ICU;
 //! Svelte `{expr}` tags and blocks;
 //! Astro `{expr}` holding htmlish chunks.
 
@@ -95,6 +94,10 @@ pub enum NodeKind<'a> {
     Block(ArenaBox<'a, Block<'a>>),
     /// `@let name = value;` (Angular).
     LetDeclaration(ArenaBox<'a, LetDeclaration>),
+    /// An Angular ICU expression (`{n, plural, =0 {none} other {many}}`); its cases are the node's children.
+    Icu(ArenaBox<'a, Icu>),
+    /// A case of an [`NodeKind::Icu`] (`=0 {none}`); its content is the node's children.
+    IcuCase(IcuCase),
     /// The end tag of an `html`, `head` or `body` whose start tag is omitted (`<title>t</title></head>`):
     /// HTML inserts the element around the content, which stays where it is; the end tag follows it.
     EndTag(ArenaBox<'a, EndTag>),
@@ -312,6 +315,23 @@ pub struct LetDeclaration {
     pub name: Span,
     /// Between `=` and `;`, trimmed.
     pub value: Span,
+}
+
+/// The whitespace between the cases is no node, as in Angular's AST.
+#[derive(Clone, Copy, Debug)]
+pub struct Icu {
+    /// Before the first `,`, trimmed (`n`).
+    pub expression: Span,
+    /// Between the `,`s, trimmed (`plural`, `select`).
+    pub type_name: Span,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct IcuCase {
+    /// Before the `{`, trimmed (`=0`, `other`).
+    pub value: Span,
+    /// The offset of its `{`; the `}` ends the node's span.
+    pub open: u32,
 }
 
 #[derive(Clone, Copy, Debug)]

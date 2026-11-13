@@ -253,7 +253,11 @@ impl<'a> Builder<'a> {
             tag,
             omittable,
             look,
-            context: Context { namespace: tags::children_namespace(local, namespace), v_pre },
+            context: Context {
+                namespace: tags::children_namespace(local, namespace),
+                v_pre,
+                ..inherited
+            },
         };
         if closes_now {
             self.close(&open, None, at);
@@ -445,8 +449,7 @@ impl<'a> Builder<'a> {
 
     /// `[from, gt)` trimmed, when anything is left.
     fn ignored(&self, from: usize, gt: usize) -> Option<Span> {
-        let (lead, trail) = trim(&self.bytes[from..gt]);
-        (lead < trail).then(|| span(from + lead, from + trail))
+        Some(self.trimmed(from, gt)).filter(|span| !span.is_empty())
     }
 }
 

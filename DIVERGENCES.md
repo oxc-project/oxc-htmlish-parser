@@ -102,8 +102,9 @@ Ours: an end tag runs to its first `>`, as in the HTML tokenizer (and Vue): what
 
 Ours: a void element closes before anything that follows it.
 `angular-html-parser` and Angular's compiler keep a void element on their stack until the next token.
-A doctype right after it becomes its child,
+A doctype right after it becomes its child, and in Angular an ICU expression,
 and a start tag right after it cannot implicitly close the void element's parent.
+Prettier prints such an ICU inside a void element with its end tag (`<br >{a, select, x {X}}</br/>`), which Angular reports.
 
 ```html
 <th><img src=x><td>
@@ -113,8 +114,8 @@ and a start tag right after it cannot implicitly close the void element's parent
 In Angular the output keeps the tags, so Angular nests them the same way again;
 what a printer adds between them is whitespace-only text, which Angular drops.
 `decided by: 2 in HTML (a token left on a stack), 4 in Angular`
-`fixture: html/implicit-close.html`, `fixture: angular/implicit-close.html`
-`runner: doctype after void`, `runner: implicit close after void`
+`fixture: html/implicit-close.html`, `fixture: angular/implicit-close.html`, `fixture: angular/icu.html`
+`runner: doctype after void`, `runner: implicit close after void`, `runner: ICU after void`
 
 ## HTML
 
@@ -333,6 +334,24 @@ so a fallthrough `@case` takes the whitespace up to the next `@case` into its sp
 `decided by: representation`
 `fixture: angular/blocks.html`
 `runner: fallthrough case`
+
+### Inside an ICU case
+
+Ours: a case's content never starts a block or `@let`, as Angular's lexer reads text there,
+and its elements inherit the namespace around the expression.
+Angular's lexer starts them where a token starts (right after the case's `{` and whitespace, or after markup),
+and builds a case's content apart, its elements in the HTML namespace.
+
+```html
+{a, select, x { @let y = 1; z}}
+<!-- Angular: a @let declaration, then the text " z"; ours: the text " @let y = 1; z" -->
+```
+
+A block there is an error in Angular (the case's `}` closes the case, not the block); ours reads its `{` as an ICU expression.
+Printed as written, the output reads to Angular as the input did.
+`decided by: representation`
+`fixture: angular/icu.html`
+`runner: @let in an ICU case`
 
 ### How Angular's AST holds a node
 

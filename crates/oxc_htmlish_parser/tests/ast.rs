@@ -164,6 +164,12 @@ impl Printer<'_, '_> {
                     q(b.open)
                 )
             }
+            NodeKind::Icu(n) => {
+                format!("Icu expression={} type={}", q(n.expression), q(n.type_name))
+            }
+            NodeKind::IcuCase(n) => {
+                format!("IcuCase value={} open={}", q(n.value), n.open)
+            }
             NodeKind::LetDeclaration(n) => {
                 format!("LetDeclaration name={} value={}", q(n.name), q(n.value))
             }
