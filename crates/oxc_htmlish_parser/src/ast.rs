@@ -190,7 +190,8 @@ pub struct VueDirective<'a> {
     pub name: Span,
     pub argument: Option<VueArgument>,
     /// Without the dots.
-    /// Always empty for slots (`#a.b` / `v-slot:a.b`): Vue reads the dots as part of the argument.
+    /// Always empty for slots (`#a.b` / `v-slot:a.b`): Vue reads the dots as part of the argument,
+    /// and drops them without one (`v-slot.a`, `#.a`).
     pub modifiers: ArenaVec<'a, Span>,
     /// `v-for`'s value, split; `None` for another directive, a `v-for` without a value,
     /// or a value Vue does not read as `aliases in source`.

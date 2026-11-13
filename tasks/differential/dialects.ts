@@ -38,7 +38,8 @@ const VUE_TOKENS = [
   "<div/>", "<C />", "<br>", "<br/>", "<input>", "<Input>",
   "<div :a=\"b\" @click.stop=\"f\" v-if=\"x\">", "<C #default=\"{ i }\" #item.name v-slot:h>",
   "<C v-bind:[k].camel=\"v\" .p=\"v\" @[e]=\"h\" v-on:keyup.enter.prevent=\"g\">",
-  "<div v-pre>", "<div a=b c>", "<div v-model.trim='m'>",
+  "<div v-pre>", "<div v-pre:a>", "<div v-pre.m>", "<div a=b c>", "<div v-model.trim='m'>",
+  "<C v-slot.m=\"p\">", "<C #.m=\"p\">", "<C v-slot:.m>", "<C #[a.b].c=\"p\">",
   "<li v-for=\"(x, i) in xs\">", "<li v-for='x of xs'>", "<li v-for=\" { a, b }, k , i  in\n o \">",
   "<li v-for=\"[a, b], k, i, j in xs\">", "<li v-for=\"(, i) in xs\">", "<li v-for=\"x inxs\">", "<li v-for=\" in xs\">",
   "<pre>", "<pre>\n", "<textarea>\n{{ t }}</textarea>", "<title>{{ t }} <b></title>",
@@ -246,14 +247,17 @@ function vueOracle(source: string): Sig {
  * What Vue's parser drops even with `whitespace: "preserve"`:
  * whitespace-only text as the first or last child (outside `pre` and raw text), and the `v-pre` prop.
  */
+/** `v-pre`, and `v-pre:a` / `v-pre.m`: the directive is named `pre`. */
+const isVPre = (a: any) => /^v-pre(?:$|[:.])/.test(a[0]);
+
 function vueNormalize(nodes: any[], keepEdges = false, svg = false, vPre = false, root = true): any[] {
   const blank = (n: any) => n[0] === "t" && /^[ \t\n\f\r]*$/.test(n[1]);
   const out = nodes.filter((n, i) => keepEdges || !blank(n) || (i > 0 && i < nodes.length - 1));
   for (const n of out) {
     if (n[0] !== "el") continue;
     // Only the outermost `v-pre` is a directive; nested ones are plain attributes Vue keeps.
-    const opensVPre = !vPre && n[3].some((a: any) => a[0] === "v-pre");
-    if (opensVPre) n[3] = n[3].filter((a: any) => a[0] !== "v-pre");
+    const opensVPre = !vPre && n[3].some(isVPre);
+    if (opensVPre) n[3] = n[3].filter((a: any) => !isVPre(a));
     // `pre` and raw text are HTML-only in Vue (`<textarea>` in SVG is an element like any other).
     const inSvg = n[1] === "foreignObject" ? false : svg || n[1] === "svg";
     // A root block is raw text, unless it is a `<template>` in HTML.

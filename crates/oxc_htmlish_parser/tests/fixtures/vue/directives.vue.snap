@@ -2,7 +2,7 @@
 source: crates/oxc_htmlish_parser/tests/ast.rs
 ---
 Root sfc=true
-  Element [1..9] "template" Html end_tag=[440..451] "</template>"
+  Element [1..9] "template" Html end_tag=[638..649] "</template>"
     Text [10..13] "\n  " (nl|nl)
     Element [14..15] "C" Html self_closing no_end_tag span_end=73
       @[16..20] "v-if" =" [22..23] "a" vue name="if"
@@ -50,7 +50,33 @@ Root sfc=true
       Element [396..397] "C" Html self_closing no_end_tag span_end=412
         @[398..405] "v-bind:" =" [407..408] "p"
     Text [418..421] "\n  " (nl|nl)
-    Element [422..423] "p" Html end_tag=[435..439] "</p>"
-      Interpolation expression=[426..433] " after "
-    Text [439..440] "\n" (nl|nl)
-  Text [451..452] "\n" (nl|nl)
+    Element [422..425] "div" Html end_tag=[457..463] "</div>"
+      @[426..435] "v-pre:arg"
+      Text [436..445] "{{ raw }}" (-|-) content=[436..445] "{{ raw }}"
+      Element [446..447] "b" Html self_closing no_end_tag span_end=457
+        @[448..450] ":c" =" [452..453] "3"
+    Text [463..466] "\n  " (nl|nl)
+    Element [467..470] "div" Html end_tag=[490..496] "</div>"
+      @[471..480] "v-pre.mod"
+      Text [481..490] "{{ raw }}" (-|-) content=[481..490] "{{ raw }}"
+    Text [496..499] "\n  " (nl|nl)
+    Element [500..503] "div" Html end_tag=[530..536] "</div>"
+      @[504..511] "v-pre-x" =" [513..514] "1" vue name="pre-x"
+      Interpolation expression=[518..528] " compiled "
+    Text [536..539] "\n  " (nl|nl)
+    Element [540..541] "C" Html self_closing no_end_tag span_end=557
+      @[542..550] "v-slot.a" =" [552..553] "p" vue name="slot"
+    Text [557..560] "\n  " (nl|nl)
+    Element [561..562] "C" Html self_closing no_end_tag span_end=573
+      @[563..566] "#.b" =" [568..569] "p" vue name="#"
+    Text [573..576] "\n  " (nl|nl)
+    Element [577..578] "C" Html self_closing no_end_tag span_end=595
+      @[579..588] "v-slot:.c" =" [590..591] "p" vue name="slot"
+    Text [595..598] "\n  " (nl|nl)
+    Element [599..600] "C" Html self_closing no_end_tag span_end=616
+      @[601..609] "#[d.e].f" =" [611..612] "p" vue name="#" arg="[d.e].f" dynamic
+    Text [616..619] "\n  " (nl|nl)
+    Element [620..621] "p" Html end_tag=[633..637] "</p>"
+      Interpolation expression=[624..631] " after "
+    Text [637..638] "\n" (nl|nl)
+  Text [649..650] "\n" (nl|nl)
