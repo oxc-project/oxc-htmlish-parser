@@ -62,6 +62,7 @@ const ANGULAR_TOKENS = [
   "@let a = b;", "@let x = '}';",
   "{n, plural, =0 {none} other {{{ n }} items}}", "{a, select, x {<b>X} y {<i>Y</i>}}", "{a, select, x {{b, plural, =1 {one}}}}",
   "{n, plural, =0 {", "} other {", "}}",
+  "<div ngNonBindable>",
   "<div a // c\n>", "<div /* c */ a>", "<div a=b/* c */>",
 ];
 

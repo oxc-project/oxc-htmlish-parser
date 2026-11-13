@@ -52,7 +52,7 @@ impl Builder<'_> {
                     start = self.pos;
                     continue;
                 }
-                b'@' | b'}' => {
+                b'@' => {
                     self.pos += 1;
                     continue;
                 }
