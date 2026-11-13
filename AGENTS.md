@@ -122,7 +122,7 @@ Step 1 holds a printer to a norm's tree only where the input has no parse error.
 | `just compare <html\|vue\|angular> <rev> <file>...` | this tree against `<rev>` on real files: what now fails, parses, or reads differently |
 
 First run: `npm i` in `tasks/differential`.
-CI (`.github/workflows`) runs check, test, clippy, doc and typos, and `differential.yml` the fuzz for every dialect over seeds 0 to 2.
+CI (`.github/workflows`) runs check, test, clippy and doc, and `differential.yml` the fuzz for every dialect over seeds 0 to 2.
 
 - `tests/fixtures/<dialect>/*` parse as that dialect (`html`, `xhtml`, `vue`, `angular`); one compact tree per fixture.
 - Add a fixture when a change touches structure or facts.
