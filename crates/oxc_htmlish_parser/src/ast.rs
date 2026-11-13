@@ -108,6 +108,7 @@ pub struct Element<'a> {
     /// in Angular without its namespace prefix (`svg:rect` is `rect`).
     pub key: &'a str,
     pub namespace: Namespace,
+    /// In order, Angular's start-tag comments among them ([`AttributeKind::Comment`]).
     pub attributes: ArenaVec<'a, Attribute<'a>>,
     /// `<name …>`, including the `/>` when written; in a Vue SFC, a start tag a `</` ends has no `>` (`<C a="b"</C>`).
     pub start_tag: Span,
@@ -160,7 +161,16 @@ pub struct Attribute<'a> {
     pub name: Span,
     pub value: Option<AttributeValue>,
     pub kind: AttributeKind<'a>,
-    pub span: Span,
+}
+
+impl Attribute<'_> {
+    /// From the name through the value's closing quote.
+    pub fn span(&self) -> Span {
+        let end = self
+            .value
+            .map_or(self.name.end, |value| value.span.end + u32::from(value.quote != Quote::None));
+        Span::new(self.name.start, end)
+    }
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -181,6 +191,9 @@ pub enum Quote {
 pub enum AttributeKind<'a> {
     Plain,
     Vue(ArenaBox<'a, VueDirective<'a>>),
+    /// An Angular start-tag comment, among the attributes as written: [`Attribute::name`] is all of it, and there is no value.
+    /// `//` up to the line break, its trailing whitespace left out (the `>` it runs past is in it: `<div // c>`), or `/*` through `*/`.
+    Comment,
 }
 
 /// A Vue directive name split into its parts, each a span inside [`Attribute::name`].

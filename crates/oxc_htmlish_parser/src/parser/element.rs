@@ -127,6 +127,13 @@ impl<'a> Builder<'a> {
                     at += 2;
                     break true;
                 }
+                Some(b'/')
+                    if self.rules.angular && matches!(self.byte(at + 1), Some(b'/' | b'*')) =>
+                {
+                    let comment = self.start_tag_comment(start, at)?;
+                    at = self.skip_ws(comment.name.end as usize);
+                    attributes.push(comment);
+                }
                 // Vue's SFC tokenizer ends a start tag at `</` where an attribute could start (`<C a="b"</C>`)
                 Some(b'<') if self.rules.sfc && self.byte(at + 1) == Some(b'/') => break false,
                 // A quote where an attribute name starts is a template's expression leaking out of a value
@@ -137,7 +144,7 @@ impl<'a> Builder<'a> {
                 }
                 Some(_) => {
                     let attribute = self.attribute(at)?;
-                    at = self.skip_ws(attribute.span.end as usize);
+                    at = self.skip_ws(attribute.span().end as usize);
                     attributes.push(attribute);
                 }
             }
@@ -285,16 +292,11 @@ impl<'a> Builder<'a> {
         let name = span(start, name_end);
         let eq = self.skip_ws(name_end);
         if self.byte(eq) != Some(b'=') {
-            return Ok(Attribute {
-                name,
-                value: None,
-                kind: AttributeKind::Plain,
-                span: span(start, name_end),
-            });
+            return Ok(Attribute { name, value: None, kind: AttributeKind::Plain });
         }
 
         let value_start = self.skip_ws(eq + 1);
-        let (value, end) = if let Some(q @ (b'"' | b'\'')) = self.byte(value_start) {
+        let value = if let Some(q @ (b'"' | b'\'')) = self.byte(value_start) {
             let Some(close) = self.find(value_start + 1, self.bytes.len(), &[q]) else {
                 return error(
                     DiagnosticKind::UnterminatedAttributeValue,
@@ -302,31 +304,44 @@ impl<'a> Builder<'a> {
                 );
             };
             let quote = if q == b'"' { Quote::Double } else { Quote::Single };
-            (AttributeValue { span: span(value_start + 1, close), quote }, close + 1)
+            AttributeValue { span: span(value_start + 1, close), quote }
         } else {
             // Browsers (and Vue) end an unquoted value at whitespace or `>` only: `href=/a/b` and `src=a.png/` keep their slashes.
-            // Angular's compiler ends it at `=` too (`b=c=d`), and at a `/` right before `>`, which self-closes (`<cmp a=b/>`;
-            // DIVERGENCES.md#unquoted-attribute-values).
-            let mut value_end = if self.rules.angular {
-                self.until_ws_or(value_start, |b| matches!(b, b'>' | b'='))
+            // Angular's compiler ends it at `=` too (`b=c=d`), at a `/` right before `>`, which self-closes (`<cmp a=b/>`;
+            // DIVERGENCES.md#unquoted-attribute-values), and where a start-tag comment starts (`a=b//c`).
+            let value_end = if self.rules.angular {
+                let end = self.until_ws_or(value_start, |b| matches!(b, b'>' | b'='));
+                (value_start..end)
+                    .find(|&i| {
+                        self.bytes[i] == b'/'
+                            && matches!(self.byte(i + 1), Some(b'/' | b'*' | b'>'))
+                    })
+                    .unwrap_or(end)
             } else {
                 self.until_ws_or(value_start, |b| b == b'>')
             };
-            if self.rules.angular
-                && value_end > value_start
-                && self.bytes[value_end - 1] == b'/'
-                && self.byte(value_end) == Some(b'>')
-            {
-                value_end -= 1;
-            }
-            (AttributeValue { span: span(value_start, value_end), quote: Quote::None }, value_end)
+            AttributeValue { span: span(value_start, value_end), quote: Quote::None }
         };
-        Ok(Attribute {
-            name,
-            value: Some(value),
-            kind: AttributeKind::Plain,
-            span: span(start, end),
-        })
+        Ok(Attribute { name, value: Some(value), kind: AttributeKind::Plain })
+    }
+
+    /// Angular: a comment where an attribute could start in the start tag at `tag_start`, `at` at its `/`:
+    /// `//` up to the line break, which it may run past the `>` to (`<div a // c>`), its trailing whitespace left out;
+    /// `/*` through `*/`.
+    fn start_tag_comment(&self, tag_start: usize, at: usize) -> PResult<Attribute<'a>> {
+        let end = if self.bytes[at + 1] == b'/' {
+            let line_end = self.skip(at + 2, |b| !matches!(b, b'\n' | b'\r'));
+            at + self.bytes[at..line_end].trim_ascii_end().len()
+        } else {
+            let Some(close) = self.find(at + 2, self.bytes.len(), b"*/") else {
+                return error(
+                    DiagnosticKind::UnterminatedStartTag,
+                    span(tag_start, self.bytes.len()),
+                );
+            };
+            close + 2
+        };
+        Ok(Attribute { name: span(at, end), value: None, kind: AttributeKind::Comment })
     }
 
     /// Content up to `</name>` (case-insensitive) as one text, `{{ }}` split when `escapable`;

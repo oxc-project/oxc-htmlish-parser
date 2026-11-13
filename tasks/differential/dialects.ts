@@ -60,6 +60,7 @@ const ANGULAR_TOKENS = [
   "</ div>", "<!-- c --!>", "<!-->", "<style>a</ style >", "<svg:g>", "<svg:rect/>", "<svg><title><b>t</b></title></svg>",
   "<div\u00a0a=b\u00a0c>", "{{ a",
   "@let a = b;", "@let x = '}';",
+  "<div a // c\n>", "<div /* c */ a>", "<div a=b/* c */>",
 ];
 
 // ---
@@ -153,7 +154,13 @@ function angularCompilerSig(source: string): Sig {
         const end = n.endSourceSpan;
         const ended = end !== null && end.start.offset !== n.startSourceSpan.start.offset;
         // A value's span leaves its quotes out
-        const attrs = n.attrs.map((a: any) => [slice(a.keySpan), a.valueSpan ? slice(a.valueSpan) : null]);
+        // Start-tag comments go among the attributes, in source order; ours leaves out a `//` one's trailing whitespace
+        const attrs = [
+          ...n.attrs.map((a: any) => [a.sourceSpan.start.offset, [slice(a.keySpan), a.valueSpan ? slice(a.valueSpan) : null]]),
+          ...n.comments.map((c: any) => [c.sourceSpan.start.offset, ["comment", slice(c.sourceSpan).replace(/[ \t\n\f\r]+$/, "")]]),
+        ]
+          .sort((a, b) => a[0] - b[0])
+          .map((a) => a[1]);
         return elementSig(source, n, name, ended, attrs, nodes(n.children));
       }
       // Its interpolations are tokens; one without its `}}` is text to us
@@ -442,8 +449,6 @@ export const DIALECTS: Record<string, DialectSpec> = {
     },
     pending: {
       ICU: /\{[^{}]*,\s*(?:plural|select|selectordinal)\s*,/,
-      // `href="https://…"` holds no comment
-      "start-tag comment": new RegExp(`${IN_START_TAG}(?://|/\\*)`),
     },
   },
   vue: {

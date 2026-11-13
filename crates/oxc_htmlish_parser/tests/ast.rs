@@ -191,6 +191,7 @@ impl Printer<'_, '_> {
         }
         match &attribute.kind {
             AttributeKind::Plain => {}
+            AttributeKind::Comment => line.push_str(" comment"),
             AttributeKind::Vue(directive) => {
                 write!(line, " vue name={:?}", directive.name.slice(self.source)).unwrap();
                 if let Some(argument) = directive.argument {

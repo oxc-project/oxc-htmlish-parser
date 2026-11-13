@@ -15,7 +15,7 @@ pub fn check(root: &Root<'_>, id: NodeId) -> Result<(), String> {
         NodeKind::Element(el) => {
             let mut at = el.name.end;
             for attribute in &el.attributes {
-                let (span, name) = (attribute.span, attribute.name);
+                let (span, name) = (attribute.span(), attribute.name);
                 if !(at <= span.start && span.end <= el.start_tag.end) {
                     return Err(format!("attribute {span:?} after {at} in {:?}", el.start_tag));
                 }
@@ -27,7 +27,7 @@ pub fn check(root: &Root<'_>, id: NodeId) -> Result<(), String> {
                 }
                 // A new kind lists its own parts here
                 let parts: Vec<Span> = match &attribute.kind {
-                    AttributeKind::Plain => Vec::new(),
+                    AttributeKind::Plain | AttributeKind::Comment => Vec::new(),
                     AttributeKind::Vue(directive) => {
                         if let Some(v_for) = &directive.for_expression {
                             let aliases =

@@ -58,7 +58,8 @@ Vue SFC blocks are the exception: Vue's SFC parser reads them, not a browser, an
 
 ### Unquoted attribute values
 
-Ours: they end at whitespace or `>`, as in browsers and Vue; in Angular, a `/` right before `>` self-closes the element.
+Ours: they end at whitespace or `>`, as in browsers and Vue; in Angular, a `/` right before `>` self-closes the element,
+and a start-tag comment (`//`, `/*`) ends one, as Angular's compiler reads it (`<a b=c//d⏎>`).
 `angular-html-parser` also ends them at `/ ' " = <`.
 
 ```html
@@ -71,7 +72,7 @@ Ours: they end at whitespace or `>`, as in browsers and Vue; in Angular, a `/` r
 Prettier prints the second as `src="a.png"`, another URL (`oxc_formatter_htmlish`'s DIVERGENCES.md#unquoted-value-with-slash).
 Angular's compiler ends every unquoted value at `/`, so the only valid template with one is `<cmp a=b/>` (or `<cmp a=/>`), which depends on it
 (the Angular team keeps that reading, angular/angular#68804); it ends one at `=` too (`<a b=c=d>`), and Angular reads both so.
-At the other characters, or a `/` elsewhere, Angular reports it; ours keeps the shared reading.
+At the other characters, or any other `/`, Angular reports it; ours keeps the shared reading.
 `decided by: 1 in HTML (3 for the values angular-html-parser reports), 4 in Angular`
 `fixture: html/self-closing.html`, `fixture: angular/unquoted-value-self-closing.html`
 `runner: unquoted value with a quote or =`

@@ -33,7 +33,8 @@ pub enum Dialect {
     Vue,
     /// An Angular template.
     /// HTML with `{{ }}`, control flow blocks (`@if (a) { … }`), `@let`, and `/>` closing any element.
-    /// TODO: ICU expressions and start-tag comments are not parsed yet (an error).
+    /// Start-tag comments (`//` and `/* */`) sit among the attributes.
+    /// TODO: ICU expressions are not parsed yet (an error).
     Angular,
 }
 
@@ -570,6 +571,9 @@ mod tests {
             ("@let a-b = 1;", Dialect::Angular, IncompleteLet, 0),
             ("@let a = 1", Dialect::Angular, IncompleteLet, 0),
             ("@let a = ';'", Dialect::Angular, IncompleteLet, 0),
+            ("<div a /* c", Dialect::Angular, UnterminatedStartTag, 0),
+            // The comment runs past the `>`, to the end
+            ("<div // c>x</div>", Dialect::Angular, UnterminatedStartTag, 0),
             ("<a b='c>", Dialect::Html, UnterminatedAttributeValue, 5),
             ("<a / b>", Dialect::Html, UnexpectedCharacterInTag, 3),
             ("<a \"b\">", Dialect::Html, UnexpectedCharacterInTag, 3),
