@@ -12,6 +12,16 @@ pub fn is_directive_start(name: &[u8]) -> bool {
     name.starts_with(b"v-") || matches!(name.first(), Some(b':' | b'@' | b'#' | b'.'))
 }
 
+/// `v-pre`, with an argument or modifiers too (`v-pre:a`), which Vue reads as `v-pre`: its name is `pre`.
+pub fn is_v_pre(name: &[u8]) -> bool {
+    name.starts_with(b"v-") && &name[2..v_name_end(name)] == b"pre"
+}
+
+/// Where the name of a `v-` directive `s` ends: at its argument's `:`, its first modifier's `.`, or the end.
+fn v_name_end(s: &[u8]) -> usize {
+    s[2..].iter().position(|&b| matches!(b, b':' | b'.')).map_or(s.len(), |i| 2 + i)
+}
+
 /// `None` for plain attributes and malformed directive names.
 pub fn directive<'a>(
     allocator: &'a Allocator,
@@ -30,7 +40,7 @@ pub fn directive<'a>(
         return None;
     }
     let (dir, arg_from, mut cursor) = if s.starts_with(b"v-") {
-        let end = s[2..].iter().position(|&b| matches!(b, b':' | b'.')).map_or(s.len(), |i| 2 + i);
+        let end = v_name_end(s);
         if end == 2 {
             return None;
         }
@@ -46,17 +56,18 @@ pub fn directive<'a>(
         let dynamic = s.get(from) == Some(&b'[');
         let static_from =
             if dynamic { from + s[from..].iter().position(|&b| b == b']')? + 1 } else { from };
-        // Slots have no modifiers: the dots belong to the argument
-        let end = if slot { s.len() } else { until_dot(static_from) };
-        // Without one (`v-bind:`, a lone `:`), Vue reads no argument (`:="o"` binds an object)
+        let end = until_dot(static_from);
+        // Without one (`v-bind:`, a lone `:`, `#.a`), Vue reads no argument (`:="o"` binds an object).
+        // Slots have no modifiers: the dots belong to the argument, or go with none
         if end > from {
-            argument = Some(VueArgument { span: at(from, end), dynamic });
+            argument =
+                Some(VueArgument { span: at(from, if slot { s.len() } else { end }), dynamic });
         }
         cursor = end;
     }
 
     let mut modifiers = ArenaVec::new_in(&allocator);
-    while cursor < s.len() {
+    while !slot && cursor < s.len() {
         let end = until_dot(cursor + 1);
         modifiers.push(at(cursor + 1, end));
         cursor = end;

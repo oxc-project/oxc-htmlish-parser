@@ -190,7 +190,8 @@ impl<'a> Builder<'a> {
                     || self.is_template_placeholder(name_str)));
 
         let v_pre = self.rules.vue
-            && (inherited.v_pre || attributes.iter().any(|a| a.name.slice(self.source) == "v-pre"));
+            && (inherited.v_pre
+                || attributes.iter().any(|a| vue::is_v_pre(a.name.slice(self.source).as_bytes())));
         if self.rules.vue && !v_pre {
             for attribute in &mut attributes {
                 let value = attribute.value.map(|value| value.span);
