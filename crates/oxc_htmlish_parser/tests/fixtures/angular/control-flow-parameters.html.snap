@@ -2,50 +2,50 @@
 source: crates/oxc_htmlish_parser/tests/ast.rs
 ---
 Root sfc=false
-  Block name=[1..4] "for" parameters=["[6..19] \"item of items\"", "[21..34] \"track item.id\"", "[36..61] \"let i = $index, e = $even\""] open=[0..64] "@for (item of items; track item.id; let i = $index, e = $even) {" close=[65..66] "}"
+  Block For name=[1..4] "for" parameters=["[6..19] \"item of items\"", "[21..34] \"track item.id\"", "[36..61] \"let i = $index, e = $even\""] open=[0..64] "@for (item of items; track item.id; let i = $index, e = $even) {" close=[65..66] "}"
     % for item=[6..10] "item" of=[14..19] "items"
     % track [27..34] "item.id"
     % let [40..41] "i" = [44..50] "$index", [52..53] "e" = [56..61] "$even"
     Text [64..65] "x" (-|-) content=[64..65] "x"
   Text [66..67] "\n" (nl|nl)
-  Block name=[68..71] "for" parameters=["[74..101] \"( item  of  items | async )\"", "[103..115] \"track $index\"", "[116..129] \"let  odd=$odd\""] open=[67..132] "@for ( ( item  of  items | async ) ;track $index;let  odd=$odd) {" close=[133..134] "}"
+  Block For name=[68..71] "for" parameters=["[74..101] \"( item  of  items | async )\"", "[103..115] \"track $index\"", "[116..129] \"let  odd=$odd\""] open=[67..132] "@for ( ( item  of  items | async ) ;track $index;let  odd=$odd) {" close=[133..134] "}"
     % for item=[76..80] "item" of=[86..99] "items | async"
     % track [109..115] "$index"
     % let [121..124] "odd" = [125..129] "$odd"
     Text [132..133] "x" (-|-) content=[132..133] "x"
   Text [134..135] "\n" (nl|nl)
-  Block name=[136..139] "for" parameters=["[141..154] \"item of items\"", "[156..175] \"track trackFn(item)\"", "[177..195] \"let i = $index = 1\""] open=[135..198] "@for (item of items; track trackFn(item); let i = $index = 1) {" close=[199..200] "}"
+  Block For name=[136..139] "for" parameters=["[141..154] \"item of items\"", "[156..175] \"track trackFn(item)\"", "[177..195] \"let i = $index = 1\""] open=[135..198] "@for (item of items; track trackFn(item); let i = $index = 1) {" close=[199..200] "}"
     % for item=[141..145] "item" of=[149..154] "items"
     % track [162..175] "trackFn(item)"
     Text [198..199] "x" (-|-) content=[198..199] "x"
   Text [200..201] "\n" (nl|nl)
-  Block name=[202..205] "for" parameters=["[207..215] \"of items\"", "[217..229] \"track $index\""] open=[201..232] "@for (of items; track $index) {" close=[233..234] "}"
+  Block For name=[202..205] "for" parameters=["[207..215] \"of items\"", "[217..229] \"track $index\""] open=[201..232] "@for (of items; track $index) {" close=[233..234] "}"
     % track [223..229] "$index"
     Text [232..233] "x" (-|-) content=[232..233] "x"
   Text [234..235] "\n" (nl|nl)
-  Block name=[236..239] "for" parameters=["[241..254] \"item in items\"", "[256..266] \"trackBy: f\""] open=[235..269] "@for (item in items; trackBy: f) {" close=[270..271] "}"
+  Block For name=[236..239] "for" parameters=["[241..254] \"item in items\"", "[256..266] \"trackBy: f\""] open=[235..269] "@for (item in items; trackBy: f) {" close=[270..271] "}"
     Text [269..270] "x" (-|-) content=[269..270] "x"
   Text [271..272] "\n" (nl|nl)
-  Block name=[273..275] "if" parameters=["[277..290] \"user$ | async\"", "[292..299] \"as user\""] open=[272..302] "@if (user$ | async; as user) {" close=[303..304] "}"
+  Block If name=[273..275] "if" parameters=["[277..290] \"user$ | async\"", "[292..299] \"as user\""] open=[272..302] "@if (user$ | async; as user) {" close=[303..304] "}"
     % as [295..299] "user"
     Text [302..303] "a" (-|-) content=[302..303] "a"
   Text [304..305] " " (sp|sp)
-  Block name=[306..313] "else if" parameters=["[315..316] \"b\"", "[317..322] \"as  c\""] open=[305..325] "@else if (b;as  c) {" close=[326..327] "}"
+  Block ElseIf name=[306..313] "else if" parameters=["[315..316] \"b\"", "[317..322] \"as  c\""] open=[305..325] "@else if (b;as  c) {" close=[326..327] "}"
     % as [321..322] "c"
     Text [325..326] "b" (-|-) content=[325..326] "b"
   Text [327..328] " " (sp|sp)
-  Block name=[329..333] "else" parameters=[] open=[328..335] "@else {" close=[336..337] "}"
+  Block Else name=[329..333] "else" parameters=[] open=[328..335] "@else {" close=[336..337] "}"
     Text [335..336] "c" (-|-) content=[335..336] "c"
   Text [337..338] "\n" (nl|nl)
-  Block name=[339..341] "if" parameters=["[343..344] \"a\"", "[346..352] \"as b c\""] open=[338..355] "@if (a; as b c) {" close=[356..357] "}"
+  Block If name=[339..341] "if" parameters=["[343..344] \"a\"", "[346..352] \"as b c\""] open=[338..355] "@if (a; as b c) {" close=[356..357] "}"
     Text [355..356] "a" (-|-) content=[355..356] "a"
   Text [357..358] "\n" (nl|nl)
-  Block name=[359..365] "switch" parameters=["[367..368] \"a\""] open=[358..371] "@switch (a) {" close=[386..387] "}"
+  Block Switch name=[359..365] "switch" parameters=["[367..368] \"a\""] open=[358..371] "@switch (a) {" close=[386..387] "}"
     Text [371..372] " " (sp|sp)
-    Block name=[373..377] "case" parameters=["[379..380] \"1\""] open=[372..383] "@case (1) {" close=[384..385] "}"
+    Block Case name=[373..377] "case" parameters=["[379..380] \"1\""] open=[372..383] "@case (1) {" close=[384..385] "}"
       Text [383..384] "x" (-|-) content=[383..384] "x"
     Text [385..386] " " (sp|sp)
   Text [387..388] "\n" (nl|nl)
-  Block name=[389..394] "defer" parameters=["[396..407] \"on viewport\"", "[409..425] \"prefetch on idle\""] open=[388..428] "@defer (on viewport; prefetch on idle) {" close=[429..430] "}"
+  Block Defer name=[389..394] "defer" parameters=["[396..407] \"on viewport\"", "[409..425] \"prefetch on idle\""] open=[388..428] "@defer (on viewport; prefetch on idle) {" close=[429..430] "}"
     Text [428..429] "x" (-|-) content=[428..429] "x"
   Text [430..431] "\n" (nl|nl)

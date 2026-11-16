@@ -93,26 +93,26 @@ impl<'a> Builder<'a> {
                 },
             }
         }
-        let name = &self.source[name_start..name_end];
+        let kind = control_flow::kind(&self.source[name_start..name_end]);
         let mut parameters = ArenaVec::new_in(&self.allocator);
         let mut open_end = name_end;
         if self.byte(at) == Some(b'(') {
-            at = self.block_parameters(at + 1, control_flow::Reading::of(name), &mut parameters)?;
+            at = self.block_parameters(at + 1, kind, &mut parameters)?;
             open_end = at;
             at = self.skip_ws(at);
         }
         let body = self.byte(at) == Some(b'{');
         // `@default never;` has no body;
         // cases fall through to the next one without one.
-        let never =
-            control_flow::name_is(name, &["default", "never"]) && self.byte(at) == Some(b';');
+        let never = kind == BlockKind::DefaultNever && self.byte(at) == Some(b';');
         if body || never {
             open_end = at + 1;
-        } else if !(matches!(name, "case" | "default") && self.at_block(at)) {
+        } else if !(matches!(kind, BlockKind::Case | BlockKind::Default) && self.at_block(at)) {
             return error(DiagnosticKind::IncompleteBlock, span(start, open_end));
         }
         let block = Block {
             name: span(name_start, name_end),
+            kind,
             parameters,
             open: span(start, open_end),
             close: None,
@@ -189,11 +189,11 @@ impl<'a> Builder<'a> {
         self.pos = at + 1;
     }
 
-    /// The parameters after `(`, up to the `)`, which the returned offset follows, read as `reading`.
+    /// The parameters after `(`, up to the `)`, which the returned offset follows, of a `block`.
     fn block_parameters(
         &self,
         from: usize,
-        reading: control_flow::Reading,
+        block: BlockKind,
         out: &mut ArenaVec<'a, BlockParameter<'a>>,
     ) -> PResult<usize> {
         let push = |start: usize, end: usize, out: &mut ArenaVec<'a, BlockParameter<'a>>| {
@@ -203,7 +203,7 @@ impl<'a> Builder<'a> {
                 out.push(control_flow::parameter(
                     self.allocator,
                     self.source,
-                    reading,
+                    block,
                     index,
                     parameter,
                 ));

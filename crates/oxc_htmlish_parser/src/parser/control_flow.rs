@@ -1,64 +1,65 @@
-//! Angular's `@for` and `@if` parameters, split as its compiler reads them
-//! (`parseForLoopParameters`, `parseConditionalBlockParameters`).
+//! Angular's block names, and `@for`'s and `@if`'s parameters, read as its compiler reads them
+//! (`_getBlockName`, `parseForLoopParameters`, `parseConditionalBlockParameters`).
 
 use oxc_allocator::{Allocator, ArenaVec};
 
 use super::{is_identifier_part, is_js_space, skip_js_space, trim_js};
 use crate::{
-    ast::{BlockParameter, BlockParameterKind, LetVariable},
+    ast::{BlockKind, BlockParameter, BlockParameterKind, LetVariable},
     span::{Span, span},
 };
 
-/// The blocks whose parameters Angular splits.
-#[derive(Clone, Copy)]
-pub enum Reading {
-    For,
-    If,
-    Other,
-}
-
-impl Reading {
-    /// `name` as written (`else   if`).
-    pub fn of(name: &str) -> Self {
-        if name == "for" {
-            Self::For
-        } else if name_is(name, &["if"]) || name_is(name, &["else", "if"]) {
-            Self::If
-        } else {
-            Self::Other
-        }
+/// A block's kind from its name as written: the words of `else if` and `default never` are apart by whitespace
+/// Angular's `/^else[^\S\r\n]+if/` takes (NBSP too), and a line break or U+000E–U+001F keeps them apart.
+pub fn kind(name: &str) -> BlockKind {
+    if name.contains(['\n', '\r']) {
+        return BlockKind::Unknown;
+    }
+    let mut words = name.split([' ', '\t', '\x0B', '\x0C', '\u{a0}']).filter(|w| !w.is_empty());
+    match (words.next(), words.next(), words.next()) {
+        (Some("if"), None, _) => BlockKind::If,
+        (Some("else"), Some("if"), None) => BlockKind::ElseIf,
+        (Some("else"), None, _) => BlockKind::Else,
+        (Some("for"), None, _) => BlockKind::For,
+        (Some("empty"), None, _) => BlockKind::Empty,
+        (Some("switch"), None, _) => BlockKind::Switch,
+        (Some("case"), None, _) => BlockKind::Case,
+        (Some("default"), None, _) => BlockKind::Default,
+        (Some("default"), Some("never"), None) => BlockKind::DefaultNever,
+        (Some("defer"), None, _) => BlockKind::Defer,
+        (Some("placeholder"), None, _) => BlockKind::Placeholder,
+        (Some("loading"), None, _) => BlockKind::Loading,
+        (Some("error"), None, _) => BlockKind::Error,
+        (Some("boundary"), None, _) => BlockKind::Boundary,
+        (Some("content"), None, _) => BlockKind::Content,
+        _ => BlockKind::Unknown,
     }
 }
 
-/// A block name as written is `words`, as Angular collapses the whitespace in it, but a line break (`else⏎if`).
-pub fn name_is(name: &str, words: &[&str]) -> bool {
-    !name.contains(['\n', '\r']) && name.split_ascii_whitespace().eq(words.iter().copied())
-}
-
-/// The parameter at `index` of a block read as `reading`, `parameter` its trimmed span.
+/// The parameter at `index` of a `block`, `parameter` its trimmed span.
 pub fn parameter<'a>(
     allocator: &'a Allocator,
     source: &str,
-    reading: Reading,
+    block: BlockKind,
     index: usize,
     parameter: Span,
 ) -> BlockParameter<'a> {
     let s = parameter.slice(source);
     let base = parameter.start as usize;
     let at = |(start, end): (usize, usize)| span(base + start, base + end);
-    let kind = match (reading, index) {
-        (Reading::For, 0) => for_of(s).map(|(item, expression)| BlockParameterKind::ForOf {
+    let kind = match (block, index) {
+        (BlockKind::For, 0) => for_of(s).map(|(item, expression)| BlockParameterKind::ForOf {
             item: at(item),
             expression: at(expression),
         }),
         // `let` first, as Angular tries it
-        (Reading::For, _) => match after_keyword(s, "let") {
+        (BlockKind::For, _) => match after_keyword(s, "let") {
             Some(from) => let_variables(allocator, s, from, at).map(BlockParameterKind::Let),
             None => after_keyword(s, "track").map(|from| BlockParameterKind::Track {
                 expression: at(trim_js(s, (from, s.len()))),
             }),
         },
-        (Reading::If, 1..) => after_keyword(s, "as")
+        (BlockKind::If | BlockKind::ElseIf, 1..) => after_keyword(s, "as")
             .map(|from| trim_js(s, (from, s.len())))
             .filter(|&(start, end)| is_identifier(&s[start..end]))
             .map(|alias| BlockParameterKind::As { alias: at(alias) }),

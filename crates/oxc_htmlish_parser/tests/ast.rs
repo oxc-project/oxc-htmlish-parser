@@ -162,7 +162,8 @@ impl Printer<'_, '_> {
                 let parameters: Vec<_> = b.parameters.iter().map(|p| q(p.span)).collect();
                 let close = b.close.map_or("no_body".to_string(), |c| format!("close={}", q(c)));
                 format!(
-                    "Block name={} parameters={parameters:?} open={} {close}",
+                    "Block {:?} name={} parameters={parameters:?} open={} {close}",
+                    b.kind,
                     q(b.name),
                     q(b.open)
                 )

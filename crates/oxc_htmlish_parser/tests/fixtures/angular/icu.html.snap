@@ -28,7 +28,7 @@ Root sfc=false
       Element [142..144] "li" Html no_end_tag span_end=146
         Text [145..146] "b" (-|-) content=[145..146] "b"
   Text [148..149] "\n" (nl|nl)
-  Block name=[150..152] "if" parameters=["[154..155] \"c\""] open=[149..158] "@if (c) {" close=[178..179] "}"
+  Block If name=[150..152] "if" parameters=["[154..155] \"c\""] open=[149..158] "@if (c) {" close=[178..179] "}"
     Text [158..159] " " (sp|sp)
     Icu expression=[160..161] "a" type=[163..169] "select"
       IcuCase value=[171..172] "x" open=173

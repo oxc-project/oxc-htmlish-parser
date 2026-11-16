@@ -356,6 +356,8 @@ pub struct ConditionalStart {
 pub struct Block<'a> {
     /// After `@`, as written (`if`, `else if`, `else   if`).
     pub name: Span,
+    /// The name as Angular's compiler reads it.
+    pub kind: BlockKind,
     /// Between the parentheses, split at `;` outside quotes and parentheses.
     /// Empty without parentheses.
     pub parameters: ArenaVec<'a, BlockParameter<'a>>,
@@ -364,6 +366,29 @@ pub struct Block<'a> {
     /// The `}`; `None` for a block without a body
     /// (`@case (a)` right before another case, `@default never;`).
     pub close: Option<Span>,
+}
+
+/// An Angular block's name, as its compiler reads it: whitespace without a line break collapses (`else   if`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BlockKind {
+    If,
+    ElseIf,
+    Else,
+    For,
+    Empty,
+    Switch,
+    Case,
+    Default,
+    /// `@default never;`, without a body.
+    DefaultNever,
+    Defer,
+    Placeholder,
+    Loading,
+    Error,
+    Boundary,
+    Content,
+    /// A name it reports (`@iffy`, `@else⏎if`, `@else iffy`; DIVERGENCES.md#block-names-read-by-prefix).
+    Unknown,
 }
 
 #[derive(Debug)]
