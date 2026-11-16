@@ -166,9 +166,10 @@ function angularCompilerSig(source: string): Sig {
         // Start-tag comments go among the attributes, in source order; ours leaves out a `//` one's trailing whitespace
         const attrs = [
           ...n.attrs.map((a: any) => {
-            const interpolations = (a.valueTokens ?? []).filter((t: any) => t.type === ATTR_VALUE_INTERPOLATION && t.parts.length === 3).map((t: any) => t.parts[1]);
             const attr: unknown[] = [slice(a.keySpan), a.valueSpan ? slice(a.valueSpan) : null];
-            if (interpolations.length > 0) attr.push(interpolations);
+            // Its compiler binds the `{{ }}` in a name it reads as no binding of another kind (`parseAttribute`)
+            const interpolations = (a.valueTokens ?? []).filter((t: any) => t.type === ATTR_VALUE_INTERPOLATION && t.parts.length === 3).map((t: any) => t.parts[1]);
+            if (interpolations.length > 0 && !BOUND_NAME.test(attr[0] as string)) attr.push(interpolations);
             if (attr[0].startsWith("*") && a.valueSpan) {
               const bindings = templateBindings(attr[0].slice(1), attr[1]);
               if (typeof bindings === "string") bindingError ??= bindings;
@@ -207,6 +208,8 @@ function angularCompilerSig(source: string): Sig {
   return bindingError === null ? sig : `error: ${bindingError}`;
 }
 
+/** The names Angular's `parseAttribute` reads as a binding other than an interpolation. */
+const BOUND_NAME = /^(?:\*|i18n(?:-|$)|bind-|let-|ref-|#|on-|bindon-|@|\[\(.+\)\]$|\[.+\]$|\(.+\)$)/;
 const expressionParser = new ExpressionParser(new Lexer());
 /** The directive's own key is placed before the value, so that its spans tell it apart. */
 const KEY_OFFSET = -1e6;
@@ -488,9 +491,9 @@ export const DIALECTS: Record<string, DialectSpec> = {
     quirks: {
       "implicit close after void": IMPLICIT_CLOSE_AFTER_VOID,
       // ... and an ICU expression right after it becomes its child.
-      "ICU after void": new RegExp(`${VOID_TAG}\\x7b(?!\\x7b)`, "i"),
-      // Its lexer starts `@let` in an ICU case where a token starts (`\x7b` and `\x7d` keep the braces out of `tests/divergences.rs`'s count).
-      "@let in an ICU case": /\x7b[^\x7b\x7d]*,[^\x7b\x7d]*,[^]*\x7b[^]*@let\s/,
+      "ICU after void": new RegExp(`${VOID_TAG}\\{(?!\\{)`, "i"),
+      // Its lexer starts `@let` in an ICU case where a token starts.
+      "@let in an ICU case": /\{[^{}]*,[^{}]*,[^]*\{[^]*@let\s/,
       // Angular reads the whitespace after a body-less `@case` into its span.
       "fallthrough case": /@(?:case|default)\b(?:[^{}@]*?\))?[ \t\n\f\r]+@/,
     },

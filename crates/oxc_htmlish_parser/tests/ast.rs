@@ -233,9 +233,15 @@ impl Printer<'_, '_> {
                     AngularAttribute::TwoWay => "TwoWay",
                     AngularAttribute::Template(_) => "Template",
                     AngularAttribute::I18n => "I18n",
+                    AngularAttribute::Interpolation(_) => "Interpolation",
                 };
                 let target = kind.target(attribute.name).slice(self.source);
                 write!(line, " {name} target={target:?}").unwrap();
+                if let AngularAttribute::Interpolation(expressions) = kind {
+                    let expressions: Vec<_> =
+                        expressions.iter().map(|e| e.slice(self.source)).collect();
+                    write!(line, " {expressions:?}").unwrap();
+                }
                 if let AngularAttribute::Template(Some(bindings)) = kind {
                     let s = |span: Option<Span>| span.map(|span| span.slice(self.source));
                     for binding in bindings.iter() {

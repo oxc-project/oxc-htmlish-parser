@@ -6,8 +6,8 @@
 //! - element: `["el", name, flags, attrs, children]`, flags from `/` (written `/>`), `e` (end tag), `lf` (ignored first line break)
 //! - attribute: `[name, value | null]`, plus `dir, arg | null, dynamic, modifiers, for` for a Vue directive,
 //!   `for` being `[value, key, index, source]` (each `null` when missing) or `null`;
-//!   `["comment", raw]` for an Angular start-tag comment; in Angular, a value's `{{ }}` expressions follow it when it has any,
-//!   then for `*x` with a value `["tb", bindings | null]`, each `["e", key, expression]`, `["l", name, value]` or `["a", key, alias]`
+//!   `["comment", raw]` for an Angular start-tag comment; an Angular value's `{{ }}` expressions follow it when it has any,
+//!   and a `*x` value's `["tb", bindings | null]`, each `["e", key, expression]`, `["l", name, value]` or `["a", key, alias]`
 //! - `["t" | "i" | "d" | "x", raw]`: text, interpolation, doctype, CDATA
 //! - `["c", content]`: comment, without its delimiters; `["bc", content, opening]` a bogus one (`<!x>`, `<?x>`, `</ x>`)
 //! - `["b", name, parameters, children]`: Angular block
@@ -23,9 +23,6 @@ use oxc_htmlish_parser::{
 };
 use serde_json::{Value, json};
 
-/// Angular reads `{{ }}` in attribute values.
-static ANGULAR: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-
 fn main() {
     let dialect = match std::env::args().nth(1).as_deref() {
         Some("html") => Dialect::Html,
@@ -33,7 +30,6 @@ fn main() {
         Some("angular") => Dialect::Angular,
         other => panic!("unknown dialect {other:?}, expected html, vue or angular"),
     };
-    ANGULAR.set(dialect == Dialect::Angular).unwrap();
     let buf = std::io::read_to_string(std::io::stdin()).unwrap();
     let inputs: Vec<String> = serde_json::from_str(&buf).expect("JSON array of strings");
     let mut allocator = Allocator::default();
@@ -126,28 +122,21 @@ fn element(source: &str, root: &Root<'_>, id: NodeId, el: &Element<'_>) -> Value
             let name = a.name.slice(source);
             let value = a.value.map(|v| v.span.slice(source));
             match &a.kind {
-                AttributeKind::Plain | AttributeKind::Angular(_) => {
-                    let interpolations: Vec<&str> = a
-                        .value
-                        .filter(|_| ANGULAR.get() == Some(&true))
-                        .into_iter()
-                        .flat_map(|v| v.angular_interpolations(source))
-                        .map(|e| e.slice(source))
-                        .collect();
-                    let mut attr = vec![json!(name), json!(value)];
-                    if !interpolations.is_empty() {
-                        attr.push(json!(interpolations));
-                    }
-                    if let AttributeKind::Angular(AngularAttribute::Template(bindings)) = &a.kind
-                        && a.value.is_some()
-                    {
-                        attr.push(json!([
-                            "tb",
-                            bindings.as_ref().map(|b| template_bindings(source, b))
-                        ]));
-                    }
-                    Value::Array(attr)
+                AttributeKind::Angular(AngularAttribute::Interpolation(expressions)) => {
+                    let expressions: Vec<&str> =
+                        expressions.iter().map(|e| e.slice(source)).collect();
+                    json!([name, value, expressions])
                 }
+                AttributeKind::Angular(AngularAttribute::Template(bindings))
+                    if a.value.is_some() =>
+                {
+                    json!([
+                        name,
+                        value,
+                        ["tb", bindings.as_ref().map(|b| template_bindings(source, b))]
+                    ])
+                }
+                AttributeKind::Plain | AttributeKind::Angular(_) => json!([name, value]),
                 AttributeKind::Comment => json!(["comment", name]),
                 AttributeKind::Vue(d) => {
                     let shorthand = d.name.slice(source);

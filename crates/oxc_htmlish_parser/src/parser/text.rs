@@ -42,7 +42,11 @@ impl Builder<'_> {
                     && (self.at_let(self.pos) || self.at_block(self.pos)) =>
                 {
                     self.push_text(start, self.pos);
-                    self.let_or_block()?;
+                    if self.at_let(self.pos) {
+                        self.let_declaration()?;
+                    } else {
+                        self.block_start()?;
+                    }
                     start = self.pos;
                     continue;
                 }

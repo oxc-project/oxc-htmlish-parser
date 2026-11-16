@@ -56,17 +56,13 @@ const KEYWORDS: [&str; 14] = [
     "instanceof",
 ];
 
-/// `value` (an attribute's value) split into its bindings; `None` where Angular reports an error,
-/// and for a value holding a character reference, which Angular reads decoded.
+/// `value` (an attribute's value) split into its bindings, as written; `None` where Angular reports an error.
 pub fn template_bindings<'a>(
     allocator: &'a Allocator,
     source: &str,
     value: Span,
 ) -> Option<ArenaVec<'a, TemplateBinding>> {
     let s = value.slice(source);
-    if has_character_reference(s.as_bytes()) {
-        return None;
-    }
     let mut tokens = vec![];
     Lexer { s, at: 0 }.scan(&mut tokens, false)?;
     let base = value.start as usize;
@@ -93,26 +89,6 @@ pub fn template_bindings<'a>(
         parser.terminator();
     }
     Some(parser.out)
-}
-
-/// `&name;` or `&#…;`, which Angular decodes before it reads the value.
-fn has_character_reference(s: &[u8]) -> bool {
-    memchr::memchr_iter(b'&', s).any(|at| {
-        let rest = &s[at + 1..];
-        let name = match rest {
-            [b'#', b'x' | b'X', rest @ ..] => {
-                rest.iter().take_while(|b| b.is_ascii_hexdigit()).count()
-            }
-            [b'#', rest @ ..] => rest.iter().take_while(|b| b.is_ascii_digit()).count(),
-            _ => rest.iter().take_while(|b| b.is_ascii_alphanumeric()).count(),
-        };
-        let prefix = match rest {
-            [b'#', b'x' | b'X', ..] => 2,
-            [b'#', ..] => 1,
-            _ => 0,
-        };
-        name > 0 && rest.get(prefix + name) == Some(&b';')
-    })
 }
 
 struct Lexer<'s> {
@@ -282,16 +258,13 @@ fn starts_regex(tokens: &[Token<'_>]) -> bool {
 
 /// The length of the operator Angular's lexer reads at the start of `s`; `None` for a character it reports.
 fn operator_len(s: &[u8]) -> Option<usize> {
-    const OPERATORS: [&[u8]; 33] = [
+    // Longest first
+    const OPERATORS: [&[u8]; 36] = [
         b"===", b"!==", b"**=", b"??=", b"&&=", b"||=", b"==", b"!=", b"<=", b">=", b"=>", b"&&",
         b"||", b"??", b"?.", b"**", b"+=", b"-=", b"*=", b"/=", b"%=", b"&=", b"|=", b"+", b"-",
-        b"*", b"/", b"%", b"<", b">", b"=", b"!", b"?",
+        b"*", b"/", b"%", b"<", b">", b"=", b"!", b"?", b"&", b"|", b"^",
     ];
-    OPERATORS
-        .iter()
-        .chain([b"&".as_slice(), b"|", b"^"].iter())
-        .find(|op| s.starts_with(op))
-        .map(|op| op.len())
+    OPERATORS.iter().find(|op| s.starts_with(op)).map(|op| op.len())
 }
 
 struct Bindings<'t, 's, 'a> {
@@ -356,13 +329,15 @@ impl Bindings<'_, '_, '_> {
         if self.peek().is_some_and(|t| t.is_char(b':')) {
             self.at += 1;
         }
-        let expression = match self.peek() {
-            Some(t) if !t.is(Kind::Keyword, "as") && !t.is(Kind::Keyword, "let") => {
-                let first = self.at;
-                self.at = expression_end(self.tokens, first)?;
-                Some(self.span(first, self.at - 1))
-            }
-            _ => None,
+        let expression = if self.at == self.tokens.len()
+            || self.peek_keyword("as")
+            || self.peek_keyword("let")
+        {
+            None
+        } else {
+            let first = self.at;
+            self.at = expression_end(self.tokens, first)?;
+            Some(self.span(first, self.at - 1))
         };
         self.out.push(TemplateBinding::Expression { key, expression });
         if !self.as_binding(key)? {

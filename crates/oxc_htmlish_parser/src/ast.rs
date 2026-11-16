@@ -5,7 +5,9 @@
 //! - No cooked values: names, attribute values and text are [`Span`]s into the original source.
 //!   Entities are never decoded.
 //! - Facts a printer would otherwise re-derive from the source or the tag table
-//!   (whitespace around text, how a tag was written, void and raw text elements, directive parts) are fields.
+//!   (whitespace around text, how a tag was written, void and raw text elements, directive parts and binding kinds,
+//!   `v-for`'s, `@for`'s and a microsyntax's splits) are fields; spans that follow from others are methods
+//!   ([`Attribute::span`], [`AngularAttribute::target`]).
 //! - Formatter policy (CSS display, whitespace sensitivity) stays out.
 //!
 //! Dialect constructs that are not parsed yet slot in as new [`NodeKind`] / [`AttributeKind`] variants:
@@ -183,14 +185,6 @@ pub struct AttributeValue {
     pub quote: Quote,
 }
 
-impl AttributeValue {
-    /// Angular: the expressions of the `{{ }}` in the value, as its lexer reads them (closed outside string literals,
-    /// and ended by a tag's start, which leaves the `{{` as text).
-    pub fn angular_interpolations(self, source: &str) -> impl Iterator<Item = Span> + '_ {
-        crate::parser::angular_interpolations(source.as_bytes(), self.span)
-    }
-}
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Quote {
     None,
@@ -208,7 +202,7 @@ pub enum AttributeKind<'a> {
     Angular(AngularAttribute<'a>),
 }
 
-/// An Angular binding or i18n marker.
+/// An Angular binding or i18n marker; the part of the name it binds is [`target`](Self::target).
 ///
 /// Read as the compiler's `parseAttribute` tells a binding from a plain attribute.
 /// Its other prefixes stay [`AttributeKind::Plain`] (`#ref`, `let-x`, `@animation`, and the old `bind-`, `on-`, `bindon-`, `ref-`),
@@ -222,11 +216,14 @@ pub enum AngularAttribute<'a> {
     /// `[(x)]`.
     TwoWay,
     /// `*x`: a structural directive, its value split as its microsyntax ([`TemplateBinding`]);
-    /// `None` without a value, where Angular reports one,
-    /// and for a value holding a character reference, which Angular reads decoded.
+    /// `None` without a value, and where Angular reports one.
+    /// Split as written: Angular splits the value with its entities decoded, so `&#59;` is a `;` there, but not here.
     Template(Option<ArenaBox<'a, ArenaVec<'a, TemplateBinding>>>),
     /// `i18n`, or `i18n-x`, which marks the attribute `x` for translation.
     I18n,
+    /// Another name with `{{ }}` in its value (`title="Hi {{ name }}"`), which Angular binds:
+    /// the expressions, between each `{{` and `}}`, read as in text.
+    Interpolation(ArenaBox<'a, ArenaVec<'a, Span>>),
 }
 
 impl AngularAttribute<'_> {
@@ -236,6 +233,7 @@ impl AngularAttribute<'_> {
             Self::Property | Self::Event => (1, 1),
             Self::TwoWay => (2, 2),
             Self::Template(_) => (1, 0),
+            Self::Interpolation(_) => (0, 0),
             Self::I18n => ((name.end - name.start).min(5), 0),
         };
         Span::new(name.start + start, name.end - end)
@@ -415,7 +413,8 @@ pub struct LetDeclaration {
     pub value: Span,
 }
 
-/// The whitespace between the cases is no node, as in Angular's AST.
+/// The whitespace between the cases is no node, as in Angular's AST;
+/// at the start of a case it is text, which Angular's lexer skips.
 #[derive(Clone, Copy, Debug)]
 pub struct Icu {
     /// Before the first `,`, trimmed (`n`).

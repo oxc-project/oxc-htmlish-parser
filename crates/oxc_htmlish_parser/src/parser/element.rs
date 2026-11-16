@@ -37,9 +37,9 @@ impl<'a> Builder<'a> {
         } else if self.is_template_placeholder(name) {
             self.stack
                 .iter()
-                .rposition(|open| !open.block && self.is_template_placeholder(open.name))
+                .rposition(|open| !open.braced && self.is_template_placeholder(open.name))
         } else {
-            self.stack.iter().rposition(|open| !open.block && open.name.eq_ignore_ascii_case(name))
+            self.stack.iter().rposition(|open| !open.braced && open.name.eq_ignore_ascii_case(name))
         };
         let Some(index) = index else {
             if self.omitted_element_end(tag, lowercase) {
@@ -249,7 +249,7 @@ impl<'a> Builder<'a> {
         let open = Open {
             id,
             name: name_str,
-            block: false,
+            braced: false,
             tag,
             omittable,
             look,
@@ -294,16 +294,23 @@ impl<'a> Builder<'a> {
             return error(DiagnosticKind::UnexpectedCharacterInTag, span(name_end, name_end + 1));
         }
         let name = span(start, name_end);
+        let value = self.attribute_value(name_end)?;
         let kind = if self.rules.angular
-            && let Some(kind) = angular::attribute(name.slice(self.source))
+            && let Some(kind) =
+                angular::attribute(self.allocator, self.source, name, value.map(|v| v.span))
         {
             AttributeKind::Angular(kind)
         } else {
             AttributeKind::Plain
         };
+        Ok(Attribute { name, value, kind })
+    }
+
+    /// The value after the name ending at `name_end`, when a `=` follows.
+    fn attribute_value(&self, name_end: usize) -> PResult<Option<AttributeValue>> {
         let eq = self.skip_ws(name_end);
         if self.byte(eq) != Some(b'=') {
-            return Ok(Attribute { name, value: None, kind });
+            return Ok(None);
         }
 
         let value_start = self.skip_ws(eq + 1);
@@ -333,17 +340,7 @@ impl<'a> Builder<'a> {
             };
             AttributeValue { span: span(value_start, value_end), quote: Quote::None }
         };
-        let kind = match kind {
-            AttributeKind::Angular(AngularAttribute::Template(_)) => {
-                let bindings =
-                    microsyntax::template_bindings(self.allocator, self.source, value.span);
-                AttributeKind::Angular(AngularAttribute::Template(
-                    bindings.map(|bindings| ArenaBox::new_in(bindings, &self.allocator)),
-                ))
-            }
-            kind => kind,
-        };
-        Ok(Attribute { name, value: Some(value), kind })
+        Ok(Some(value))
     }
 
     /// Angular: a comment where an attribute could start in the start tag at `tag_start`, `at` at its `/`:
@@ -351,8 +348,9 @@ impl<'a> Builder<'a> {
     /// `/*` through `*/`.
     fn start_tag_comment(&self, tag_start: usize, at: usize) -> PResult<Attribute<'a>> {
         let end = if self.bytes[at + 1] == b'/' {
-            let line_end = self.skip(at + 2, |b| !matches!(b, b'\n' | b'\r'));
-            at + self.bytes[at..line_end].trim_ascii_end().len()
+            let rest = &self.bytes[at + 2..];
+            let line_end = at + 2 + memchr2(b'\n', b'\r', rest).unwrap_or(rest.len());
+            self.trimmed(at, line_end).end as usize
         } else {
             let Some(close) = self.find(at + 2, self.bytes.len(), b"*/") else {
                 return error(

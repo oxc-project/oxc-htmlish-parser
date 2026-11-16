@@ -36,7 +36,8 @@ pub enum Dialect {
     /// An Angular template.
     /// HTML with `{{ }}`, control flow blocks (`@if (a) { … }`), `@let`, ICU expressions (`{n, plural, =0 {none}}`),
     /// and `/>` closing any element.
-    /// Start-tag comments (`//` and `/* */`) sit among the attributes.
+    /// Start-tag comments (`//` and `/* */`) sit among the attributes;
+    /// binding names, a structural directive's microsyntax and a value's `{{ }}` are read as its compiler reads them.
     Angular,
 }
 
@@ -131,8 +132,8 @@ struct Rules {
     /// `{{ }}` (closed outside quotes), control flow blocks, `@let` and ICU expressions, and Angular's lexer in tags:
     /// its whitespace (VT, U+000E–U+001F, NBSP), namespace prefixes, `<!-->` read on to `-->`,
     /// whitespace around a raw text element's end tag name and no script data escapes,
-    /// `=` ending an unquoted value and opening a nameless attribute,
-    /// a `[` attribute name running while its brackets are open (`[class.[&>svg]:w-4]`).
+    /// `=` and a start-tag comment ending an unquoted value, `=` opening a nameless attribute,
+    /// a `[` attribute name running while its brackets are open (`[class.[&>svg]:w-4]`), and binding names.
     angular: bool,
     /// Whitespace may come before an end tag's name (`</ div>`), as Vue's and Angular's compilers read it;
     /// otherwise `</` and whitespace open a bogus comment, as in the HTML tokenizer.
@@ -231,12 +232,30 @@ impl Builder<'_> {
     }
 }
 
-/// See [`AttributeValue::angular_interpolations`].
-pub fn angular_interpolations(bytes: &[u8], value: Span) -> impl Iterator<Item = Span> + '_ {
-    angular::interpolations(bytes, value.start as usize, value.end as usize)
+/// JS's `\s` and `trim()`: Unicode's White_Space without U+0085, and U+FEFF.
+fn is_js_space(c: char) -> bool {
+    (c.is_whitespace() && c != '\u{85}') || c == '\u{feff}'
 }
 
-/// `<` followed by a letter, `/` or `!` at `at` (Angular's `_isTagStart`).
+/// Past the JS whitespace at `from`.
+fn skip_js_space(s: &str, from: usize) -> usize {
+    s.len() - s[from..].trim_start_matches(is_js_space).len()
+}
+
+/// `range` of `s` without JS whitespace at its edges.
+fn trim_js(s: &str, (start, end): (usize, usize)) -> (usize, usize) {
+    let part = &s[start..end];
+    let lead = part.len() - part.trim_start_matches(is_js_space).len();
+    let trail = part.trim_end_matches(is_js_space).len();
+    (start + lead, start + lead.max(trail))
+}
+
+/// A letter, digit, `_` or `$`: what an Angular expression's identifier holds.
+fn is_identifier_part(b: u8) -> bool {
+    b.is_ascii_alphanumeric() || matches!(b, b'_' | b'$')
+}
+
+/// `<` followed by a letter, `/` or `!` at `at`: a tag, a comment or a declaration starts (Angular's `_isTagStart`).
 fn is_tag_start(bytes: &[u8], at: usize) -> bool {
     bytes[at] == b'<'
         && bytes.get(at + 1).is_some_and(|b| b.is_ascii_alphabetic() || matches!(b, b'/' | b'!'))
@@ -251,10 +270,10 @@ fn trim(bytes: &[u8]) -> (usize, usize) {
 /// An element (or an Angular block or ICU) whose end has not been seen yet.
 struct Open<'a> {
     id: NodeId,
-    /// The tag name as written, for matching end tags; empty for a block.
+    /// The tag name as written, for matching end tags; empty for a braced one.
     name: &'a str,
     /// A block, an ICU expression or one of its cases: `}` closes it, and no end tag.
-    block: bool,
+    braced: bool,
     tag: Tag,
     /// The element may go without an end tag when its parent's closes it
     /// (closed by its parent, or a `/>` HTML ignored: `<my-el />`, closed as in browsers).
@@ -316,7 +335,7 @@ impl<'a> Builder<'a> {
             self.markup()?;
         }
         while let Some(open) = self.stack.pop() {
-            if open.block {
+            if open.braced {
                 let node = &self.nodes[open.id.index()];
                 let kind = if matches!(node.kind, NodeKind::Block(_)) {
                     DiagnosticKind::UnclosedBlock
@@ -440,16 +459,11 @@ impl<'a> Builder<'a> {
         self.bytes[at..].get(..pat.len()).is_some_and(|b| b.eq_ignore_ascii_case(pat.as_bytes()))
     }
 
-    /// `<` followed by a letter, `/` or `!`: a tag, a comment or a declaration starts (Angular's `_isTagStart`).
-    fn at_tag_start(&self, at: usize) -> bool {
-        is_tag_start(self.bytes, at)
-    }
-
     /// `<` followed by what can start markup (`<?` too); any other `<` is text.
     /// In a Vue SFC, a void element's end tag (`</br>`) is text too: Vue drops it (DIVERGENCES.md#void-element-end-tags).
     #[inline]
     fn at_markup(&self, at: usize) -> bool {
-        (self.at_tag_start(at) || self.bytes[at..].starts_with(b"<?"))
+        (is_tag_start(self.bytes, at) || self.bytes[at..].starts_with(b"<?"))
             && !(self.rules.sfc && self.byte(at + 1) == Some(b'/') && self.at_void_end_tag(at))
             && !(self.rules.angular && self.at_prefix_without_name(at))
     }
@@ -671,7 +685,7 @@ mod tests {
         }
     }
 
-    /// `{{ }}` in an Angular attribute value, read as in text.
+    /// `{{ }}` in an Angular attribute value, read as in text; a bound name (`[a]`, `#a`) holds none.
     #[test]
     fn angular_attribute_interpolations() {
         let allocator = Allocator::default();
@@ -681,13 +695,19 @@ mod tests {
             (r#"<p a="{{ b">"#, &[]),
             (r#"<p a="{{ <b> }} {{ c }}">"#, &[" c "]),
             ("<p a={{b}}>", &["b"]),
+            ("<p [a]=\"{{ b }}\">", &[]),
+            ("<p #a=\"{{ b }}\">", &[]),
+            ("<p [(a]=\"{{ b }}\">", &[" b "]),
         ] {
             let root = Parser::new(&allocator, source, Dialect::Angular).parse().unwrap();
             let (_, node) = root.children(NodeId::DOCUMENT).next().unwrap();
             let NodeKind::Element(el) = &node.kind else { panic!() };
-            let value = el.attributes[0].value.unwrap();
-            let found: Vec<_> =
-                value.angular_interpolations(source).map(|e| e.slice(source)).collect();
+            let found: Vec<_> = match &el.attributes[0].kind {
+                AttributeKind::Angular(AngularAttribute::Interpolation(expressions)) => {
+                    expressions.iter().map(|e| e.slice(source)).collect()
+                }
+                _ => vec![],
+            };
             assert_eq!(found, expected, "{source:?}");
         }
     }

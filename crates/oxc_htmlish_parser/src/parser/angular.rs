@@ -34,11 +34,6 @@ impl<'a> Builder<'a> {
         self.bytes[at..].starts_with(b"@let")
     }
 
-    /// `@let`, or else a block, as Angular's lexer tries them; `pos` is at `@`.
-    pub(super) fn let_or_block(&mut self) -> PResult<()> {
-        if self.at_let(self.pos) { self.let_declaration() } else { self.block_start() }
-    }
-
     /// The offsets in `[from, limit)` outside string literals, as Angular expressions read them:
     /// `'`, `"` and `` ` `` open one, and a `\` skips the next byte.
     fn unquoted(&self, from: usize, limit: usize) -> impl Iterator<Item = usize> + '_ {
@@ -98,27 +93,19 @@ impl<'a> Builder<'a> {
                 },
             }
         }
+        let name = &self.source[name_start..name_end];
         let mut parameters = ArenaVec::new_in(&self.allocator);
         let mut open_end = name_end;
         if self.byte(at) == Some(b'(') {
-            at = self.block_parameters(at + 1, &mut parameters)?;
+            at = self.block_parameters(at + 1, control_flow::Reading::of(name), &mut parameters)?;
             open_end = at;
             at = self.skip_ws(at);
         }
-        let name = &self.source[name_start..name_end];
-        let reading = control_flow::Reading::of(name);
-        let parameters = ArenaVec::from_iter_in(
-            parameters.iter().enumerate().map(|(index, &parameter)| {
-                control_flow::parameter(self.allocator, self.source, reading, index, parameter)
-            }),
-            &self.allocator,
-        );
         let body = self.byte(at) == Some(b'{');
         // `@default never;` has no body;
         // cases fall through to the next one without one.
-        let never = name.split_ascii_whitespace().eq(["default", "never"])
-            && !name.contains('\n')
-            && self.byte(at) == Some(b';');
+        let never =
+            control_flow::name_is(name, &["default", "never"]) && self.byte(at) == Some(b';');
         if body || never {
             open_end = at + 1;
         } else if !(matches!(name, "case" | "default") && self.at_block(at)) {
@@ -145,7 +132,7 @@ impl<'a> Builder<'a> {
         self.stack.push(Open {
             id,
             name: "",
-            block: true,
+            braced: true,
             tag: Tag::default(),
             omittable: false,
             look: Some(self.stack.len()),
@@ -202,12 +189,24 @@ impl<'a> Builder<'a> {
         self.pos = at + 1;
     }
 
-    /// The parameters after `(`, up to the `)`, which the returned offset follows.
-    fn block_parameters(&self, from: usize, out: &mut ArenaVec<'a, Span>) -> PResult<usize> {
-        let push = |start: usize, end: usize, out: &mut ArenaVec<'a, Span>| {
-            let (lead, trail) = trim(&self.bytes[start..end]);
-            if lead < trail {
-                out.push(span(start + lead, start + trail));
+    /// The parameters after `(`, up to the `)`, which the returned offset follows, read as `reading`.
+    fn block_parameters(
+        &self,
+        from: usize,
+        reading: control_flow::Reading,
+        out: &mut ArenaVec<'a, BlockParameter<'a>>,
+    ) -> PResult<usize> {
+        let push = |start: usize, end: usize, out: &mut ArenaVec<'a, BlockParameter<'a>>| {
+            let parameter = self.trimmed(start, end);
+            if !parameter.is_empty() {
+                let index = out.len();
+                out.push(control_flow::parameter(
+                    self.allocator,
+                    self.source,
+                    reading,
+                    index,
+                    parameter,
+                ));
             }
         };
         let (mut param_start, mut depth) = (from, 0);
@@ -243,7 +242,7 @@ impl<'a> Builder<'a> {
         let name_end = if self.byte(name_start).is_some_and(|b| b.is_ascii_digit()) {
             name_start
         } else {
-            self.skip(name_start, |b| b.is_ascii_alphanumeric() || matches!(b, b'$' | b'_'))
+            self.skip(name_start, is_identifier_part)
         };
         let eq = self.skip_ws(name_end);
         if self.byte(eq) != Some(b'=') {
@@ -261,10 +260,9 @@ impl<'a> Builder<'a> {
                 _ => at += string_step(b, &mut quote, true).0,
             }
         };
-        let value_end = value_start + self.bytes[value_start..semicolon].trim_ascii_end().len();
         let declaration = LetDeclaration {
             name: span(name_start, name_end),
-            value: span(value_start, value_end),
+            value: self.trimmed(value_start, semicolon),
         };
         self.pos = semicolon + 1;
         self.push(
@@ -281,7 +279,7 @@ impl<'a> Builder<'a> {
         let at = self.pos;
         let icu = self.context().icu;
         // None in a conditional comment's content, parsed apart
-        let index = self.stack.iter().rposition(|open| open.block);
+        let index = self.stack.iter().rposition(|open| open.braced);
         let closed = index.is_some_and(|index| {
             if icu {
                 self.close_down_to(index + 1, at);
@@ -298,19 +296,46 @@ impl<'a> Builder<'a> {
     }
 }
 
-/// `name`'s kind, as Angular's compiler reads it (see [`AngularAttribute`]).
-/// Its keyword prefixes (`#`, `let-`, …) start with none of the delimiters, so they fall through to `None`.
-pub(super) fn attribute(name: &str) -> Option<AngularAttribute<'static>> {
-    let (kind, close) = match name.as_bytes().first()? {
-        b'*' => return Some(AngularAttribute::Template(None)),
-        b'[' if name.starts_with("[(") => (AngularAttribute::TwoWay, ")]"),
-        b'[' => (AngularAttribute::Property, "]"),
-        b'(' => (AngularAttribute::Event, ")"),
-        _ => {
-            return (name == "i18n" || name.starts_with("i18n-")).then_some(AngularAttribute::I18n);
+/// An attribute's kind, as Angular's compiler reads its name (`parseAttribute`) and value (see [`AngularAttribute`]);
+/// `None` for a plain one.
+pub(super) fn attribute<'a>(
+    allocator: &'a Allocator,
+    source: &str,
+    name: Span,
+    value: Option<Span>,
+) -> Option<AngularAttribute<'a>> {
+    /// The prefixes it reads before the delimiters (`BIND_NAME_REGEXP`), none of them a kind of ours.
+    const KEYWORDS: [&str; 7] = ["bind-", "let-", "ref-", "#", "on-", "bindon-", "@"];
+    let n = name.slice(source);
+    // An empty name (`<a =b>`) binds a value's `{{ }}` too
+    let delimited = match n.as_bytes().first() {
+        Some(b'*') => {
+            let bindings = value.and_then(|v| microsyntax::template_bindings(allocator, source, v));
+            return Some(AngularAttribute::Template(
+                bindings.map(|b| ArenaBox::new_in(b, &allocator)),
+            ));
         }
+        _ if n == "i18n" || n.starts_with("i18n-") => return Some(AngularAttribute::I18n),
+        Some(b'[') if n.starts_with("[(") => Some((AngularAttribute::TwoWay, ")]")),
+        Some(b'[') => Some((AngularAttribute::Property, "]")),
+        Some(b'(') => Some((AngularAttribute::Event, ")")),
+        _ => None,
     };
-    (name.ends_with(close) && name.len() > close.len() * 2).then_some(kind)
+    if let Some((kind, close)) = delimited
+        && n.ends_with(close)
+        && n.len() > close.len() * 2
+    {
+        return Some(kind);
+    }
+    if KEYWORDS.iter().any(|keyword| n.starts_with(keyword)) {
+        return None;
+    }
+    let value = value?;
+    let mut expressions =
+        interpolations(source.as_bytes(), value.start as usize, value.end as usize).peekable();
+    expressions.peek()?;
+    let expressions = ArenaVec::from_iter_in(expressions, &allocator);
+    Some(AngularAttribute::Interpolation(ArenaBox::new_in(expressions, &allocator)))
 }
 
 /// The `}}` closing an interpolation whose expression starts at `from`, outside string literals;
@@ -349,7 +374,11 @@ pub(super) fn interpolations(
 ) -> impl Iterator<Item = Span> + '_ {
     let mut at = from;
     std::iter::from_fn(move || {
-        while let Some(open) = memchr::memmem::find(&bytes[at..limit], b"{{").map(|i| at + i) {
+        while let Some(open) = memchr::memchr(b'{', &bytes[at..limit]).map(|i| at + i) {
+            if open + 1 == limit || bytes[open + 1] != b'{' {
+                at = open + 1;
+                continue;
+            }
             match interpolation_end(bytes, open + 2, limit) {
                 Ok(close) => {
                     at = close + 2;

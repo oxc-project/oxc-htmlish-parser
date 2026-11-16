@@ -357,11 +357,13 @@ Printed as written, the output reads to Angular as the input did.
 
 Ours: every node as written: a doctype, a CDATA section, a comment's raw content,
 and what `<!` or `<?` opens without a comment or CDATA as a bogus comment up to its `>`, as in the HTML tokenizer (`<!x>`, `<?xml ?>`).
+It keeps the whitespace at the start of an ICU case as text, and leaves the trailing whitespace out of a `//` start-tag comment.
 Angular's compiler drops doctypes, and reads `<!x>` as one; it reads CDATA and `<?xml ?>` as text, trims a comment,
-and names `@else   if` and `@default   never` with one space.
+names `@else   if` and `@default   never` with one space,
+skips the whitespace at the start of an ICU case, and keeps it at the end of a `//` start-tag comment.
 Printed as written, the output reads to Angular as the input did.
 `decided by: representation`
-`fixture: angular/compiler-readings.html`, `fixture: angular/blocks.html`
+`fixture: angular/compiler-readings.html`, `fixture: angular/blocks.html`, `fixture: angular/icu.html`, `fixture: angular/start-tag-comments.html`
 
 ### Block names read by prefix
 
