@@ -62,7 +62,8 @@ const ANGULAR_TOKENS = [
   "@let a = b;", "@let x = '}';",
   "{n, plural, =0 {none} other {{{ n }} items}}", "{a, select, x {<b>X} y {<i>Y</i>}}", "{a, select, x {{b, plural, =1 {one}}}}",
   "{n, plural, =0 {", "} other {", "}}",
-  "<div ngNonBindable>",
+  "<div ngNonBindable>", "<p title=\"a {{ b }} {{ '}}' }}\">", "<p title='{{ a // \"c }}'>", "<a href={{x}}>",
+  "<p [a]=\"{{ b\" c=\"{{ <b> }}\">",
   "<div a // c\n>", "<div /* c */ a>", "<div a=b/* c */>",
 ];
 
@@ -135,8 +136,9 @@ function angularHtmlParserSig(source: string): Sig {
 }
 
 const angularParser = new HtmlParser();
-/** `@angular/compiler`'s token type for an interpolation in a text. */
+/** `@angular/compiler`'s token types for an interpolation in a text and in an attribute value. */
 const INTERPOLATION = 8;
+const ATTR_VALUE_INTERPOLATION = 18;
 
 /** `@angular/compiler`'s tree, parsed with the options its template compiler passes. */
 function angularCompilerSig(source: string): Sig {
@@ -159,7 +161,11 @@ function angularCompilerSig(source: string): Sig {
         // A value's span leaves its quotes out
         // Start-tag comments go among the attributes, in source order; ours leaves out a `//` one's trailing whitespace
         const attrs = [
-          ...n.attrs.map((a: any) => [a.sourceSpan.start.offset, [slice(a.keySpan), a.valueSpan ? slice(a.valueSpan) : null]]),
+          ...n.attrs.map((a: any) => {
+            const interpolations = (a.valueTokens ?? []).filter((t: any) => t.type === ATTR_VALUE_INTERPOLATION && t.parts.length === 3).map((t: any) => t.parts[1]);
+            const attr = [slice(a.keySpan), a.valueSpan ? slice(a.valueSpan) : null];
+            return [a.sourceSpan.start.offset, interpolations.length > 0 ? [...attr, interpolations] : attr];
+          }),
           ...n.comments.map((c: any) => [c.sourceSpan.start.offset, ["comment", slice(c.sourceSpan).replace(/[ \t\n\f\r]+$/, "")]]),
         ]
           .sort((a, b) => a[0] - b[0])

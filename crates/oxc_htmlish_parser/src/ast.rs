@@ -183,6 +183,14 @@ pub struct AttributeValue {
     pub quote: Quote,
 }
 
+impl AttributeValue {
+    /// Angular: the expressions of the `{{ }}` in the value, as its lexer reads them (closed outside string literals,
+    /// and ended by a tag's start, which leaves the `{{` as text).
+    pub fn angular_interpolations(self, source: &str) -> impl Iterator<Item = Span> + '_ {
+        crate::parser::angular_interpolations(source.as_bytes(), self.span)
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Quote {
     None,

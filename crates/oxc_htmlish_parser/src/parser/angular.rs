@@ -57,33 +57,6 @@ impl<'a> Builder<'a> {
         })
     }
 
-    /// The `}}` closing an interpolation, outside string literals; after a `//` comment, quotes no longer count.
-    /// `Err` with where the search stopped when a tag starts first, even in a string, or the input ends:
-    /// Angular reads what it searched as text.
-    /// As in Angular's lexer, the character right after `//` is read without looking for a tag (`{{ a //<b }}` holds no tag).
-    pub(super) fn interpolation_end(&self, from: usize, limit: usize) -> Result<usize, usize> {
-        let (mut quote, mut comment) = (None, false);
-        let mut at = from;
-        while at < limit {
-            if self.at_tag_start(at) {
-                return Err(at);
-            }
-            if quote.is_none() {
-                match &self.bytes[at..limit] {
-                    [b'}', b'}', ..] => return Ok(at),
-                    [b'/', b'/', ..] => {
-                        comment = true;
-                        at += 2;
-                    }
-                    _ => {}
-                }
-            }
-            let Some(&b) = self.bytes[..limit].get(at) else { break };
-            at += string_step(b, &mut quote, !comment).0;
-        }
-        Err(at.min(limit))
-    }
-
     /// `[class.[&>svg]:w-4]`: a name opened with `[` runs while its brackets are open, up to a line break
     /// (Angular's lexer, for Tailwind's arbitrary variants; DIVERGENCES.md#bracketed-attribute-names).
     pub(super) fn bracketed_name_end(&self, start: usize) -> usize {
@@ -338,6 +311,55 @@ pub(super) fn attribute(name: &str) -> Option<AngularAttribute> {
         }
     };
     (name.ends_with(close) && name.len() > close.len() * 2).then_some(kind)
+}
+
+/// The `}}` closing an interpolation whose expression starts at `from`, outside string literals;
+/// after a `//` comment, quotes no longer count.
+/// `Err` with where the search stopped when a tag starts first, even in a string, or `limit` comes:
+/// Angular reads what it searched as text.
+/// As in Angular's lexer, the character right after `//` is read without looking for a tag (`{{ a //<b }}` holds no tag).
+pub(super) fn interpolation_end(bytes: &[u8], from: usize, limit: usize) -> Result<usize, usize> {
+    let (mut quote, mut comment) = (None, false);
+    let mut at = from;
+    while at < limit {
+        if is_tag_start(bytes, at) {
+            return Err(at);
+        }
+        if quote.is_none() {
+            match &bytes[at..limit] {
+                [b'}', b'}', ..] => return Ok(at),
+                [b'/', b'/', ..] => {
+                    comment = true;
+                    at += 2;
+                }
+                _ => {}
+            }
+        }
+        let Some(&b) = bytes[..limit].get(at) else { break };
+        at += string_step(b, &mut quote, !comment).0;
+    }
+    Err(at.min(limit))
+}
+
+/// The expressions of the `{{ }}` in `[from, limit)`, as Angular reads them in text and attribute values.
+pub(super) fn interpolations(
+    bytes: &[u8],
+    from: usize,
+    limit: usize,
+) -> impl Iterator<Item = Span> + '_ {
+    let mut at = from;
+    std::iter::from_fn(move || {
+        while let Some(open) = memchr::memmem::find(&bytes[at..limit], b"{{").map(|i| at + i) {
+            match interpolation_end(bytes, open + 2, limit) {
+                Ok(close) => {
+                    at = close + 2;
+                    return Some(span(open + 2, close));
+                }
+                Err(stop) => at = stop.max(open + 2),
+            }
+        }
+        None
+    })
 }
 
 /// One step through Angular expression text: string literals open at `'`, `"` and `` ` `` (when `opens`),

@@ -6,7 +6,7 @@
 //! - element: `["el", name, flags, attrs, children]`, flags from `/` (written `/>`), `e` (end tag), `lf` (ignored first line break)
 //! - attribute: `[name, value | null]`, plus `dir, arg | null, dynamic, modifiers, for` for a Vue directive,
 //!   `for` being `[value, key, index, source]` (each `null` when missing) or `null`;
-//!   `["comment", raw]` for an Angular start-tag comment
+//!   `["comment", raw]` for an Angular start-tag comment; in Angular, a value's `{{ }}` expressions follow it when it has any
 //! - `["t" | "i" | "d" | "x", raw]`: text, interpolation, doctype, CDATA
 //! - `["c", content]`: comment, without its delimiters; `["bc", content, opening]` a bogus one (`<!x>`, `<?x>`, `</ x>`)
 //! - `["b", name, parameters, children]`: Angular block
@@ -22,6 +22,9 @@ use oxc_htmlish_parser::{
 };
 use serde_json::{Value, json};
 
+/// Angular reads `{{ }}` in attribute values.
+static ANGULAR: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+
 fn main() {
     let dialect = match std::env::args().nth(1).as_deref() {
         Some("html") => Dialect::Html,
@@ -29,6 +32,7 @@ fn main() {
         Some("angular") => Dialect::Angular,
         other => panic!("unknown dialect {other:?}, expected html, vue or angular"),
     };
+    ANGULAR.set(dialect == Dialect::Angular).unwrap();
     let buf = std::io::read_to_string(std::io::stdin()).unwrap();
     let inputs: Vec<String> = serde_json::from_str(&buf).expect("JSON array of strings");
     let mut allocator = Allocator::default();
@@ -109,7 +113,20 @@ fn element(source: &str, root: &Root<'_>, id: NodeId, el: &Element<'_>) -> Value
             let name = a.name.slice(source);
             let value = a.value.map(|v| v.span.slice(source));
             match &a.kind {
-                AttributeKind::Plain | AttributeKind::Angular(_) => json!([name, value]),
+                AttributeKind::Plain | AttributeKind::Angular(_) => {
+                    let interpolations: Vec<&str> = a
+                        .value
+                        .filter(|_| ANGULAR.get() == Some(&true))
+                        .into_iter()
+                        .flat_map(|v| v.angular_interpolations(source))
+                        .map(|e| e.slice(source))
+                        .collect();
+                    if interpolations.is_empty() {
+                        json!([name, value])
+                    } else {
+                        json!([name, value, interpolations])
+                    }
+                }
                 AttributeKind::Comment => json!(["comment", name]),
                 AttributeKind::Vue(d) => {
                     let shorthand = d.name.slice(source);

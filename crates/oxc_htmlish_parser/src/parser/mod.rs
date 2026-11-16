@@ -230,6 +230,17 @@ impl Builder<'_> {
     }
 }
 
+/// See [`AttributeValue::angular_interpolations`].
+pub fn angular_interpolations(bytes: &[u8], value: Span) -> impl Iterator<Item = Span> + '_ {
+    angular::interpolations(bytes, value.start as usize, value.end as usize)
+}
+
+/// `<` followed by a letter, `/` or `!` at `at` (Angular's `_isTagStart`).
+fn is_tag_start(bytes: &[u8], at: usize) -> bool {
+    bytes[at] == b'<'
+        && bytes.get(at + 1).is_some_and(|b| b.is_ascii_alphabetic() || matches!(b, b'/' | b'!'))
+}
+
 /// Where the leading ASCII whitespace of `bytes` ends and the trailing one starts.
 /// For whitespace-only input they cross (`(len, 0)`): the content is `lead..lead.max(trail)`.
 fn trim(bytes: &[u8]) -> (usize, usize) {
@@ -430,10 +441,7 @@ impl<'a> Builder<'a> {
 
     /// `<` followed by a letter, `/` or `!`: a tag, a comment or a declaration starts (Angular's `_isTagStart`).
     fn at_tag_start(&self, at: usize) -> bool {
-        self.bytes[at] == b'<'
-            && self
-                .byte(at + 1)
-                .is_some_and(|b| b.is_ascii_alphabetic() || matches!(b, b'/' | b'!'))
+        is_tag_start(self.bytes, at)
     }
 
     /// `<` followed by what can start markup (`<?` too); any other `<` is text.
@@ -659,6 +667,27 @@ mod tests {
                 DiagnosticKind::UnexpectedEndTag,
                 "{source:?}"
             );
+        }
+    }
+
+    /// `{{ }}` in an Angular attribute value, read as in text.
+    #[test]
+    fn angular_attribute_interpolations() {
+        let allocator = Allocator::default();
+        for (source, expected) in [
+            (r#"<p a="x {{ b }} {{ '}}' }}">"#, &[" b ", " '}}' "][..]),
+            (r#"<p a='{{ b // "c }}'>"#, &[r#" b // "c "#]),
+            (r#"<p a="{{ b">"#, &[]),
+            (r#"<p a="{{ <b> }} {{ c }}">"#, &[" c "]),
+            ("<p a={{b}}>", &["b"]),
+        ] {
+            let root = Parser::new(&allocator, source, Dialect::Angular).parse().unwrap();
+            let (_, node) = root.children(NodeId::DOCUMENT).next().unwrap();
+            let NodeKind::Element(el) = &node.kind else { panic!() };
+            let value = el.attributes[0].value.unwrap();
+            let found: Vec<_> =
+                value.angular_interpolations(source).map(|e| e.slice(source)).collect();
+            assert_eq!(found, expected, "{source:?}");
         }
     }
 
