@@ -300,9 +300,9 @@ impl<'a> Builder<'a> {
 
 /// `name`'s kind, as Angular's compiler reads it (see [`AngularAttribute`]).
 /// Its keyword prefixes (`#`, `let-`, …) start with none of the delimiters, so they fall through to `None`.
-pub(super) fn attribute(name: &str) -> Option<AngularAttribute> {
+pub(super) fn attribute(name: &str) -> Option<AngularAttribute<'static>> {
     let (kind, close) = match name.as_bytes().first()? {
-        b'*' => return Some(AngularAttribute::Template),
+        b'*' => return Some(AngularAttribute::Template(None)),
         b'[' if name.starts_with("[(") => (AngularAttribute::TwoWay, ")]"),
         b'[' => (AngularAttribute::Property, "]"),
         b'(' => (AngularAttribute::Event, ")"),

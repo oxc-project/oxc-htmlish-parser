@@ -11,8 +11,8 @@ use insta::{Settings, assert_snapshot, glob};
 use oxc_htmlish_parser::{
     Allocator, Dialect, Parser, Span,
     ast::{
-        Attribute, AttributeKind, BlockParameterKind, Content, NodeId, NodeKind, Quote, Root,
-        Whitespace,
+        AngularAttribute, Attribute, AttributeKind, BlockParameterKind, Content, NodeId, NodeKind,
+        Quote, Root, TemplateBinding, Whitespace,
     },
 };
 
@@ -227,12 +227,32 @@ impl Printer<'_, '_> {
             AttributeKind::Plain => {}
             AttributeKind::Comment => line.push_str(" comment"),
             AttributeKind::Angular(kind) => {
-                write!(
-                    line,
-                    " {kind:?} target={:?}",
-                    kind.target(attribute.name).slice(self.source)
-                )
-                .unwrap();
+                let name = match kind {
+                    AngularAttribute::Property => "Property",
+                    AngularAttribute::Event => "Event",
+                    AngularAttribute::TwoWay => "TwoWay",
+                    AngularAttribute::Template(_) => "Template",
+                    AngularAttribute::I18n => "I18n",
+                };
+                let target = kind.target(attribute.name).slice(self.source);
+                write!(line, " {name} target={target:?}").unwrap();
+                if let AngularAttribute::Template(Some(bindings)) = kind {
+                    let s = |span: Option<Span>| span.map(|span| span.slice(self.source));
+                    for binding in bindings.iter() {
+                        match *binding {
+                            TemplateBinding::Expression { key, expression } => {
+                                write!(line, " [{:?}: {:?}]", s(key), s(expression))
+                            }
+                            TemplateBinding::Let { name, value } => {
+                                write!(line, " [let {:?} = {:?}]", s(Some(name)), s(value))
+                            }
+                            TemplateBinding::As { key, alias } => {
+                                write!(line, " [{:?} as {:?}]", s(key), s(Some(alias)))
+                            }
+                        }
+                        .unwrap();
+                    }
+                }
             }
             AttributeKind::Vue(directive) => {
                 write!(line, " vue name={:?}", directive.name.slice(self.source)).unwrap();

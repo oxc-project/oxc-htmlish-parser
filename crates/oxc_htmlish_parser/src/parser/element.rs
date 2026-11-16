@@ -333,6 +333,16 @@ impl<'a> Builder<'a> {
             };
             AttributeValue { span: span(value_start, value_end), quote: Quote::None }
         };
+        let kind = match kind {
+            AttributeKind::Angular(AngularAttribute::Template(_)) => {
+                let bindings =
+                    microsyntax::template_bindings(self.allocator, self.source, value.span);
+                AttributeKind::Angular(AngularAttribute::Template(
+                    bindings.map(|bindings| ArenaBox::new_in(bindings, &self.allocator)),
+                ))
+            }
+            kind => kind,
+        };
         Ok(Attribute { name, value: Some(value), kind })
     }
 

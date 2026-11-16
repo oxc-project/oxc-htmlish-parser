@@ -2,7 +2,7 @@
 // and the shapes DIVERGENCES.md documents, shared by `run.ts` and `probe.ts`.
 import { spawnSync } from "node:child_process";
 import path from "node:path";
-import { HtmlParser } from "@angular/compiler";
+import { HtmlParser, Lexer, ParseLocation, ParseSourceFile, ParseSourceSpan, Parser as ExpressionParser } from "@angular/compiler";
 import { parse as parseVue } from "@vue/compiler-dom";
 import { parseHtml } from "angular-html-parser";
 
@@ -64,6 +64,8 @@ const ANGULAR_TOKENS = [
   "{n, plural, =0 {", "} other {", "}}",
   "<div ngNonBindable>", "<p title=\"a {{ b }} {{ '}}' }}\">", "<p title='{{ a // \"c }}'>", "<a href={{x}}>",
   "<p [a]=\"{{ b\" c=\"{{ <b> }}\">",
+  "<li *ngFor=\"let x of xs | p: 1 : n; index as i trackBy f\">", "<p *ngIf=\"a ? b : c | async as d; else e\">",
+  "<p *ngIf=\"f('; ,', [a, b]) && !c?.d in {e: `${ g }`}\">", "<p *x=\"a /b/ c\">",
   "<div a // c\n>", "<div /* c */ a>", "<div a=b/* c */>",
 ];
 
@@ -148,6 +150,8 @@ function angularCompilerSig(source: string): Sig {
     tokenizeLet: true,
   });
   if (errors.length > 0) return `error: ${errors[0].msg}`;
+  // Its template compiler reports a microsyntax error as the template's
+  let bindingError: string | null = null;
   const slice = (span: any) => source.slice(span.start.offset, span.end.offset);
   const nodes = (nodes: any[]): unknown[][] => nodes.flatMap((n) => (n.constructor.name === "Text" ? node(n) : [node(n)])) as unknown[][];
   function node(n: any): any {
@@ -163,8 +167,14 @@ function angularCompilerSig(source: string): Sig {
         const attrs = [
           ...n.attrs.map((a: any) => {
             const interpolations = (a.valueTokens ?? []).filter((t: any) => t.type === ATTR_VALUE_INTERPOLATION && t.parts.length === 3).map((t: any) => t.parts[1]);
-            const attr = [slice(a.keySpan), a.valueSpan ? slice(a.valueSpan) : null];
-            return [a.sourceSpan.start.offset, interpolations.length > 0 ? [...attr, interpolations] : attr];
+            const attr: unknown[] = [slice(a.keySpan), a.valueSpan ? slice(a.valueSpan) : null];
+            if (interpolations.length > 0) attr.push(interpolations);
+            if (attr[0].startsWith("*") && a.valueSpan) {
+              const bindings = templateBindings(attr[0].slice(1), attr[1]);
+              if (typeof bindings === "string") bindingError ??= bindings;
+              attr.push(["tb", bindings]);
+            }
+            return [a.sourceSpan.start.offset, attr];
           }),
           ...n.comments.map((c: any) => [c.sourceSpan.start.offset, ["comment", slice(c.sourceSpan).replace(/[ \t\n\f\r]+$/, "")]]),
         ]
@@ -193,7 +203,25 @@ function angularCompilerSig(source: string): Sig {
         throw new UnknownNode(`unexpected node ${n.constructor.name}`);
     }
   }
-  return mapNodes(nodes(rootNodes), mergeTexts);
+  const sig = mapNodes(nodes(rootNodes), mergeTexts);
+  return bindingError === null ? sig : `error: ${bindingError}`;
+}
+
+const expressionParser = new ExpressionParser(new Lexer());
+/** The directive's own key is placed before the value, so that its spans tell it apart. */
+const KEY_OFFSET = -1e6;
+
+/** A `*x` value's microsyntax as Angular's compiler reads it, in `tasks/sig`'s shape; the error it reports. */
+function templateBindings(key: string, value: string): unknown[] | string {
+  const location = new ParseLocation(new ParseSourceFile(value, "t.html"), 0, 0, 0);
+  const { templateBindings, errors } = expressionParser.parseTemplateBindings(key, value, new ParseSourceSpan(location, location), KEY_OFFSET, 0);
+  if (errors.length > 0) return errors[0].msg;
+  const text = (k: any) => (k === null ? null : k.span.start < 0 ? null : value.slice(k.span.start, k.span.end));
+  return templateBindings.map((b: any) => {
+    if (b.constructor.name === "ExpressionBinding") return ["e", text(b.key), b.value === null ? null : b.value.source];
+    const start = b.sourceSpan.start;
+    return start >= 0 && /^let(?![\w$])/.test(value.slice(start)) ? ["l", text(b.key), text(b.value)] : ["a", text(b.value), text(b.key)];
+  });
 }
 
 /**

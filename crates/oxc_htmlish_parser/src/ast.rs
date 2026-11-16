@@ -205,7 +205,7 @@ pub enum AttributeKind<'a> {
     /// An Angular start-tag comment, among the attributes as written: [`Attribute::name`] is all of it, and there is no value.
     /// `//` up to the line break, its trailing whitespace left out (the `>` it runs past is in it: `<div // c>`), or `/*` through `*/`.
     Comment,
-    Angular(AngularAttribute),
+    Angular(AngularAttribute<'a>),
 }
 
 /// An Angular binding or i18n marker.
@@ -213,31 +213,49 @@ pub enum AttributeKind<'a> {
 /// Read as the compiler's `parseAttribute` tells a binding from a plain attribute.
 /// Its other prefixes stay [`AttributeKind::Plain`] (`#ref`, `let-x`, `@animation`, and the old `bind-`, `on-`, `bindon-`, `ref-`),
 /// and so do the delimiters around an empty name (`[]`) or that do not close (`[(x]`).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum AngularAttribute {
+#[derive(Debug)]
+pub enum AngularAttribute<'a> {
     /// `[x]`.
     Property,
     /// `(x)`.
     Event,
     /// `[(x)]`.
     TwoWay,
-    /// `*x`: a structural directive's microsyntax.
-    Template,
+    /// `*x`: a structural directive, its value split as its microsyntax ([`TemplateBinding`]);
+    /// `None` without a value, where Angular reports one,
+    /// and for a value holding a character reference, which Angular reads decoded.
+    Template(Option<ArenaBox<'a, ArenaVec<'a, TemplateBinding>>>),
     /// `i18n`, or `i18n-x`, which marks the attribute `x` for translation.
     I18n,
 }
 
-impl AngularAttribute {
+impl AngularAttribute<'_> {
     /// The part of `name` (the attribute's) between the delimiters: `x` of `[(x)]`, `i18n-x` and `*x`; empty for `i18n`.
-    pub fn target(self, name: Span) -> Span {
+    pub fn target(&self, name: Span) -> Span {
         let (start, end) = match self {
             Self::Property | Self::Event => (1, 1),
             Self::TwoWay => (2, 2),
-            Self::Template => (1, 0),
+            Self::Template(_) => (1, 0),
             Self::I18n => ((name.end - name.start).min(5), 0),
         };
         Span::new(name.start + start, name.end - end)
     }
+}
+
+/// A binding of a structural directive's microsyntax (`*ngFor="let item of items; trackBy: f"`).
+///
+/// Read as Angular's compiler reads it (`parseTemplateBindings`); each span inside [`Attribute::value`].
+/// A key is identifiers, keywords or strings joined by `-`, as written; the `:` and the `;` or `,` after a binding are optional.
+#[derive(Clone, Copy, Debug)]
+pub enum TemplateBinding {
+    /// `key: expression`, or the directive's own first (`key` `None`: `items` of `*ngIf="items"`);
+    /// `expression` `None` when none follows (`*ngIf="as x"`).
+    Expression { key: Option<Span>, expression: Option<Span> },
+    /// `let name` / `let name = value`.
+    Let { name: Span, value: Option<Span> },
+    /// `as alias`, right after the [`Expression`](Self::Expression) whose key it names (`items | async as list`),
+    /// or after a key of its own (`index as i`).
+    As { key: Option<Span>, alias: Span },
 }
 
 /// A Vue directive name split into its parts, each a span inside [`Attribute::name`].

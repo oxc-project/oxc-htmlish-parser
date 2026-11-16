@@ -19,6 +19,7 @@ mod angular;
 mod control_flow;
 mod element;
 mod markup;
+mod microsyntax;
 mod tags;
 mod text;
 mod vue;

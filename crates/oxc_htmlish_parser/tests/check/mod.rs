@@ -2,11 +2,14 @@
 //! links are consistent (`next` chains end at `last_child`);
 //! siblings are ordered and disjoint, inside their parent, and so are attributes inside the start tag;
 //! an attribute holds its name, then its value; a directive's parts are in the name, in order, and `v-for`'s in the value;
-//! a block's parameters are in its start, in order, and their parts in each.
+//! a block's parameters are in its start, in order, and their parts in each; a microsyntax's parts are in the value.
 
 use oxc_htmlish_parser::{
     Span,
-    ast::{AttributeKind, BlockParameterKind, NodeId, NodeKind, Root},
+    ast::{
+        AngularAttribute, AttributeKind, BlockParameterKind, NodeId, NodeKind, Root,
+        TemplateBinding,
+    },
 };
 
 /// The first broken invariant under `id`.
@@ -29,7 +32,25 @@ pub fn check(root: &Root<'_>, id: NodeId) -> Result<(), String> {
                 // A new kind lists its own parts here
                 let parts: Vec<Span> = match &attribute.kind {
                     AttributeKind::Plain | AttributeKind::Comment => Vec::new(),
-                    AttributeKind::Angular(kind) => vec![kind.target(name)],
+                    AttributeKind::Angular(kind) => {
+                        if let AngularAttribute::Template(Some(bindings)) = kind {
+                            let parts = bindings.iter().flat_map(|binding| match *binding {
+                                TemplateBinding::Expression { key, expression } => {
+                                    [key, expression]
+                                }
+                                TemplateBinding::Let { name, value } => [Some(name), value],
+                                TemplateBinding::As { key, alias } => [key, Some(alias)],
+                            });
+                            if bindings.is_empty()
+                                || !parts
+                                    .flatten()
+                                    .all(|part| value.start <= part.start && part.end <= value.end)
+                            {
+                                return Err(format!("template bindings {bindings:?} in {value:?}"));
+                            }
+                        }
+                        vec![kind.target(name)]
+                    }
                     AttributeKind::Vue(directive) => {
                         if let Some(v_for) = &directive.for_expression {
                             let aliases =
