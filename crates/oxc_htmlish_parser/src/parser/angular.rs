@@ -5,28 +5,26 @@ use oxc_allocator::ArenaBox;
 
 use super::*;
 
-/// The block names Angular's lexer starts a block at, by prefix (`@iffy` is a block named `iffy`).
-const BLOCK_NAMES: [&[u8]; 13] = [
-    b"if",
-    b"else",
-    b"for",
-    b"switch",
-    b"case",
-    b"default",
-    b"empty",
-    b"defer",
-    b"placeholder",
-    b"loading",
-    b"boundary",
-    b"error",
-    b"content",
-];
+/// A block's kind from its name as written ([`BlockKind`]).
+fn block_kind(name: &str) -> BlockKind {
+    if name.contains(['\n', '\r']) {
+        return BlockKind::Unknown;
+    }
+    let words = name.split(is_js_space).filter(|word| !word.is_empty());
+    BlockKind::KNOWN
+        .into_iter()
+        .find(|kind| kind.name().is_some_and(|known| words.clone().eq(known.split(' '))))
+        .unwrap_or(BlockKind::Unknown)
+}
 
 impl<'a> Builder<'a> {
-    /// An Angular block starts at `at`.
+    /// An Angular block starts at `at`: a block name's first word, by prefix (`@iffy` is a block named `iffy`).
     pub(super) fn at_block(&self, at: usize) -> bool {
         self.byte(at) == Some(b'@')
-            && BLOCK_NAMES.iter().any(|name| self.bytes[at + 1..].starts_with(name))
+            && BlockKind::KNOWN.into_iter().filter_map(BlockKind::name).any(|name| {
+                let first = name.split(' ').next().unwrap_or(name);
+                self.bytes[at + 1..].starts_with(first.as_bytes())
+            })
     }
 
     /// `@let` starts at `at`, even without the whitespace after it (`@letter` is an incomplete one).
@@ -93,7 +91,7 @@ impl<'a> Builder<'a> {
                 },
             }
         }
-        let kind = control_flow::kind(&self.source[name_start..name_end]);
+        let kind = block_kind(&self.source[name_start..name_end]);
         let mut parameters = ArenaVec::new_in(&self.allocator);
         let mut open_end = name_end;
         if self.byte(at) == Some(b'(') {

@@ -368,7 +368,8 @@ pub struct Block<'a> {
     pub close: Option<Span>,
 }
 
-/// An Angular block's name, as its compiler reads it: whitespace without a line break collapses (`else   if`).
+/// An Angular block's name, as its compiler reads it: the words of `else if` and `default never` are apart by
+/// whitespace that its `/^else[^\S\r\n]+if/` takes (NBSP too), not a line break or U+000E–U+001F.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum BlockKind {
     If,
@@ -379,7 +380,7 @@ pub enum BlockKind {
     Switch,
     Case,
     Default,
-    /// `@default never;`, without a body.
+    /// `default never`, which may go without a body (`@default never;`; then [`Block::close`] is `None`).
     DefaultNever,
     Defer,
     Placeholder,
@@ -389,6 +390,49 @@ pub enum BlockKind {
     Content,
     /// A name it reports (`@iffy`, `@else⏎if`, `@else iffy`; DIVERGENCES.md#block-names-read-by-prefix).
     Unknown,
+}
+
+impl BlockKind {
+    /// Every kind but [`Unknown`](Self::Unknown).
+    pub const KNOWN: [Self; 15] = [
+        Self::If,
+        Self::ElseIf,
+        Self::Else,
+        Self::For,
+        Self::Empty,
+        Self::Switch,
+        Self::Case,
+        Self::Default,
+        Self::DefaultNever,
+        Self::Defer,
+        Self::Placeholder,
+        Self::Loading,
+        Self::Error,
+        Self::Boundary,
+        Self::Content,
+    ];
+
+    /// The name with one space between its words; `None` for [`Unknown`](Self::Unknown).
+    pub fn name(self) -> Option<&'static str> {
+        Some(match self {
+            Self::If => "if",
+            Self::ElseIf => "else if",
+            Self::Else => "else",
+            Self::For => "for",
+            Self::Empty => "empty",
+            Self::Switch => "switch",
+            Self::Case => "case",
+            Self::Default => "default",
+            Self::DefaultNever => "default never",
+            Self::Defer => "defer",
+            Self::Placeholder => "placeholder",
+            Self::Loading => "loading",
+            Self::Error => "error",
+            Self::Boundary => "boundary",
+            Self::Content => "content",
+            Self::Unknown => return None,
+        })
+    }
 }
 
 #[derive(Debug)]

@@ -2,7 +2,7 @@
 //
 // - html: angular-html-parser, with the options Prettier passes
 // - vue: @vue/compiler-dom in SFC mode
-// - angular: @angular/compiler, with the options its template compiler parses with
+// - angular: @angular/compiler, with the options its template compiler parses with, and its readings of blocks and microsyntax
 //
 // Reduces each input to a structural signature on both sides (ours from `tasks/sig`'s `sig-batch`),
 // and reports where they differ. Failures are a tree mismatch, an error from us on input the oracle accepts,
@@ -137,7 +137,7 @@ const tally: Record<string, number> = { same: 0, bothError: 0, lenient: 0, oursE
 const failures: string[] = [];
 corpus.forEach((source, i) => {
   const a = mine[i];
-  const b = typeof theirs[i] === "string" ? theirs[i] : (withUnknownAsOurs(a, theirs[i]) as Sig);
+  const b = withUnknownAsOurs(a, theirs[i]) as Sig;
   const aError = typeof a === "string";
   const bError = typeof b === "string";
   let kind: string;

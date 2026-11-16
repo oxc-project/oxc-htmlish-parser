@@ -1,5 +1,7 @@
 // The dialects the differential compares: each one's oracle, our signature in its shape,
 // and the shapes DIVERGENCES.md documents, shared by `run.ts` and `probe.ts`.
+// Angular's oracle is its compiler's `HtmlParser`, and its `parseTemplate` for the readings of `@for` and `@if`
+// and of a microsyntax, whose errors fail the template; a block it reports reads as `UNKNOWN`, which matches any of ours.
 import { spawnSync } from "node:child_process";
 import path from "node:path";
 import { HtmlParser, Lexer, ParseLocation, ParseSourceFile, ParseSourceSpan, Parser as ExpressionParser, parseTemplate } from "@angular/compiler";
@@ -10,6 +12,12 @@ const ROOT = path.resolve(import.meta.dirname, "../..");
 const BIN = path.join(ROOT, "target/debug/sig-batch");
 
 export type Sig = unknown[] | string;
+
+/** The text of an oracle's `span` in `source`. */
+const sliceOf = (source: string, span: any): string => source.slice(span.start.offset, span.end.offset);
+
+/** Angular's template compiler, with the options it compiles a component's template with: the norm of `angular`. */
+export const compileTemplate = (source: string) => parseTemplate(source, "template.html", { preserveWhitespaces: true });
 
 /** A node kind the signature does not know: the harness, not the input, needs fixing. */
 export class UnknownNode extends Error {}
@@ -112,7 +120,7 @@ function elementSig(source: string, n: any, name: string, ended: boolean, attrs:
 function angularHtmlParserSig(source: string): Sig {
   const { rootNodes, errors } = parseHtml(source, { canSelfClose: true, allowHtmComponentClosingTags: true });
   if (errors.length > 0) return `error: ${errors[0].msg}`;
-  const slice = (span: any) => source.slice(span.start.offset, span.end.offset);
+  const slice = (span: any) => sliceOf(source, span);
   const nodes = (nodes: any[]): unknown[][] => nodes.map(node);
   function node(n: any): unknown[] {
     switch (n.kind) {
@@ -152,8 +160,9 @@ function angularCompilerSig(source: string): Sig {
   if (errors.length > 0) return `error: ${errors[0].msg}`;
   // Its template compiler reports a microsyntax error as the template's
   let bindingError: string | null = null;
-  const readings = blockReadings(source);
-  const slice = (span: any) => source.slice(span.start.offset, span.end.offset);
+  // Compiled only for a template with a block to compare
+  let readings: Map<number, unknown> | undefined;
+  const slice = (span: any) => sliceOf(source, span);
   const nodes = (nodes: any[]): unknown[][] => nodes.flatMap((n) => (n.constructor.name === "Text" ? node(n) : [node(n)])) as unknown[][];
   function node(n: any): any {
     switch (n.constructor.name) {
@@ -195,7 +204,8 @@ function angularCompilerSig(source: string): Sig {
       // Our parameters are trimmed (`Block::parameters`).
       case "Block": {
         // Its template compiler drops a `@for` or `@if` whose parameters it reports: no reading to compare
-        const reading = readings.get(n.startSourceSpan.start.offset) ?? (["for", "if", "else if"].includes(n.name) ? UNKNOWN : NO_READING);
+        const read = ["for", "if", "else if"].includes(n.name);
+        const reading = read ? ((readings ??= blockReadings(source)).get(n.startSourceSpan.start.offset) ?? UNKNOWN) : NO_READING;
         return ["b", n.name, n.parameters.map((p: any) => p.expression.replace(/^[ \t\n\f\r]+|[ \t\n\f\r]+$/g, "")), nodes(n.children), reading];
       }
       // Our value is trimmed (`LetDeclaration::value`).
@@ -231,7 +241,7 @@ function blockReadings(source: string): Map<number, unknown> {
   const readings = new Map<number, unknown>();
   let parsed: any;
   try {
-    parsed = parseTemplate(source, "template.html", { preserveWhitespaces: true });
+    parsed = compileTemplate(source);
   } catch {
     return readings;
   }
@@ -241,7 +251,7 @@ function blockReadings(source: string): Map<number, unknown> {
     const reported = errors.some((at) => start.offset <= at && at < end.offset);
     readings.set(start.offset, reported ? UNKNOWN : reading);
   };
-  const slice = (span: any) => source.slice(span.start.offset, span.end.offset);
+  const slice = (span: any) => sliceOf(source, span);
   const walk = (nodes: any[]) => {
     for (const n of nodes) {
       if (n.constructor.name === "ForLoopBlock") {
@@ -472,8 +482,7 @@ function whatwgClosing(source: string): boolean {
 /**
  * Ours in the shape of Angular's AST (DIVERGENCES.md "How Angular's AST holds a node"): it drops doctypes,
  * and the bogus comments `<!` opens, which it reads as doctypes;
- * it reads a bogus comment `<?` opens, and CDATA, as text, trims comments,
- * and names `else   if` and `default   never` with one space (ours is the name as written).
+ * and it reads a bogus comment `<?` opens, and CDATA, as text, and trims comments.
  */
 function angularShape(nodes: any[]): any[] {
   const out = nodes
@@ -481,7 +490,6 @@ function angularShape(nodes: any[]): any[] {
     .map((n) => (n[0] === "x" ? ["t", n[1].slice(9, -3)] : n[0] === "bc" && n[2] === "<?" ? ["t", `<${n[1]}>`] : n));
   return bogusAsComment(mergeTexts(out)).map((n) => {
     if (n[0] === "c") return ["c", n[1].replace(/\r\n?/g, "\n").trim()];
-    if (n[0] === "b") return ["b", n[1].replace(/^else[^\S\r\n]+if$/, "else if").replace(/^default[^\S\r\n]+never$/, "default never"), ...n.slice(2)];
     // Its lexer skips the whitespace at the start of a case
     if (n[0] === "icu") {
       for (const c of n[3]) {

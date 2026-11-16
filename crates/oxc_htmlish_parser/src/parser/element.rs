@@ -29,7 +29,8 @@ impl<'a> Builder<'a> {
         let mut buf = [0; 16];
         let lowercase = tags::lowercase(name, &mut buf);
         let context = self.context();
-        if self.tag(name, lowercase, context.namespace, false, context.prefixed).void {
+        let html = context.namespace == Namespace::Html && !context.prefixed;
+        if self.tag(name, lowercase, html, false).void {
             return error(DiagnosticKind::VoidEndTag, tag.span);
         }
         // Every dialect so far matches end tags case-insensitively
@@ -191,10 +192,9 @@ impl<'a> Builder<'a> {
 
         let inherited = self.context();
         let namespace = prefixed.unwrap_or_else(|| tags::namespace(key, inherited.namespace));
-        let in_prefix = namespace == Namespace::Html
-            && (prefixed == Some(Namespace::Html) || (prefixed.is_none() && inherited.prefixed));
-        let tag =
-            self.tag(name_str, lowercase, namespace, prefixed == Some(Namespace::Svg), in_prefix);
+        let in_prefix = namespace == Namespace::Html && (prefixed.is_some() || inherited.prefixed);
+        let html = namespace == Namespace::Html && !in_prefix;
+        let tag = self.tag(name_str, lowercase, html, prefixed == Some(Namespace::Svg));
         let closes_now = tag.void
             || (self_closing
                 && (self.rules.self_close_any

@@ -10,7 +10,8 @@
 //!   and a `*x` value's `["tb", bindings | null]`, each `["e", key, expression]`, `["l", name, value]` or `["a", key, alias]`
 //! - `["t" | "i" | "d" | "x", raw]`: text, interpolation, doctype, CDATA
 //! - `["c", content]`: comment, without its delimiters; `["bc", content, opening]` a bogus one (`<!x>`, `<?x>`, `</ x>`)
-//! - `["b", name, parameters, children, reading]`: Angular block, `reading` its parameters' split
+//! - `["b", name, parameters, children, reading]`: Angular block, `name` its kind's (as written when unknown),
+//!   `reading` its parameters' split
 //!   (`[item, expression, track, [[name, value], …], alias]`, each `null` when none)
 //! - `["l", name, value]`: Angular `@let`
 //! - `["icu", expression, type, cases]`, `["case", value, children]`: Angular ICU expression
@@ -83,13 +84,9 @@ fn node(source: &str, root: &Root<'_>, id: NodeId) -> Value {
         NodeKind::EndTag(_) => raw("e"),
         NodeKind::Block(b) => {
             let parameters: Vec<&str> = b.parameters.iter().map(|p| p.span.slice(source)).collect();
-            json!([
-                "b",
-                b.name.slice(source),
-                parameters,
-                children(source, root, id),
-                block_reading(source, b)
-            ])
+            // As Angular names it (`Block::kind`), or as written
+            let name = b.kind.name().unwrap_or_else(|| b.name.slice(source));
+            json!(["b", name, parameters, children(source, root, id), block_reading(source, b)])
         }
         NodeKind::LetDeclaration(n) => json!(["l", n.name.slice(source), n.value.slice(source)]),
         NodeKind::Icu(n) => json!([

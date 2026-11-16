@@ -1,5 +1,5 @@
-//! Angular's block names, and `@for`'s and `@if`'s parameters, read as its compiler reads them
-//! (`_getBlockName`, `parseForLoopParameters`, `parseConditionalBlockParameters`).
+//! Angular's `@for` and `@if` parameters, split as its compiler reads them
+//! (`parseForLoopParameters`, `parseConditionalBlockParameters`).
 
 use oxc_allocator::{Allocator, ArenaVec};
 
@@ -8,33 +8,6 @@ use crate::{
     ast::{BlockKind, BlockParameter, BlockParameterKind, LetVariable},
     span::{Span, span},
 };
-
-/// A block's kind from its name as written: the words of `else if` and `default never` are apart by whitespace
-/// Angular's `/^else[^\S\r\n]+if/` takes (NBSP too), and a line break or U+000E–U+001F keeps them apart.
-pub fn kind(name: &str) -> BlockKind {
-    if name.contains(['\n', '\r']) {
-        return BlockKind::Unknown;
-    }
-    let mut words = name.split([' ', '\t', '\x0B', '\x0C', '\u{a0}']).filter(|w| !w.is_empty());
-    match (words.next(), words.next(), words.next()) {
-        (Some("if"), None, _) => BlockKind::If,
-        (Some("else"), Some("if"), None) => BlockKind::ElseIf,
-        (Some("else"), None, _) => BlockKind::Else,
-        (Some("for"), None, _) => BlockKind::For,
-        (Some("empty"), None, _) => BlockKind::Empty,
-        (Some("switch"), None, _) => BlockKind::Switch,
-        (Some("case"), None, _) => BlockKind::Case,
-        (Some("default"), None, _) => BlockKind::Default,
-        (Some("default"), Some("never"), None) => BlockKind::DefaultNever,
-        (Some("defer"), None, _) => BlockKind::Defer,
-        (Some("placeholder"), None, _) => BlockKind::Placeholder,
-        (Some("loading"), None, _) => BlockKind::Loading,
-        (Some("error"), None, _) => BlockKind::Error,
-        (Some("boundary"), None, _) => BlockKind::Boundary,
-        (Some("content"), None, _) => BlockKind::Content,
-        _ => BlockKind::Unknown,
-    }
-}
 
 /// The parameter at `index` of a `block`, `parameter` its trimmed span.
 pub fn parameter<'a>(

@@ -508,19 +508,12 @@ impl<'a> Builder<'a> {
     }
 
     /// The tag table as the dialect reads it: the one place for case and namespace policy.
-    /// `svg_prefixed`: Angular's `svg:` prefix named the namespace;
-    /// `prefixed`: an Angular prefix that names none applies ([`Context::prefixed`]), read as a foreign namespace.
-    fn tag(
-        &self,
-        name: &str,
-        lowercase: &str,
-        namespace: Namespace,
-        svg_prefixed: bool,
-        prefixed: bool,
-    ) -> Tag {
+    /// `html`: in the HTML namespace, and under no Angular prefix that names none ([`Context::prefixed`]);
+    /// `svg_prefixed`: Angular's `svg:` prefix named the namespace.
+    fn tag(&self, name: &str, lowercase: &str, html: bool, svg_prefixed: bool) -> Tag {
         let table = tags::html(lowercase, self.rules.whatwg);
         if self.rules.html {
-            if namespace == Namespace::Html && !prefixed {
+            if html {
                 return table;
             }
             // `angular-html-parser` reads raw text by name in every namespace, and nothing else of the table.
@@ -535,7 +528,6 @@ impl<'a> Builder<'a> {
         // Raw text in HTML only, by a name its tokenizer matches: the first two letters lowercase, the rest in any case
         // (`<tiTLE>`; `<Title>` is a component).
         let exact = tags::html(name, false);
-        let html = namespace == Namespace::Html;
         let raw_text_name =
             name.as_bytes().get(..2).is_some_and(|start| start.iter().all(u8::is_ascii_lowercase));
         Tag {

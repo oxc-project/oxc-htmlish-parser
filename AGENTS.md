@@ -13,7 +13,7 @@ Parse behavior targets each dialect's oracle (not the spec), judged against its 
 | html | `angular-html-parser` 10.13.0, with Prettier's options | WHATWG: parse5 7.3.0 reports its tokenizer's errors and a few of its tree builder's; the others are judged from the spec |
 | xhtml | html's | html's, but an XML parser closes every element at `/>` |
 | vue | `@vue/compiler-dom` 3.5.44 `parse`, in SFC mode | its `compile` of the root `<template>`'s content |
-| angular | `@angular/compiler` 22.2.5 `HtmlParser` | its `parseTemplate` |
+| angular | `@angular/compiler` 22.2.5 `HtmlParser`, and its `parseTemplate`'s readings of `@for`, `@if` and microsyntax | its `parseTemplate` |
 
 - xhtml has no `probe` or differential entry: it reads as html but at `/>`, where it follows the oracle.
 - A parse the oracle accepts may still fail to compile (a `<script>` in a Vue template): the norm's step is what "without an error" means.
@@ -102,7 +102,7 @@ Step 1 holds a printer to a norm's tree only where the input has no parse error.
 ## Scope
 
 - No cooked values: spans into the original source; entities are never decoded.
-- Facts that need no formatting option belong here (whitespace around text, how a tag was written, directive parts and Angular binding kinds, `v-for`'s, `@for`'s, `@if`'s and Angular's microsyntax's splits, `{{ }}` in Angular's attribute values, `pre`'s ignored first line break);
+- Facts that need no formatting option belong here (whitespace around text, how a tag was written, directive parts and Angular binding and block kinds, `v-for`'s, `@for`'s, `@if`'s and Angular's microsyntax's splits, `{{ }}` in Angular's attribute values, `pre`'s ignored first line break);
   formatter policy (CSS display, whitespace sensitivity) does not.
 - No dependency on `oxc_parser`: expressions are spans.
   Dialects that need a JS parse to find an expression's end take a validator from the caller.
