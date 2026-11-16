@@ -24,3 +24,7 @@ Root sfc=false
           Text [141..142] "a" (-|-) content=[141..142] "a"
         Element [143..146] "div" Html end_tag=[147..153] "</div>"
   Text [181..182] "\n" (nl|nl)
+  Element [183..184] "p" Html end_tag=[213..217] "</p>"
+    Element [186..196] "html:style" Html key="style" raw end_tag=[205..213] "</style>" end_name=[207..212] "style"
+      Text [197..205] "<b>x</b>" (-|-) content=[197..205] "<b>x</b>"
+  Text [217..218] "\n" (nl|nl)

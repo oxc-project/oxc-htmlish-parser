@@ -213,7 +213,9 @@ but its tokenizer never applies it, as in Angular's compiler (but for an explici
 
 Ours: a `prefix:` is part of the element name: `<html:style>` and `<svg:rect>` are unknown HTML elements, with markup inside, as in browsers.
 `angular-html-parser` reads `<html:style>` as `style` in the HTML namespace and `<svg:rect>` as an SVG `rect`, as Angular's compiler does
-(a component template outside `<svg>` writes SVG elements so).
+(a component template outside `<svg>` writes SVG elements so);
+the compiler ends the raw text at `</style>`, the local name, which Angular reads with ours (`<html:style>x</style>`),
+where the fork ends it at `</html:style>`, which the compiler reports.
 Prettier lays them out as the elements the prefix names (`oxc_formatter_htmlish`'s DIVERGENCES.md#prefixed-script-style).
 
 ```html
@@ -222,7 +224,7 @@ Prettier lays them out as the elements the prefix names (`oxc_formatter_htmlish`
 ```
 
 `decided by: 1`
-`fixture: html/namespace-prefix.html`, `fixture: angular/compiler-readings.html`
+`fixture: html/namespace-prefix.html`, `fixture: angular/compiler-readings.html`, `fixture: angular/namespace-prefixes.html`
 `runner: namespace prefix`
 
 ### Self-closing non-void elements
