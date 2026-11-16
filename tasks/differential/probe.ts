@@ -11,7 +11,7 @@ import { parseTemplate } from "@angular/compiler";
 import { compile as compileVue, parse as parseVue } from "@vue/compiler-dom";
 import { parse as parseDocument, parseFragment } from "parse5";
 import * as prettier from "prettier";
-import { DIALECTS, matchShape, ours } from "./dialects.ts";
+import { DIALECTS, matchShape, ours, withUnknownAsOurs } from "./dialects.ts";
 
 const [which, arg] = process.argv.slice(2);
 if (!(which in DIALECTS || which === "all") || arg === undefined) {
@@ -96,6 +96,7 @@ async function probe(dialect: string, source: string) {
   let oracle: unknown;
   try {
     oracle = spec.oracle(source);
+    if (typeof oracle !== "string") oracle = withUnknownAsOurs(normalized, oracle);
   } catch (e) {
     oracle = `threw: ${e}`;
   }

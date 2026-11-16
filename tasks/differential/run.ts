@@ -19,7 +19,7 @@
 //   node tasks/differential/run.ts <html|vue|angular> [count] [seed]
 //   node tasks/differential/run.ts <html|vue|angular> --files <file>...
 import fs from "node:fs";
-import { DIALECTS, matchShape, ours, type Sig, UnknownNode, VOID } from "./dialects.ts";
+import { DIALECTS, matchShape, ours, type Sig, UnknownNode, VOID, withUnknownAsOurs } from "./dialects.ts";
 
 /** mulberry32: `Math.random` is unseedable, and the corpus must be reproducible. */
 class Rng {
@@ -136,7 +136,8 @@ const looseQuirks = { ...spec.quirks, ...spec.mutationQuirks };
 const tally: Record<string, number> = { same: 0, bothError: 0, lenient: 0, oursError: 0, mismatch: 0 };
 const failures: string[] = [];
 corpus.forEach((source, i) => {
-  const [a, b] = [mine[i], theirs[i]];
+  const a = mine[i];
+  const b = typeof theirs[i] === "string" ? theirs[i] : (withUnknownAsOurs(a, theirs[i]) as Sig);
   const aError = typeof a === "string";
   const bError = typeof b === "string";
   let kind: string;

@@ -10,7 +10,8 @@
 //!   and a `*x` value's `["tb", bindings | null]`, each `["e", key, expression]`, `["l", name, value]` or `["a", key, alias]`
 //! - `["t" | "i" | "d" | "x", raw]`: text, interpolation, doctype, CDATA
 //! - `["c", content]`: comment, without its delimiters; `["bc", content, opening]` a bogus one (`<!x>`, `<?x>`, `</ x>`)
-//! - `["b", name, parameters, children]`: Angular block
+//! - `["b", name, parameters, children, reading]`: Angular block, `reading` its parameters' split
+//!   (`[item, expression, track, [[name, value], …], alias]`, each `null` when none)
 //! - `["l", name, value]`: Angular `@let`
 //! - `["icu", expression, type, cases]`, `["case", value, children]`: Angular ICU expression
 
@@ -19,7 +20,10 @@ mod check;
 
 use oxc_htmlish_parser::{
     Allocator, Dialect, Parser,
-    ast::{AngularAttribute, AttributeKind, Element, NodeId, NodeKind, Root, TemplateBinding},
+    ast::{
+        AngularAttribute, AttributeKind, Block, BlockParameterKind, Element, NodeId, NodeKind,
+        Root, TemplateBinding,
+    },
 };
 use serde_json::{Value, json};
 
@@ -79,7 +83,13 @@ fn node(source: &str, root: &Root<'_>, id: NodeId) -> Value {
         NodeKind::EndTag(_) => raw("e"),
         NodeKind::Block(b) => {
             let parameters: Vec<&str> = b.parameters.iter().map(|p| p.span.slice(source)).collect();
-            json!(["b", b.name.slice(source), parameters, children(source, root, id)])
+            json!([
+                "b",
+                b.name.slice(source),
+                parameters,
+                children(source, root, id),
+                block_reading(source, b)
+            ])
         }
         NodeKind::LetDeclaration(n) => json!(["l", n.name.slice(source), n.value.slice(source)]),
         NodeKind::Icu(n) => json!([
@@ -90,6 +100,26 @@ fn node(source: &str, root: &Root<'_>, id: NodeId) -> Value {
         ]),
         NodeKind::IcuCase(n) => json!(["case", n.value.slice(source), children(source, root, id)]),
     }
+}
+
+/// `[item, expression, track, [[name, value], …], alias]` from a block's parameters, each `null` when none.
+fn block_reading(source: &str, block: &Block<'_>) -> Value {
+    let (mut item, mut expression, mut track, mut lets, mut alias) =
+        (None, None, None, vec![], None);
+    for parameter in &block.parameters {
+        match &parameter.kind {
+            BlockParameterKind::Plain => {}
+            BlockParameterKind::ForOf { item: i, expression: e } => {
+                (item, expression) = (Some(i.slice(source)), Some(e.slice(source)));
+            }
+            BlockParameterKind::Track { expression: e } => track = Some(e.slice(source)),
+            BlockParameterKind::Let(variables) => lets.extend(
+                variables.iter().map(|v| json!([v.name.slice(source), v.value.slice(source)])),
+            ),
+            BlockParameterKind::As { alias: a } => alias = Some(a.slice(source)),
+        }
+    }
+    json!([item, expression, track, lets, alias])
 }
 
 fn template_bindings(source: &str, bindings: &[TemplateBinding]) -> Value {

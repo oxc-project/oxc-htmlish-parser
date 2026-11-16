@@ -2,7 +2,7 @@
 // and the shapes DIVERGENCES.md documents, shared by `run.ts` and `probe.ts`.
 import { spawnSync } from "node:child_process";
 import path from "node:path";
-import { HtmlParser, Lexer, ParseLocation, ParseSourceFile, ParseSourceSpan, Parser as ExpressionParser } from "@angular/compiler";
+import { HtmlParser, Lexer, ParseLocation, ParseSourceFile, ParseSourceSpan, Parser as ExpressionParser, parseTemplate } from "@angular/compiler";
 import { parse as parseVue } from "@vue/compiler-dom";
 import { parseHtml } from "angular-html-parser";
 
@@ -152,6 +152,7 @@ function angularCompilerSig(source: string): Sig {
   if (errors.length > 0) return `error: ${errors[0].msg}`;
   // Its template compiler reports a microsyntax error as the template's
   let bindingError: string | null = null;
+  const readings = blockReadings(source);
   const slice = (span: any) => source.slice(span.start.offset, span.end.offset);
   const nodes = (nodes: any[]): unknown[][] => nodes.flatMap((n) => (n.constructor.name === "Text" ? node(n) : [node(n)])) as unknown[][];
   function node(n: any): any {
@@ -192,8 +193,11 @@ function angularCompilerSig(source: string): Sig {
       case "Comment":
         return ["c", n.value ?? ""];
       // Our parameters are trimmed (`Block::parameters`).
-      case "Block":
-        return ["b", n.name, n.parameters.map((p: any) => p.expression.replace(/^[ \t\n\f\r]+|[ \t\n\f\r]+$/g, "")), nodes(n.children)];
+      case "Block": {
+        // Its template compiler drops a `@for` or `@if` whose parameters it reports: no reading to compare
+        const reading = readings.get(n.startSourceSpan.start.offset) ?? (["for", "if", "else if"].includes(n.name) ? UNKNOWN : NO_READING);
+        return ["b", n.name, n.parameters.map((p: any) => p.expression.replace(/^[ \t\n\f\r]+|[ \t\n\f\r]+$/g, "")), nodes(n.children), reading];
+      }
       // Our value is trimmed (`LetDeclaration::value`).
       case "LetDeclaration":
         return ["l", n.name, n.value.replace(/[ \t\n\f\r]+$/, "")];
@@ -210,6 +214,52 @@ function angularCompilerSig(source: string): Sig {
 
 /** The names Angular's `parseAttribute` reads as a binding other than an interpolation. */
 const BOUND_NAME = /^(?:\*|i18n(?:-|$)|bind-|let-|ref-|#|on-|bindon-|@|\[\(.+\)\]$|\[.+\]$|\(.+\)$)/;
+/** What an oracle could not tell: it matches any reading of ours (`withUnknownAsOurs`). */
+export const UNKNOWN = "?";
+const NO_READING = [null, null, null, [], null];
+
+/** `oracle` with each `UNKNOWN` in it replaced by what `ours` holds there. */
+export function withUnknownAsOurs(ours: unknown, oracle: unknown): unknown {
+  if (oracle === UNKNOWN) return ours;
+  if (!Array.isArray(oracle) || !Array.isArray(ours)) return oracle;
+  return oracle.map((value, i) => withUnknownAsOurs(ours[i], value));
+}
+
+/** The `@for` and `@if` readings of Angular's template compiler (`parseTemplate`), by the block's start: `tasks/sig`'s `reading`. */
+// A block whose start holds an error it reports reads as `UNKNOWN`
+function blockReadings(source: string): Map<number, unknown> {
+  const readings = new Map<number, unknown>();
+  let parsed: any;
+  try {
+    parsed = parseTemplate(source, "template.html", { preserveWhitespaces: true });
+  } catch {
+    return readings;
+  }
+  const errors: number[] = (parsed.errors ?? []).map((e: any) => e.span.start.offset);
+  const set = (n: any, reading: unknown[]) => {
+    const { start, end } = n.startSourceSpan;
+    const reported = errors.some((at) => start.offset <= at && at < end.offset);
+    readings.set(start.offset, reported ? UNKNOWN : reading);
+  };
+  const slice = (span: any) => source.slice(span.start.offset, span.end.offset);
+  const walk = (nodes: any[]) => {
+    for (const n of nodes) {
+      if (n.constructor.name === "ForLoopBlock") {
+        const lets = n.contextVariables.filter((v: any) => v.keySpan.start.offset !== v.keySpan.end.offset).map((v: any) => [slice(v.keySpan), slice(v.valueSpan)]);
+        set(n, [n.item.name, n.expression.source.trim(), n.trackBy.source.trim(), lets, null]);
+      } else if (n.constructor.name === "IfBlockBranch") {
+        set(n, [null, null, null, [], n.expressionAlias?.name ?? null]);
+      }
+      for (const value of Object.values(n)) {
+        if (Array.isArray(value)) walk(value.filter((x) => x?.sourceSpan !== undefined));
+        else if (value?.constructor?.name?.endsWith("Block")) walk([value]);
+      }
+    }
+  };
+  walk(parsed.nodes);
+  return readings;
+}
+
 const expressionParser = new ExpressionParser(new Lexer());
 /** The directive's own key is placed before the value, so that its spans tell it apart. */
 const KEY_OFFSET = -1e6;

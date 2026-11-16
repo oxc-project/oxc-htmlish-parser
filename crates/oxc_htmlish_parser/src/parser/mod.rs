@@ -202,7 +202,8 @@ struct Context {
 }
 
 impl Context {
-    const ROOT: Self = Self { namespace: Namespace::Html, v_pre: false, icu: false, prefixed: false };
+    const ROOT: Self =
+        Self { namespace: Namespace::Html, v_pre: false, icu: false, prefixed: false };
 }
 
 enum Stop {
