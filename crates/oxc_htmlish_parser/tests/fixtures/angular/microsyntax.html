@@ -1,0 +1,13 @@
+<li *ngFor="let item of items; index as i; trackBy: trackFn">a</li>
+<li *ngFor="let item of items | slice: 0 : n trackBy f; let odd = odd">b</li>
+<p *ngIf="user$ | async as user; else loading">c</p>
+<p *ngIf="a ? b : c; then t">d</p>
+<p *ngIf="f('a; b', [c, d]) && x?.y!.z in o">e</p>
+<p *ngIf="re.test(/a;b/g) as m">f</p>
+<p *ngTemplateOutlet="tpl; context: {$implicit: x, y: `${ {a: 1}.a }`}">g</p>
+<p *ngIf="">h</p>
+<p *ngIf>i</p>
+<p *ngIf="a b-c 'd' e">j</p>
+<p *ngIf="a +">k</p>
+<p *ngIf="a &amp;&amp; b">l</p>
+<p *ngIf="(a">m</p>

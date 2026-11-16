@@ -1,0 +1,41 @@
+---
+source: crates/oxc_htmlish_parser/tests/ast.rs
+---
+Root sfc=false
+  Element [1..4] "div" Html end_tag=[98..104] "</div>"
+    @[7..19] "// comment 0" comment
+    @[22..37] "/* comment 1 */" comment
+    @[40..45] "attr1" =" [47..53] "value1"
+    @[57..79] "/*\n     comment 2\n  */" comment
+    @[82..87] "attr2" =" [89..95] "value2"
+  Text [104..105] "\n" (nl|nl)
+  Element [106..109] "div" Html end_tag=[122..128] "</div>"
+    @[110..111] "a"
+    @[112..117] "// c>" comment
+    @[119..120] "b"
+    Text [121..122] "x" (-|-) content=[121..122] "x"
+  Text [128..129] "\n" (nl|nl)
+  Element [130..133] "div" Html end_tag=[139..145] "</div>"
+    @[133..136] "//c" comment
+    Text [138..139] "x" (-|-) content=[138..139] "x"
+  Text [145..146] "\n" (nl|nl)
+  Element [147..150] "div" Html end_tag=[160..166] "</div>"
+    @[151..152] "a" = [153..154] "b"
+    @[154..157] "//c" comment
+    Text [159..160] "x" (-|-) content=[159..160] "x"
+  Text [166..167] "\n" (nl|nl)
+  Element [168..171] "div" Html end_tag=[192..198] "</div>"
+    @[172..173] "a"
+    @[173..178] "/*c*/" comment
+    @[178..179] "b"
+    @[180..181] "c" = [182..183] "d"
+    @[183..190] "/* e */" comment
+    Text [191..192] "x" (-|-) content=[191..192] "x"
+  Text [198..199] "\n" (nl|nl)
+  Element [200..202] "br" Html void no_end_tag span_end=209
+    @[203..207] "// c" comment
+  Text [209..210] "\n" (nl|nl)
+  Element [211..214] "div" Html end_tag=[244..250] "</div>"
+    @[215..220] "[a.b]" =" [222..227] "'//x'" Property target="a.b"
+    @[229..232] "(c)" =" [234..242] "d() // e" Event target="c"
+  Text [250..251] "\n" (nl|nl)

@@ -1,0 +1,53 @@
+---
+source: crates/oxc_htmlish_parser/tests/ast.rs
+---
+Root sfc=false
+  Element [1..5] "span" Html end_tag=[104..111] "</span>"
+    @[6..10] "i18n" I18n target=""
+    Icu expression=[13..18] "count" type=[21..27] "plural"
+      IcuCase value=[32..34] "=0" open=35
+        Text [36..40] "none" (-|-) content=[36..40] "none"
+      IcuCase value=[44..46] "=1" open=47
+        Text [48..52] "one " (-|sp) content=[48..51] "one"
+        Interpolation expression=[54..57] " n "
+      IcuCase value=[63..68] "other" open=69
+        Icu expression=[71..72] "a" type=[74..80] "select"
+          IcuCase value=[82..83] "m" open=84
+            Element [86..87] "b" Html end_tag=[89..93] "</b>"
+              Text [88..89] "M" (-|-) content=[88..89] "M"
+          IcuCase value=[95..96] "f" open=97
+            Text [98..99] "F" (-|-) content=[98..99] "F"
+  Text [111..112] "\n" (nl|nl)
+  Icu expression=[113..114] "a" type=[116..122] "select"
+    IcuCase value=[124..125] "x" open=126
+      Element [128..129] "b" Html no_end_tag span_end=131
+        Text [130..131] "X" (-|-) content=[130..131] "X"
+    IcuCase value=[133..134] "y" open=135
+      Element [137..139] "li" Html no_end_tag span_end=141
+        Text [140..141] "a" (-|-) content=[140..141] "a"
+      Element [142..144] "li" Html no_end_tag span_end=146
+        Text [145..146] "b" (-|-) content=[145..146] "b"
+  Text [148..149] "\n" (nl|nl)
+  Block If name=[150..152] "if" parameters=["[154..155] \"c\""] open=[149..158] "@if (c) {" close=[178..179] "}"
+    Text [158..159] " " (sp|sp)
+    Icu expression=[160..161] "a" type=[163..169] "select"
+      IcuCase value=[171..172] "x" open=173
+        Text [174..175] "X" (-|-) content=[174..175] "X"
+    Text [177..178] " " (sp|sp)
+  Text [179..180] "\n" (nl|nl)
+  Icu expression=[181..182] "a" type=[184..190] "select"
+  Text [192..193] "\n" (nl|nl)
+  Icu expression=[194..195] "a" type=[197..203] "select"
+    IcuCase value=[205..206] "x" open=207
+      Text [208..222] " @let y = 1; z" (sp|-) content=[209..222] "@let y = 1; z"
+  Text [224..225] "\n" (nl|nl)
+  Element [226..227] "p" Html end_tag=[256..260] "</p>"
+    @[228..233] "title" =" [235..253] "{a, select, x {X}}"
+    Text [255..256] "t" (-|-) content=[255..256] "t"
+  Text [260..261] "\n" (nl|nl)
+  Element [262..263] "p" Html end_tag=[286..290] "</p>"
+    Element [265..267] "br" Html void no_end_tag span_end=268
+    Icu expression=[269..270] "a" type=[272..278] "select"
+      IcuCase value=[280..281] "x" open=282
+        Text [283..284] "X" (-|-) content=[283..284] "X"
+  Text [290..291] "\n" (nl|nl)

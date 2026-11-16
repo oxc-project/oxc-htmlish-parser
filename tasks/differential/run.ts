@@ -2,7 +2,7 @@
 //
 // - html: angular-html-parser, with the options Prettier passes
 // - vue: @vue/compiler-dom in SFC mode
-// - angular: @angular/compiler, with the options its template compiler parses with
+// - angular: @angular/compiler, with the options its template compiler parses with, and its readings of blocks and microsyntax
 //
 // Reduces each input to a structural signature on both sides (ours from `tasks/sig`'s `sig-batch`),
 // and reports where they differ. Failures are a tree mismatch, an error from us on input the oracle accepts,
@@ -19,7 +19,7 @@
 //   node tasks/differential/run.ts <html|vue|angular> [count] [seed]
 //   node tasks/differential/run.ts <html|vue|angular> --files <file>...
 import fs from "node:fs";
-import { DIALECTS, matchShape, ours, type Sig, UnknownNode, VOID } from "./dialects.ts";
+import { DIALECTS, matchShape, ours, type Sig, UnknownNode, VOID, withUnknownAsOurs } from "./dialects.ts";
 
 /** mulberry32: `Math.random` is unseedable, and the corpus must be reproducible. */
 class Rng {
@@ -136,7 +136,8 @@ const looseQuirks = { ...spec.quirks, ...spec.mutationQuirks };
 const tally: Record<string, number> = { same: 0, bothError: 0, lenient: 0, oursError: 0, mismatch: 0 };
 const failures: string[] = [];
 corpus.forEach((source, i) => {
-  const [a, b] = [mine[i], theirs[i]];
+  const a = mine[i];
+  const b = withUnknownAsOurs(a, theirs[i]) as Sig;
   const aError = typeof a === "string";
   const bError = typeof b === "string";
   let kind: string;

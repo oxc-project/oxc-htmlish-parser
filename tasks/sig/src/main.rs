@@ -5,17 +5,26 @@
 //!
 //! - element: `["el", name, flags, attrs, children]`, flags from `/` (written `/>`), `e` (end tag), `lf` (ignored first line break)
 //! - attribute: `[name, value | null]`, plus `dir, arg | null, dynamic, modifiers, for` for a Vue directive,
-//!   `for` being `[value, key, index, source]` (each `null` when missing) or `null`
+//!   `for` being `[value, key, index, source]` (each `null` when missing) or `null`;
+//!   `["comment", raw]` for an Angular start-tag comment; an Angular value's `{{ }}` expressions follow it when it has any,
+//!   and a `*x` value's `["tb", bindings | null]`, each `["e", key, expression]`, `["l", name, value]` or `["a", key, alias]`
 //! - `["t" | "i" | "d" | "x", raw]`: text, interpolation, doctype, CDATA
 //! - `["c", content]`: comment, without its delimiters; `["bc", content, opening]` a bogus one (`<!x>`, `<?x>`, `</ x>`)
-//! - `["b", name, parameters, children]`: Angular block
+//! - `["b", name, parameters, children, reading]`: Angular block, `name` its kind's (as written when unknown),
+//!   `reading` its parameters' split
+//!   (`[item, expression, track, [[name, value], …], alias]`, each `null` when none)
+//! - `["l", name, value]`: Angular `@let`
+//! - `["icu", expression, type, cases]`, `["case", value, children]`: Angular ICU expression
 
 #[path = "../../../crates/oxc_htmlish_parser/tests/check/mod.rs"]
 mod check;
 
 use oxc_htmlish_parser::{
     Allocator, Dialect, Parser,
-    ast::{AttributeKind, Element, NodeId, NodeKind, Root},
+    ast::{
+        AngularAttribute, AttributeKind, Block, BlockParameterKind, Element, NodeId, NodeKind,
+        Root, TemplateBinding,
+    },
 };
 use serde_json::{Value, json};
 
@@ -74,10 +83,52 @@ fn node(source: &str, root: &Root<'_>, id: NodeId) -> Value {
         // Never compared: the oracles report it
         NodeKind::EndTag(_) => raw("e"),
         NodeKind::Block(b) => {
-            let parameters: Vec<&str> = b.parameters.iter().map(|p| p.slice(source)).collect();
-            json!(["b", b.name.slice(source), parameters, children(source, root, id)])
+            let parameters: Vec<&str> = b.parameters.iter().map(|p| p.span.slice(source)).collect();
+            // As Angular names it (`Block::kind`), or as written
+            let name = b.kind.name().unwrap_or_else(|| b.name.slice(source));
+            json!(["b", name, parameters, children(source, root, id), block_reading(source, b)])
+        }
+        NodeKind::LetDeclaration(n) => json!(["l", n.name.slice(source), n.value.slice(source)]),
+        NodeKind::Icu(n) => json!([
+            "icu",
+            n.expression.slice(source),
+            n.type_name.slice(source),
+            children(source, root, id)
+        ]),
+        NodeKind::IcuCase(n) => json!(["case", n.value.slice(source), children(source, root, id)]),
+    }
+}
+
+/// `[item, expression, track, [[name, value], …], alias]` from a block's parameters, each `null` when none.
+fn block_reading(source: &str, block: &Block<'_>) -> Value {
+    let (mut item, mut expression, mut track, mut lets, mut alias) =
+        (None, None, None, vec![], None);
+    for parameter in &block.parameters {
+        match &parameter.kind {
+            BlockParameterKind::Plain => {}
+            BlockParameterKind::ForOf { item: i, expression: e } => {
+                (item, expression) = (Some(i.slice(source)), Some(e.slice(source)));
+            }
+            BlockParameterKind::Track { expression: e } => track = Some(e.slice(source)),
+            BlockParameterKind::Let(variables) => lets.extend(
+                variables.iter().map(|v| json!([v.name.slice(source), v.value.slice(source)])),
+            ),
+            BlockParameterKind::As { alias: a } => alias = Some(a.slice(source)),
         }
     }
+    json!([item, expression, track, lets, alias])
+}
+
+fn template_bindings(source: &str, bindings: &[TemplateBinding]) -> Value {
+    let s = |span: Option<oxc_htmlish_parser::Span>| span.map(|span| span.slice(source));
+    bindings
+        .iter()
+        .map(|binding| match *binding {
+            TemplateBinding::Expression { key, expression } => json!(["e", s(key), s(expression)]),
+            TemplateBinding::Let { name, value } => json!(["l", s(Some(name)), s(value)]),
+            TemplateBinding::As { key, alias } => json!(["a", s(key), s(Some(alias))]),
+        })
+        .collect()
 }
 
 fn element(source: &str, root: &Root<'_>, id: NodeId, el: &Element<'_>) -> Value {
@@ -98,7 +149,22 @@ fn element(source: &str, root: &Root<'_>, id: NodeId, el: &Element<'_>) -> Value
             let name = a.name.slice(source);
             let value = a.value.map(|v| v.span.slice(source));
             match &a.kind {
-                AttributeKind::Plain => json!([name, value]),
+                AttributeKind::Angular(AngularAttribute::Interpolation(expressions)) => {
+                    let expressions: Vec<&str> =
+                        expressions.iter().map(|e| e.slice(source)).collect();
+                    json!([name, value, expressions])
+                }
+                AttributeKind::Angular(AngularAttribute::Template(bindings))
+                    if a.value.is_some() =>
+                {
+                    json!([
+                        name,
+                        value,
+                        ["tb", bindings.as_ref().map(|b| template_bindings(source, b))]
+                    ])
+                }
+                AttributeKind::Plain | AttributeKind::Angular(_) => json!([name, value]),
+                AttributeKind::Comment => json!(["comment", name]),
                 AttributeKind::Vue(d) => {
                     let shorthand = d.name.slice(source);
                     let dir = match shorthand {

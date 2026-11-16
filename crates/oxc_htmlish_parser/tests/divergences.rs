@@ -25,29 +25,27 @@ fn slug(title: &str) -> String {
         .collect()
 }
 
-/// The quoted keys of the `quirks` and `mutationQuirks` objects in `dialects.ts`.
+/// The quoted keys of the `quirks` and `mutationQuirks` objects in `dialects.ts`:
+/// the lines indented one level deeper than the object's, up to its `}`.
 fn quirk_names(source: &str) -> BTreeSet<String> {
+    let indent = |line: &str| line.len() - line.trim_start().len();
     let mut names = BTreeSet::new();
-    let mut depth = None;
+    let mut object = None;
     for line in source.lines() {
-        let line = line.trim();
-        if line.starts_with("quirks: {") || line.starts_with("mutationQuirks: {") {
-            depth = Some(0);
+        let trimmed = line.trim();
+        if trimmed.starts_with("quirks: {") || trimmed.starts_with("mutationQuirks: {") {
+            object = Some(indent(line));
             continue;
         }
-        let Some(open) = depth.as_mut() else { continue };
-        if *open == 0 && line.starts_with('}') {
-            depth = None;
-            continue;
-        }
-        if *open == 0
-            && let Some(rest) = line.strip_prefix('"')
+        let Some(depth) = object else { continue };
+        if indent(line) <= depth && trimmed.starts_with('}') {
+            object = None;
+        } else if indent(line) == depth + 2
+            && let Some(rest) = trimmed.strip_prefix('"')
             && let Some((name, _)) = rest.split_once("\":")
         {
             names.insert(name.to_owned());
         }
-        *open += line.matches(['{', '[', '(']).count();
-        *open -= line.matches(['}', ']', ')']).count().min(*open);
     }
     names
 }

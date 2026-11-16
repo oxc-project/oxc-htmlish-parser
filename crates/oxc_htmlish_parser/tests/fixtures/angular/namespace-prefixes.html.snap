@@ -1,0 +1,30 @@
+---
+source: crates/oxc_htmlish_parser/tests/ast.rs
+---
+Root sfc=false
+  Element [1..4] "x:g" Html key="g" end_tag=[33..39] "</x:g>"
+    Element [6..7] "p" Html end_tag=[20..24] "</p>"
+      Text [8..9] "a" (-|-) content=[8..9] "a"
+      Element [10..13] "div" Html end_tag=[14..20] "</div>"
+    Element [25..27] "br" Html end_tag=[28..33] "</br>"
+  Text [39..40] "\n" (nl|nl)
+  Element [41..47] "html:p" Html key="p" end_tag=[60..69] "</html:p>"
+    Text [48..49] "a" (-|-) content=[48..49] "a"
+    Element [50..53] "div" Html end_tag=[54..60] "</div>"
+  Text [69..70] "\n" (nl|nl)
+  Element [71..72] "p" Html end_tag=[108..112] "</p>"
+    Text [73..74] "a" (-|-) content=[73..74] "a"
+    Element [75..82] "svg:div" Svg key="div" end_tag=[83..93] "</svg:div>"
+    Element [94..99] "x:div" Html key="div" end_tag=[100..108] "</x:div>"
+  Text [112..113] "\n" (nl|nl)
+  Element [114..117] "x:g" Html key="g" end_tag=[175..181] "</x:g>"
+    Element [119..122] "svg" Svg end_tag=[169..175] "</svg>"
+      Element [124..137] "foreignObject" Svg key="foreignobject" end_tag=[153..169] "</foreignObject>"
+        Element [139..140] "p" Html no_end_tag span_end=142
+          Text [141..142] "a" (-|-) content=[141..142] "a"
+        Element [143..146] "div" Html end_tag=[147..153] "</div>"
+  Text [181..182] "\n" (nl|nl)
+  Element [183..184] "p" Html end_tag=[213..217] "</p>"
+    Element [186..196] "html:style" Html key="style" raw end_tag=[205..213] "</style>" end_name=[207..212] "style"
+      Text [197..205] "<b>x</b>" (-|-) content=[197..205] "<b>x</b>"
+  Text [217..218] "\n" (nl|nl)

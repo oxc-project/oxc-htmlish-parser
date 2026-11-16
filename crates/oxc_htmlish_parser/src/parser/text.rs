@@ -1,4 +1,4 @@
-//! Text, split at `{{ }}` (and Angular blocks).
+//! Text, split at `{{ }}` (and Angular blocks, `@let` and ICU expressions).
 
 use memchr::{memchr2, memrchr};
 
@@ -6,14 +6,14 @@ use super::*;
 
 impl Builder<'_> {
     /// Text from `pos` up to `limit`, or to the next markup when `markup_ends`.
-    /// `{{ }}` and Angular blocks split it.
+    /// `{{ }}`, Angular blocks, `@let` and ICU expressions split it.
     pub(super) fn text(&mut self, limit: usize, markup_ends: bool) -> PResult<()> {
         let interpolate = self.interpolates();
-        let blocks = self.rules.angular && markup_ends;
+        let angular = self.rules.angular && markup_ends;
         let mut start = self.pos;
         while self.pos < limit {
             let haystack = &self.bytes[self.pos..limit];
-            let found = if blocks {
+            let found = if angular {
                 haystack.iter().position(|b| matches!(b, b'<' | b'{' | b'@' | b'}'))
             } else {
                 match (markup_ends, interpolate) {
@@ -36,19 +36,27 @@ impl Builder<'_> {
                     self.pos += 1;
                     continue;
                 }
-                b'@' if blocks && self.at_block(self.pos) => {
+                // Not in an ICU case (DIVERGENCES.md#inside-an-icu-case)
+                b'@' if angular
+                    && !self.context().icu
+                    && (self.at_let(self.pos) || self.at_block(self.pos)) =>
+                {
                     self.push_text(start, self.pos);
-                    self.block_start()?;
+                    if self.at_let(self.pos) {
+                        self.let_declaration()?;
+                    } else {
+                        self.block_start()?;
+                    }
                     start = self.pos;
                     continue;
                 }
-                b'}' if blocks => {
+                b'}' if angular => {
                     self.push_text(start, self.pos);
                     self.block_close()?;
                     start = self.pos;
                     continue;
                 }
-                b'@' | b'}' => {
+                b'@' => {
                     self.pos += 1;
                     continue;
                 }
@@ -57,12 +65,19 @@ impl Builder<'_> {
             if self.byte(self.pos + 1) != Some(b'{')
                 || (!markup_ends && self.rules.sfc && self.after_end_tag_prefix(self.pos))
             {
-                self.pos += 1;
+                // In Angular a `{` that opens no interpolation opens an ICU expression
+                if angular {
+                    self.push_text(start, self.pos);
+                    self.icu_start()?;
+                    start = self.pos;
+                } else {
+                    self.pos += 1;
+                }
                 continue;
             }
             let open = self.pos;
             let close = if self.rules.angular {
-                match self.interpolation_end(open + 2, limit) {
+                match angular::interpolation_end(self.bytes, open + 2, limit) {
                     Ok(close) => close,
                     Err(stop) => {
                         // Angular reads an unterminated `{{` as text, up to where the search stopped

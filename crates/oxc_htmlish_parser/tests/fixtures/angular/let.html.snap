@@ -1,0 +1,23 @@
+---
+source: crates/oxc_htmlish_parser/tests/ast.rs
+---
+Root sfc=false
+  Element [1..2] "p" Html end_tag=[15..19] "</p>"
+    LetDeclaration name=[8..9] "a" value=[12..13] "b"
+  Text [19..20] "\n" (nl|nl)
+  LetDeclaration name=[26..33] "user$_1" value=[38..50] "user | async"
+  Text [51..52] "\n" (nl|nl)
+  LetDeclaration name=[57..57] "" value=[59..60] "1"
+  Text [61..62] "\n" (nl|nl)
+  LetDeclaration name=[67..68] "s" value=[71..90] "\"x;y\" + '\\';' + `}`"
+  Text [91..92] "\n" (nl|nl)
+  LetDeclaration name=[97..98] "e" value=[101..101] ""
+  Text [102..103] "\n" (nl|nl)
+  LetDeclaration name=[108..109] "m" value=[112..126] "<b>{{ c }}</b>"
+  Text [127..128] "\n" (nl|nl)
+  Block If name=[129..131] "if" parameters=["[133..134] \"a\""] open=[128..137] "@if (a) {" close=[148..149] "}"
+    LetDeclaration name=[142..143] "i" value=[146..147] "a"
+  Text [149..150] "\n" (nl|nl)
+  Element [151..152] "p" Html end_tag=[165..169] "</p>"
+    Interpolation expression=[155..163] " '@let' "
+  Text [169..170] "\n" (nl|nl)

@@ -2,6 +2,7 @@
 
 use oxc_allocator::{Allocator, ArenaBox, ArenaVec};
 
+use super::{is_js_space, skip_js_space, trim_js};
 use crate::{
     ast::{VueArgument, VueDirective, VueFor},
     span::{Span, span},
@@ -85,7 +86,7 @@ fn for_expression(source: &str, value: Span) -> Option<VueFor> {
     let at = |(start, end): (usize, usize)| {
         span(value.start as usize + start, value.start as usize + end)
     };
-    let part = |range: (usize, usize)| Some(at(trim(s, range))).filter(|part| !part.is_empty());
+    let part = |range: (usize, usize)| Some(at(trim_js(s, range))).filter(|part| !part.is_empty());
 
     // `/([\s\S]*?)\s+(?:in|of)\s+(\S[\s\S]*)/`: the first whitespace run before `in` / `of`, whitespace and more.
     // Every position in a run reaches the same `in` / `of`, so only its first is tried
@@ -93,19 +94,19 @@ fn for_expression(source: &str, value: Span) -> Option<VueFor> {
         if !is_js_space(c) || s[..i].ends_with(is_js_space) {
             return None;
         }
-        let operator = skip_space(s, i);
+        let operator = skip_js_space(s, i);
         if !(s[operator..].starts_with("in") || s[operator..].starts_with("of")) {
             return None;
         }
-        let rhs = skip_space(s, operator + 2);
+        let rhs = skip_js_space(s, operator + 2);
         (rhs > operator + 2 && rhs < s.len()).then_some((i, operator, rhs))
     })?;
 
     // `LHS.trim().replace(/^\(|\)$/g, '').trim()`
-    let (mut start, mut end) = trim(s, (0, lhs_end));
+    let (mut start, mut end) = trim_js(s, (0, lhs_end));
     start += usize::from(s[start..end].starts_with('('));
     end -= usize::from(s[start..end].ends_with(')'));
-    let aliases = trim(s, (start, end));
+    let aliases = trim_js(s, (start, end));
 
     // `/,([^,\}\]]*)(?:,([^,\}\]]*))?$/`: the last one or two commas with no `]` / `}` after them
     let (start, end) = aliases;
@@ -124,23 +125,6 @@ fn for_expression(source: &str, value: Span) -> Option<VueFor> {
         key,
         index,
         operator: at((operator, operator + 2)),
-        source: at(trim(s, (rhs, s.len()))),
+        source: at(trim_js(s, (rhs, s.len()))),
     })
-}
-
-/// JS's `\s` and `trim()`: Unicode's White_Space without U+0085, and U+FEFF.
-fn is_js_space(c: char) -> bool {
-    (c.is_whitespace() && c != '\u{85}') || c == '\u{feff}'
-}
-
-fn skip_space(s: &str, from: usize) -> usize {
-    s.len() - s[from..].trim_start_matches(is_js_space).len()
-}
-
-/// `range` of `s` without JS whitespace at its edges.
-fn trim(s: &str, (start, end): (usize, usize)) -> (usize, usize) {
-    let part = &s[start..end];
-    let lead = part.len() - part.trim_start_matches(is_js_space).len();
-    let trail = part.trim_end_matches(is_js_space).len();
-    (start + lead, start + lead.max(trail))
 }

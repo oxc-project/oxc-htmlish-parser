@@ -16,8 +16,10 @@ use crate::{
 use tags::Tag;
 
 mod angular;
+mod control_flow;
 mod element;
 mod markup;
+mod microsyntax;
 mod tags;
 mod text;
 mod vue;
@@ -32,8 +34,10 @@ pub enum Dialect {
     /// (`{{ }}` and directives are still Vue).
     Vue,
     /// An Angular template.
-    /// HTML with `{{ }}`, control flow blocks (`@if (a) { … }`), and `/>` closing any element.
-    /// TODO: ICU expressions and start-tag comments are not parsed yet (an error), nor `@let` (plain text).
+    /// HTML with `{{ }}`, control flow blocks (`@if (a) { … }`), `@let`, ICU expressions (`{n, plural, =0 {none}}`),
+    /// and `/>` closing any element.
+    /// Start-tag comments (`//` and `/* */`) sit among the attributes;
+    /// binding names, a structural directive's microsyntax and a value's `{{ }}` are read as its compiler reads them.
     Angular,
 }
 
@@ -125,11 +129,11 @@ struct Rules {
     /// a void element's end tag is text, a quote may open an attribute name or sit in a directive name, `</` ends a start tag,
     /// and RCDATA reads `{{ }}` as that tokenizer does.
     sfc: bool,
-    /// `{{ }}` (closed outside quotes) and control flow blocks, and Angular's lexer in tags:
+    /// `{{ }}` (closed outside quotes), control flow blocks, `@let` and ICU expressions, and Angular's lexer in tags:
     /// its whitespace (VT, U+000E–U+001F, NBSP), namespace prefixes, `<!-->` read on to `-->`,
     /// whitespace around a raw text element's end tag name and no script data escapes,
-    /// `=` ending an unquoted value and opening a nameless attribute,
-    /// a `[` attribute name running while its brackets are open (`[class.[&>svg]:w-4]`).
+    /// `=` and a start-tag comment ending an unquoted value, `=` opening a nameless attribute,
+    /// a `[` attribute name running while its brackets are open (`[class.[&>svg]:w-4]`), and binding names.
     angular: bool,
     /// Whitespace may come before an end tag's name (`</ div>`), as Vue's and Angular's compilers read it;
     /// otherwise `</` and whitespace open a bogus comment, as in the HTML tokenizer.
@@ -190,10 +194,16 @@ impl Rules {
 struct Context {
     namespace: Namespace,
     v_pre: bool,
+    /// Inside an Angular ICU case: `}` closes it, and blocks and `@let` do not start.
+    icu: bool,
+    /// Angular: in the HTML namespace under a prefix that names none (`<x:g>`, `<html:p>`),
+    /// which its compiler gives the descendants too (`:x:p`): the tag table applies to no name.
+    prefixed: bool,
 }
 
 impl Context {
-    const ROOT: Self = Self { namespace: Namespace::Html, v_pre: false };
+    const ROOT: Self =
+        Self { namespace: Namespace::Html, v_pre: false, icu: false, prefixed: false };
 }
 
 enum Stop {
@@ -218,18 +228,56 @@ fn ends_attribute_name(b: u8) -> bool {
     matches!(b, b'>' | b'/' | b'=' | b'"' | b'\'')
 }
 
+impl Builder<'_> {
+    /// `[from, to)` without ASCII whitespace at its edges; empty at `to` for whitespace only.
+    fn trimmed(&self, from: usize, to: usize) -> Span {
+        let (lead, trail) = trim(&self.bytes[from..to]);
+        span(from + lead, from + lead.max(trail))
+    }
+}
+
+/// JS's `\s` and `trim()`: Unicode's White_Space without U+0085, and U+FEFF.
+fn is_js_space(c: char) -> bool {
+    (c.is_whitespace() && c != '\u{85}') || c == '\u{feff}'
+}
+
+/// Past the JS whitespace at `from`.
+fn skip_js_space(s: &str, from: usize) -> usize {
+    s.len() - s[from..].trim_start_matches(is_js_space).len()
+}
+
+/// `range` of `s` without JS whitespace at its edges.
+fn trim_js(s: &str, (start, end): (usize, usize)) -> (usize, usize) {
+    let part = &s[start..end];
+    let lead = part.len() - part.trim_start_matches(is_js_space).len();
+    let trail = part.trim_end_matches(is_js_space).len();
+    (start + lead, start + lead.max(trail))
+}
+
+/// A letter, digit, `_` or `$`: what an Angular expression's identifier holds.
+fn is_identifier_part(b: u8) -> bool {
+    b.is_ascii_alphanumeric() || matches!(b, b'_' | b'$')
+}
+
+/// `<` followed by a letter, `/` or `!` at `at`: a tag, a comment or a declaration starts (Angular's `_isTagStart`).
+fn is_tag_start(bytes: &[u8], at: usize) -> bool {
+    bytes[at] == b'<'
+        && bytes.get(at + 1).is_some_and(|b| b.is_ascii_alphabetic() || matches!(b, b'/' | b'!'))
+}
+
 /// Where the leading ASCII whitespace of `bytes` ends and the trailing one starts.
 /// For whitespace-only input they cross (`(len, 0)`): the content is `lead..lead.max(trail)`.
 fn trim(bytes: &[u8]) -> (usize, usize) {
     (bytes.len() - bytes.trim_ascii_start().len(), bytes.trim_ascii_end().len())
 }
 
-/// An element (or an Angular block) whose end has not been seen yet.
+/// An element (or an Angular block or ICU) whose end has not been seen yet.
 struct Open<'a> {
     id: NodeId,
-    /// The tag name as written, for matching end tags; empty for a block.
+    /// The tag name as written, for matching end tags; empty for a braced one.
     name: &'a str,
-    block: bool,
+    /// A block, an ICU expression or one of its cases: `}` closes it, and no end tag.
+    braced: bool,
     tag: Tag,
     /// The element may go without an end tag when its parent's closes it
     /// (closed by its parent, or a `/>` HTML ignored: `<my-el />`, closed as in browsers).
@@ -291,9 +339,15 @@ impl<'a> Builder<'a> {
             self.markup()?;
         }
         while let Some(open) = self.stack.pop() {
-            if open.block {
-                let start = self.nodes[open.id.index()].span.start as usize;
-                return error(DiagnosticKind::UnclosedBlock, span(start, start + 1));
+            if open.braced {
+                let node = &self.nodes[open.id.index()];
+                let kind = if matches!(node.kind, NodeKind::Block(_)) {
+                    DiagnosticKind::UnclosedBlock
+                } else {
+                    DiagnosticKind::InvalidIcu
+                };
+                let start = node.span.start as usize;
+                return error(kind, span(start, start + 1));
             }
             self.close(&open, None, self.bytes.len());
         }
@@ -409,19 +463,11 @@ impl<'a> Builder<'a> {
         self.bytes[at..].get(..pat.len()).is_some_and(|b| b.eq_ignore_ascii_case(pat.as_bytes()))
     }
 
-    /// `<` followed by a letter, `/` or `!`: a tag, a comment or a declaration starts (Angular's `_isTagStart`).
-    fn at_tag_start(&self, at: usize) -> bool {
-        self.bytes[at] == b'<'
-            && self
-                .byte(at + 1)
-                .is_some_and(|b| b.is_ascii_alphabetic() || matches!(b, b'/' | b'!'))
-    }
-
     /// `<` followed by what can start markup (`<?` too); any other `<` is text.
     /// In a Vue SFC, a void element's end tag (`</br>`) is text too: Vue drops it (DIVERGENCES.md#void-element-end-tags).
     #[inline]
     fn at_markup(&self, at: usize) -> bool {
-        (self.at_tag_start(at) || self.bytes[at..].starts_with(b"<?"))
+        (is_tag_start(self.bytes, at) || self.bytes[at..].starts_with(b"<?"))
             && !(self.rules.sfc && self.byte(at + 1) == Some(b'/') && self.at_void_end_tag(at))
             && !(self.rules.angular && self.at_prefix_without_name(at))
     }
@@ -462,11 +508,12 @@ impl<'a> Builder<'a> {
     }
 
     /// The tag table as the dialect reads it: the one place for case and namespace policy.
+    /// `html`: in the HTML namespace, and under no Angular prefix that names none ([`Context::prefixed`]);
     /// `svg_prefixed`: Angular's `svg:` prefix named the namespace.
-    fn tag(&self, name: &str, lowercase: &str, namespace: Namespace, svg_prefixed: bool) -> Tag {
+    fn tag(&self, name: &str, lowercase: &str, html: bool, svg_prefixed: bool) -> Tag {
         let table = tags::html(lowercase, self.rules.whatwg);
         if self.rules.html {
-            if namespace == Namespace::Html {
+            if html {
                 return table;
             }
             // `angular-html-parser` reads raw text by name in every namespace, and nothing else of the table.
@@ -481,7 +528,6 @@ impl<'a> Builder<'a> {
         // Raw text in HTML only, by a name its tokenizer matches: the first two letters lowercase, the rest in any case
         // (`<tiTLE>`; `<Title>` is a component).
         let exact = tags::html(name, false);
-        let html = namespace == Namespace::Html;
         let raw_text_name =
             name.as_bytes().get(..2).is_some_and(|start| start.iter().all(u8::is_ascii_lowercase));
         Tag {
@@ -565,6 +611,14 @@ mod tests {
             ("</div", Dialect::Html, UnterminatedEndTag, 0),
             // Angular reads the `{{` as text, then the `}` closes no block
             ("{{ '<b>' }}", Dialect::Angular, UnexpectedBlockClose, 9),
+            ("a @letter", Dialect::Angular, IncompleteLet, 2),
+            ("@let 1 = 2;", Dialect::Angular, IncompleteLet, 0),
+            ("@let a-b = 1;", Dialect::Angular, IncompleteLet, 0),
+            ("@let a = 1", Dialect::Angular, IncompleteLet, 0),
+            ("@let a = ';'", Dialect::Angular, IncompleteLet, 0),
+            ("<div a /* c", Dialect::Angular, UnterminatedStartTag, 0),
+            // The comment runs past the `>`, to the end
+            ("<div // c>x</div>", Dialect::Angular, UnterminatedStartTag, 0),
             ("<a b='c>", Dialect::Html, UnterminatedAttributeValue, 5),
             ("<a / b>", Dialect::Html, UnexpectedCharacterInTag, 3),
             ("<a \"b\">", Dialect::Html, UnexpectedCharacterInTag, 3),
@@ -632,6 +686,33 @@ mod tests {
                 DiagnosticKind::UnexpectedEndTag,
                 "{source:?}"
             );
+        }
+    }
+
+    /// `{{ }}` in an Angular attribute value, read as in text; a bound name (`[a]`, `#a`) holds none.
+    #[test]
+    fn angular_attribute_interpolations() {
+        let allocator = Allocator::default();
+        for (source, expected) in [
+            (r#"<p a="x {{ b }} {{ '}}' }}">"#, &[" b ", " '}}' "][..]),
+            (r#"<p a='{{ b // "c }}'>"#, &[r#" b // "c "#]),
+            (r#"<p a="{{ b">"#, &[]),
+            (r#"<p a="{{ <b> }} {{ c }}">"#, &[" c "]),
+            ("<p a={{b}}>", &["b"]),
+            ("<p [a]=\"{{ b }}\">", &[]),
+            ("<p #a=\"{{ b }}\">", &[]),
+            ("<p [(a]=\"{{ b }}\">", &[" b "]),
+        ] {
+            let root = Parser::new(&allocator, source, Dialect::Angular).parse().unwrap();
+            let (_, node) = root.children(NodeId::DOCUMENT).next().unwrap();
+            let NodeKind::Element(el) = &node.kind else { panic!() };
+            let found: Vec<_> = match &el.attributes[0].kind {
+                AttributeKind::Angular(AngularAttribute::Interpolation(expressions)) => {
+                    expressions.iter().map(|e| e.slice(source)).collect()
+                }
+                _ => vec![],
+            };
+            assert_eq!(found, expected, "{source:?}");
         }
     }
 

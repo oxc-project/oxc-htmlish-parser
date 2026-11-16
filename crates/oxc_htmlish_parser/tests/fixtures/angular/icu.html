@@ -1,0 +1,11 @@
+<span i18n>{ count , plural ,
+  =0 {none}
+  =1 {one {{ n }}}
+  other {{a, select, m {<b>M</b>} f {F}}}
+}</span>
+{a, select, x {<b>X} y {<li>a<li>b}}
+@if (c) { {a, select, x {X}} }
+{a, select,}
+{a, select, x { @let y = 1; z}}
+<p title="{a, select, x {X}}">t</p>
+<p><br>{a, select, x {X}}</p>

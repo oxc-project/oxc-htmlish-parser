@@ -1,8 +1,10 @@
 // The dialects the differential compares: each one's oracle, our signature in its shape,
 // and the shapes DIVERGENCES.md documents, shared by `run.ts` and `probe.ts`.
+// Angular's oracle is its compiler's `HtmlParser`, and its `parseTemplate` for the readings of `@for` and `@if`
+// and of a microsyntax, whose errors fail the template; a block it reports reads as `UNKNOWN`, which matches any of ours.
 import { spawnSync } from "node:child_process";
 import path from "node:path";
-import { HtmlParser } from "@angular/compiler";
+import { HtmlParser, Lexer, ParseLocation, ParseSourceFile, ParseSourceSpan, Parser as ExpressionParser, parseTemplate } from "@angular/compiler";
 import { parse as parseVue } from "@vue/compiler-dom";
 import { parseHtml } from "angular-html-parser";
 
@@ -10,6 +12,12 @@ const ROOT = path.resolve(import.meta.dirname, "../..");
 const BIN = path.join(ROOT, "target/debug/sig-batch");
 
 export type Sig = unknown[] | string;
+
+/** The text of an oracle's `span` in `source`. */
+const sliceOf = (source: string, span: any): string => source.slice(span.start.offset, span.end.offset);
+
+/** Angular's template compiler, with the options it compiles a component's template with: the norm of `angular`. */
+export const compileTemplate = (source: string) => parseTemplate(source, "template.html", { preserveWhitespaces: true });
 
 /** A node kind the signature does not know: the harness, not the input, needs fixing. */
 export class UnknownNode extends Error {}
@@ -59,6 +67,14 @@ const ANGULAR_TOKENS = [
   "@switch (a) {", "@case (1)", "@case (2) {", "@default {", "@defer (on idle) {", "@placeholder {",
   "</ div>", "<!-- c --!>", "<!-->", "<style>a</ style >", "<svg:g>", "<svg:rect/>", "<svg><title><b>t</b></title></svg>",
   "<div\u00a0a=b\u00a0c>", "{{ a",
+  "@let a = b;", "@let x = '}';",
+  "{n, plural, =0 {none} other {{{ n }} items}}", "{a, select, x {<b>X} y {<i>Y</i>}}", "{a, select, x {{b, plural, =1 {one}}}}",
+  "{n, plural, =0 {", "} other {", "}}",
+  "<div ngNonBindable>", "<p title=\"a {{ b }} {{ '}}' }}\">", "<p title='{{ a // \"c }}'>", "<a href={{x}}>",
+  "<p [a]=\"{{ b\" c=\"{{ <b> }}\">",
+  "<li *ngFor=\"let x of xs | p: 1 : n; index as i trackBy f\">", "<p *ngIf=\"a ? b : c | async as d; else e\">",
+  "<p *ngIf=\"f('; ,', [a, b]) && !c?.d in {e: `${ g }`}\">", "<p *x=\"a /b/ c\">",
+  "<div a // c\n>", "<div /* c */ a>", "<div a=b/* c */>",
 ];
 
 // ---
@@ -104,7 +120,7 @@ function elementSig(source: string, n: any, name: string, ended: boolean, attrs:
 function angularHtmlParserSig(source: string): Sig {
   const { rootNodes, errors } = parseHtml(source, { canSelfClose: true, allowHtmComponentClosingTags: true });
   if (errors.length > 0) return `error: ${errors[0].msg}`;
-  const slice = (span: any) => source.slice(span.start.offset, span.end.offset);
+  const slice = (span: any) => sliceOf(source, span);
   const nodes = (nodes: any[]): unknown[][] => nodes.map(node);
   function node(n: any): unknown[] {
     switch (n.kind) {
@@ -130,8 +146,9 @@ function angularHtmlParserSig(source: string): Sig {
 }
 
 const angularParser = new HtmlParser();
-/** `@angular/compiler`'s token type for an interpolation in a text. */
+/** `@angular/compiler`'s token types for an interpolation in a text and in an attribute value. */
 const INTERPOLATION = 8;
+const ATTR_VALUE_INTERPOLATION = 18;
 
 /** `@angular/compiler`'s tree, parsed with the options its template compiler passes. */
 function angularCompilerSig(source: string): Sig {
@@ -141,7 +158,11 @@ function angularCompilerSig(source: string): Sig {
     tokenizeLet: true,
   });
   if (errors.length > 0) return `error: ${errors[0].msg}`;
-  const slice = (span: any) => source.slice(span.start.offset, span.end.offset);
+  // Its template compiler reports a microsyntax error as the template's
+  let bindingError: string | null = null;
+  // Compiled only for a template with a block to compare
+  let readings: Map<number, unknown> | undefined;
+  const slice = (span: any) => sliceOf(source, span);
   const nodes = (nodes: any[]): unknown[][] => nodes.flatMap((n) => (n.constructor.name === "Text" ? node(n) : [node(n)])) as unknown[][];
   function node(n: any): any {
     switch (n.constructor.name) {
@@ -152,7 +173,24 @@ function angularCompilerSig(source: string): Sig {
         const end = n.endSourceSpan;
         const ended = end !== null && end.start.offset !== n.startSourceSpan.start.offset;
         // A value's span leaves its quotes out
-        const attrs = n.attrs.map((a: any) => [slice(a.keySpan), a.valueSpan ? slice(a.valueSpan) : null]);
+        // Start-tag comments go among the attributes, in source order; ours leaves out a `//` one's trailing whitespace
+        const attrs = [
+          ...n.attrs.map((a: any) => {
+            const attr: unknown[] = [slice(a.keySpan), a.valueSpan ? slice(a.valueSpan) : null];
+            // Its compiler binds the `{{ }}` in a name it reads as no binding of another kind (`parseAttribute`)
+            const interpolations = (a.valueTokens ?? []).filter((t: any) => t.type === ATTR_VALUE_INTERPOLATION && t.parts.length === 3).map((t: any) => t.parts[1]);
+            if (interpolations.length > 0 && !BOUND_NAME.test(attr[0] as string)) attr.push(interpolations);
+            if (attr[0].startsWith("*") && a.valueSpan) {
+              const bindings = templateBindings(attr[0].slice(1), attr[1]);
+              if (typeof bindings === "string") bindingError ??= bindings;
+              attr.push(["tb", bindings]);
+            }
+            return [a.sourceSpan.start.offset, attr];
+          }),
+          ...n.comments.map((c: any) => [c.sourceSpan.start.offset, ["comment", slice(c.sourceSpan).replace(/[ \t\n\f\r]+$/, "")]]),
+        ]
+          .sort((a, b) => a[0] - b[0])
+          .map((a) => a[1]);
         return elementSig(source, n, name, ended, attrs, nodes(n.children));
       }
       // Its interpolations are tokens; one without its `}}` is text to us
@@ -164,17 +202,89 @@ function angularCompilerSig(source: string): Sig {
       case "Comment":
         return ["c", n.value ?? ""];
       // Our parameters are trimmed (`Block::parameters`).
-      case "Block":
-        return ["b", n.name, n.parameters.map((p: any) => p.expression.replace(/^[ \t\n\f\r]+|[ \t\n\f\r]+$/g, "")), nodes(n.children)];
-      // Not parsed yet (AGENTS.md): `@let` is text on our side, ICU an error.
-      case "Expansion":
+      case "Block": {
+        // Its template compiler drops a `@for` or `@if` whose parameters it reports: no reading to compare
+        const read = ["for", "if", "else if"].includes(n.name);
+        const reading = read ? ((readings ??= blockReadings(source)).get(n.startSourceSpan.start.offset) ?? UNKNOWN) : NO_READING;
+        return ["b", n.name, n.parameters.map((p: any) => p.expression.replace(/^[ \t\n\f\r]+|[ \t\n\f\r]+$/g, "")), nodes(n.children), reading];
+      }
+      // Our value is trimmed (`LetDeclaration::value`).
       case "LetDeclaration":
-        return ["t", slice(n.sourceSpan)];
+        return ["l", n.name, n.value.replace(/[ \t\n\f\r]+$/, "")];
+      // Ours are trimmed (`Icu`, `IcuCase`); Angular's lexer skips the whitespace at the start of a case.
+      case "Expansion":
+        return ["icu", n.switchValue.trim(), n.type.trim(), n.cases.map((c: any) => ["case", c.value, nodes(c.expression)])];
       default:
         throw new UnknownNode(`unexpected node ${n.constructor.name}`);
     }
   }
-  return mapNodes(nodes(rootNodes), mergeTexts);
+  const sig = mapNodes(nodes(rootNodes), mergeTexts);
+  return bindingError === null ? sig : `error: ${bindingError}`;
+}
+
+/** The names Angular's `parseAttribute` reads as a binding other than an interpolation. */
+const BOUND_NAME = /^(?:\*|i18n(?:-|$)|bind-|let-|ref-|#|on-|bindon-|@|\[\(.+\)\]$|\[.+\]$|\(.+\)$)/;
+/** What an oracle could not tell: it matches any reading of ours (`withUnknownAsOurs`). */
+export const UNKNOWN = "?";
+const NO_READING = [null, null, null, [], null];
+
+/** `oracle` with each `UNKNOWN` in it replaced by what `ours` holds there. */
+export function withUnknownAsOurs(ours: unknown, oracle: unknown): unknown {
+  if (oracle === UNKNOWN) return ours;
+  if (!Array.isArray(oracle) || !Array.isArray(ours)) return oracle;
+  return oracle.map((value, i) => withUnknownAsOurs(ours[i], value));
+}
+
+/** The `@for` and `@if` readings of Angular's template compiler (`parseTemplate`), by the block's start: `tasks/sig`'s `reading`. */
+// A block whose start holds an error it reports reads as `UNKNOWN`
+function blockReadings(source: string): Map<number, unknown> {
+  const readings = new Map<number, unknown>();
+  let parsed: any;
+  try {
+    parsed = compileTemplate(source);
+  } catch {
+    return readings;
+  }
+  const errors: number[] = (parsed.errors ?? []).map((e: any) => e.span.start.offset);
+  const set = (n: any, reading: unknown[]) => {
+    const { start, end } = n.startSourceSpan;
+    const reported = errors.some((at) => start.offset <= at && at < end.offset);
+    readings.set(start.offset, reported ? UNKNOWN : reading);
+  };
+  const slice = (span: any) => sliceOf(source, span);
+  const walk = (nodes: any[]) => {
+    for (const n of nodes) {
+      if (n.constructor.name === "ForLoopBlock") {
+        const lets = n.contextVariables.filter((v: any) => v.keySpan.start.offset !== v.keySpan.end.offset).map((v: any) => [slice(v.keySpan), slice(v.valueSpan)]);
+        set(n, [n.item.name, n.expression.source.trim(), n.trackBy.source.trim(), lets, null]);
+      } else if (n.constructor.name === "IfBlockBranch") {
+        set(n, [null, null, null, [], n.expressionAlias?.name ?? null]);
+      }
+      for (const value of Object.values(n)) {
+        if (Array.isArray(value)) walk(value.filter((x) => x?.sourceSpan !== undefined));
+        else if (value?.constructor?.name?.endsWith("Block")) walk([value]);
+      }
+    }
+  };
+  walk(parsed.nodes);
+  return readings;
+}
+
+const expressionParser = new ExpressionParser(new Lexer());
+/** The directive's own key is placed before the value, so that its spans tell it apart. */
+const KEY_OFFSET = -1e6;
+
+/** A `*x` value's microsyntax as Angular's compiler reads it, in `tasks/sig`'s shape; the error it reports. */
+function templateBindings(key: string, value: string): unknown[] | string {
+  const location = new ParseLocation(new ParseSourceFile(value, "t.html"), 0, 0, 0);
+  const { templateBindings, errors } = expressionParser.parseTemplateBindings(key, value, new ParseSourceSpan(location, location), KEY_OFFSET, 0);
+  if (errors.length > 0) return errors[0].msg;
+  const text = (k: any) => (k === null ? null : k.span.start < 0 ? null : value.slice(k.span.start, k.span.end));
+  return templateBindings.map((b: any) => {
+    if (b.constructor.name === "ExpressionBinding") return ["e", text(b.key), b.value === null ? null : b.value.source];
+    const start = b.sourceSpan.start;
+    return start >= 0 && /^let(?![\w$])/.test(value.slice(start)) ? ["l", text(b.key), text(b.value)] : ["a", text(b.value), text(b.key)];
+  });
 }
 
 /**
@@ -288,6 +398,7 @@ function mapNodes(nodes: any[], f: (nodes: any[]) => any[]): any[] {
   for (const n of nodes) {
     if (n[0] === "el") n[4] = mapNodes(n[4], f);
     if (n[0] === "b") n[3] = mapNodes(n[3], f);
+    if (n[0] === "icu") for (const c of n[3]) c[2] = mapNodes(c[2], f);
   }
   return f(nodes);
 }
@@ -371,8 +482,7 @@ function whatwgClosing(source: string): boolean {
 /**
  * Ours in the shape of Angular's AST (DIVERGENCES.md "How Angular's AST holds a node"): it drops doctypes,
  * and the bogus comments `<!` opens, which it reads as doctypes;
- * it reads a bogus comment `<?` opens, and CDATA, as text, trims comments,
- * and names `else   if` and `default   never` with one space (ours is the name as written).
+ * and it reads a bogus comment `<?` opens, and CDATA, as text, and trims comments.
  */
 function angularShape(nodes: any[]): any[] {
   const out = nodes
@@ -380,7 +490,15 @@ function angularShape(nodes: any[]): any[] {
     .map((n) => (n[0] === "x" ? ["t", n[1].slice(9, -3)] : n[0] === "bc" && n[2] === "<?" ? ["t", `<${n[1]}>`] : n));
   return bogusAsComment(mergeTexts(out)).map((n) => {
     if (n[0] === "c") return ["c", n[1].replace(/\r\n?/g, "\n").trim()];
-    if (n[0] === "b") return ["b", n[1].replace(/^else[^\S\r\n]+if$/, "else if").replace(/^default[^\S\r\n]+never$/, "default never"), ...n.slice(2)];
+    // Its lexer skips the whitespace at the start of a case
+    if (n[0] === "icu") {
+      for (const c of n[3]) {
+        const first = c[2][0];
+        if (first?.[0] !== "t") continue;
+        first[1] = first[1].replace(/^[\t-\r \xa0]+/, "");
+        if (first[1] === "") c[2].shift();
+      }
+    }
     // Its lexer reads `{{ }}` in RCDATA as text; its compiler binds it all the same, as we read it
     if (n[0] === "el" && ["textarea", "title"].includes(n[1].toLowerCase())) return [...n.slice(0, 4), mergeTexts(n[4], true)];
     return n;
@@ -430,18 +548,16 @@ export const DIALECTS: Record<string, DialectSpec> = {
     normalize: (sig) => mapNodes(sig, angularShape),
     quirks: {
       "implicit close after void": IMPLICIT_CLOSE_AFTER_VOID,
+      // ... and an ICU expression right after it becomes its child.
+      "ICU after void": new RegExp(`${VOID_TAG}\\{(?!\\{)`, "i"),
+      // Its lexer starts `@let` in an ICU case where a token starts.
+      "@let in an ICU case": /\{[^{}]*,[^{}]*,[^]*\{[^]*@let\s/,
       // Angular reads the whitespace after a body-less `@case` into its span.
       "fallthrough case": /@(?:case|default)\b(?:[^{}@]*?\))?[ \t\n\f\r]+@/,
     },
     mutationQuirks: {
       // Angular ends a tag name at `= < ' "` too; ours, printed as written, keeps them in it.
       "punctuation in a name": PUNCTUATION_IN_TAG_NAME,
-    },
-    pending: {
-      "@let": /@let\s/,
-      ICU: /\{[^{}]*,\s*(?:plural|select|selectordinal)\s*,/,
-      // `href="https://…"` holds no comment
-      "start-tag comment": new RegExp(`${IN_START_TAG}(?://|/\\*)`),
     },
   },
   vue: {

@@ -58,7 +58,8 @@ Vue SFC blocks are the exception: Vue's SFC parser reads them, not a browser, an
 
 ### Unquoted attribute values
 
-Ours: they end at whitespace or `>`, as in browsers and Vue; in Angular, a `/` right before `>` self-closes the element.
+Ours: they end at whitespace or `>`, as in browsers and Vue; in Angular, a `/` right before `>` self-closes the element,
+and a start-tag comment (`//`, `/*`) ends one, as Angular's compiler reads it (`<a b=c//d⏎>`).
 `angular-html-parser` also ends them at `/ ' " = <`.
 
 ```html
@@ -71,7 +72,7 @@ Ours: they end at whitespace or `>`, as in browsers and Vue; in Angular, a `/` r
 Prettier prints the second as `src="a.png"`, another URL (`oxc_formatter_htmlish`'s DIVERGENCES.md#unquoted-value-with-slash).
 Angular's compiler ends every unquoted value at `/`, so the only valid template with one is `<cmp a=b/>` (or `<cmp a=/>`), which depends on it
 (the Angular team keeps that reading, angular/angular#68804); it ends one at `=` too (`<a b=c=d>`), and Angular reads both so.
-At the other characters, or a `/` elsewhere, Angular reports it; ours keeps the shared reading.
+At the other characters, or any other `/`, Angular reports it; ours keeps the shared reading.
 `decided by: 1 in HTML (3 for the values angular-html-parser reports), 4 in Angular`
 `fixture: html/self-closing.html`, `fixture: angular/unquoted-value-self-closing.html`
 `runner: unquoted value with a quote or =`
@@ -101,8 +102,9 @@ Ours: an end tag runs to its first `>`, as in the HTML tokenizer (and Vue): what
 
 Ours: a void element closes before anything that follows it.
 `angular-html-parser` and Angular's compiler keep a void element on their stack until the next token.
-A doctype right after it becomes its child,
+A doctype right after it becomes its child, and in Angular an ICU expression,
 and a start tag right after it cannot implicitly close the void element's parent.
+Prettier prints such an ICU inside a void element with its end tag (`<br >{a, select, x {X}}</br/>`), which Angular reports.
 
 ```html
 <th><img src=x><td>
@@ -112,8 +114,8 @@ and a start tag right after it cannot implicitly close the void element's parent
 In Angular the output keeps the tags, so Angular nests them the same way again;
 what a printer adds between them is whitespace-only text, which Angular drops.
 `decided by: 2 in HTML (a token left on a stack), 4 in Angular`
-`fixture: html/implicit-close.html`, `fixture: angular/implicit-close.html`
-`runner: doctype after void`, `runner: implicit close after void`
+`fixture: html/implicit-close.html`, `fixture: angular/implicit-close.html`, `fixture: angular/icu.html`
+`runner: doctype after void`, `runner: implicit close after void`, `runner: ICU after void`
 
 ## HTML
 
@@ -211,7 +213,9 @@ but its tokenizer never applies it, as in Angular's compiler (but for an explici
 
 Ours: a `prefix:` is part of the element name: `<html:style>` and `<svg:rect>` are unknown HTML elements, with markup inside, as in browsers.
 `angular-html-parser` reads `<html:style>` as `style` in the HTML namespace and `<svg:rect>` as an SVG `rect`, as Angular's compiler does
-(a component template outside `<svg>` writes SVG elements so).
+(a component template outside `<svg>` writes SVG elements so);
+the compiler ends the raw text at `</style>`, the local name, which Angular reads with ours (`<html:style>x</style>`),
+where the fork ends it at `</html:style>`, which the compiler reports.
 Prettier lays them out as the elements the prefix names (`oxc_formatter_htmlish`'s DIVERGENCES.md#prefixed-script-style).
 
 ```html
@@ -220,7 +224,7 @@ Prettier lays them out as the elements the prefix names (`oxc_formatter_htmlish`
 ```
 
 `decided by: 1`
-`fixture: html/namespace-prefix.html`, `fixture: angular/compiler-readings.html`
+`fixture: html/namespace-prefix.html`, `fixture: angular/compiler-readings.html`, `fixture: angular/namespace-prefixes.html`
 `runner: namespace prefix`
 
 ### Self-closing non-void elements
@@ -333,15 +337,52 @@ so a fallthrough `@case` takes the whitespace up to the next `@case` into its sp
 `fixture: angular/blocks.html`
 `runner: fallthrough case`
 
+### Inside an ICU case
+
+Ours: a case's content never starts a block or `@let`, as Angular's lexer reads text there,
+and its elements inherit the namespace around the expression.
+Angular's lexer starts them where a token starts (right after the case's `{` and whitespace, or after markup),
+and builds a case's content apart, its elements in the HTML namespace.
+
+```html
+{a, select, x { @let y = 1; z}}
+<!-- Angular: a @let declaration, then the text " z"; ours: the text " @let y = 1; z" -->
+```
+
+A block there is an error in Angular (the case's `}` closes the case, not the block); ours reads its `{` as an ICU expression.
+Printed as written, the output reads to Angular as the input did.
+`decided by: representation`
+`fixture: angular/icu.html`
+`runner: @let in an ICU case`
+
 ### How Angular's AST holds a node
 
 Ours: every node as written: a doctype, a CDATA section, a comment's raw content,
 and what `<!` or `<?` opens without a comment or CDATA as a bogus comment up to its `>`, as in the HTML tokenizer (`<!x>`, `<?xml ?>`).
+It keeps the whitespace at the start of an ICU case as text, and leaves the trailing whitespace out of a `//` start-tag comment.
 Angular's compiler drops doctypes, and reads `<!x>` as one; it reads CDATA and `<?xml ?>` as text, trims a comment,
-and names `@else   if` and `@default   never` with one space.
+names `@else   if` and `@default   never` with one space,
+skips the whitespace at the start of an ICU case, and keeps it at the end of a `//` start-tag comment.
 Printed as written, the output reads to Angular as the input did.
 `decided by: representation`
-`fixture: angular/compiler-readings.html`, `fixture: angular/blocks.html`
+`fixture: angular/compiler-readings.html`, `fixture: angular/blocks.html`, `fixture: angular/icu.html`, `fixture: angular/start-tag-comments.html`
+
+### Block names read by prefix
+
+Ours: `else if` and `default never` are the whole name, whitespace between the words aside.
+Angular's compiler matches them by prefix (`/^else[^\S\r\n]+if/`, `/^default[^\S\r\n]+never/`) and compiles a typo:
+`@else iffy (b) {}` is an `@else if`, and `@default nevermore;` a `@default never;`.
+Ours reads the first as a block named `else iffy`, printed as written, which Angular reads as it did;
+the second is an error (`IncompleteBlock`), as a shape no template means and none of the local corpora holds.
+
+```html
+@if (a) {x} @else iffy (b) {y}
+@switch (a) { @case (1) {x} @default nevermore; }
+<!-- Angular: an @else if, and a @default never; ours: a block named "else iffy", and an error -->
+```
+
+`decided by: representation for else if, 3, cost for default never`
+`fixture: angular/blocks.html`, `fixture: angular/default-never-prefix.html`
 
 ### Self-closing native elements
 

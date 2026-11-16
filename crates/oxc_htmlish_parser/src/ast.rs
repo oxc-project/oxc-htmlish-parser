@@ -5,11 +5,12 @@
 //! - No cooked values: names, attribute values and text are [`Span`]s into the original source.
 //!   Entities are never decoded.
 //! - Facts a printer would otherwise re-derive from the source or the tag table
-//!   (whitespace around text, how a tag was written, void and raw text elements, directive parts) are fields.
+//!   (whitespace around text, how a tag was written, void and raw text elements, directive parts and binding kinds,
+//!   `v-for`'s, `@for`'s and a microsyntax's splits) are fields; spans that follow from others are methods
+//!   ([`Attribute::span`], [`AngularAttribute::target`]).
 //! - Formatter policy (CSS display, whitespace sensitivity) stays out.
 //!
 //! Dialect constructs that are not parsed yet slot in as new [`NodeKind`] / [`AttributeKind`] variants:
-//! Angular `@let` and ICU;
 //! Svelte `{expr}` tags and blocks;
 //! Astro `{expr}` holding htmlish chunks.
 
@@ -93,6 +94,12 @@ pub enum NodeKind<'a> {
     Cdata,
     /// An Angular control flow block (`@if (a) { … }`); its content is the node's children.
     Block(ArenaBox<'a, Block<'a>>),
+    /// `@let name = value;` (Angular).
+    LetDeclaration(ArenaBox<'a, LetDeclaration>),
+    /// An Angular ICU expression (`{n, plural, =0 {none} other {many}}`); its cases are the node's children.
+    Icu(ArenaBox<'a, Icu>),
+    /// A case of an [`NodeKind::Icu`] (`=0 {none}`); its content is the node's children.
+    IcuCase(IcuCase),
     /// The end tag of an `html`, `head` or `body` whose start tag is omitted (`<title>t</title></head>`):
     /// HTML inserts the element around the content, which stays where it is; the end tag follows it.
     EndTag(ArenaBox<'a, EndTag>),
@@ -106,6 +113,7 @@ pub struct Element<'a> {
     /// in Angular without its namespace prefix (`svg:rect` is `rect`).
     pub key: &'a str,
     pub namespace: Namespace,
+    /// In order, Angular's start-tag comments among them ([`AttributeKind::Comment`]).
     pub attributes: ArenaVec<'a, Attribute<'a>>,
     /// `<name …>`, including the `/>` when written; in a Vue SFC, a start tag a `</` ends has no `>` (`<C a="b"</C>`).
     pub start_tag: Span,
@@ -158,7 +166,16 @@ pub struct Attribute<'a> {
     pub name: Span,
     pub value: Option<AttributeValue>,
     pub kind: AttributeKind<'a>,
-    pub span: Span,
+}
+
+impl Attribute<'_> {
+    /// From the name through the value's closing quote.
+    pub fn span(&self) -> Span {
+        let end = self
+            .value
+            .map_or(self.name.end, |value| value.span.end + u32::from(value.quote != Quote::None));
+        Span::new(self.name.start, end)
+    }
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -179,6 +196,64 @@ pub enum Quote {
 pub enum AttributeKind<'a> {
     Plain,
     Vue(ArenaBox<'a, VueDirective<'a>>),
+    /// An Angular start-tag comment, among the attributes as written: [`Attribute::name`] is all of it, and there is no value.
+    /// `//` up to the line break, its trailing whitespace left out (the `>` it runs past is in it: `<div // c>`), or `/*` through `*/`.
+    Comment,
+    Angular(AngularAttribute<'a>),
+}
+
+/// An Angular binding or i18n marker; the part of the name it binds is [`target`](Self::target).
+///
+/// Read as the compiler's `parseAttribute` tells a binding from a plain attribute.
+/// Its other prefixes stay [`AttributeKind::Plain`] (`#ref`, `let-x`, `@animation`, and the old `bind-`, `on-`, `bindon-`, `ref-`),
+/// and so do the delimiters around an empty name (`[]`) or that do not close (`[(x]`).
+#[derive(Debug)]
+pub enum AngularAttribute<'a> {
+    /// `[x]`.
+    Property,
+    /// `(x)`.
+    Event,
+    /// `[(x)]`.
+    TwoWay,
+    /// `*x`: a structural directive, its value split as its microsyntax ([`TemplateBinding`]);
+    /// `None` without a value, and where Angular reports one.
+    /// Split as written: Angular splits the value with its entities decoded, so `&#59;` is a `;` there, but not here.
+    Template(Option<ArenaBox<'a, ArenaVec<'a, TemplateBinding>>>),
+    /// `i18n`, or `i18n-x`, which marks the attribute `x` for translation.
+    I18n,
+    /// Another name with `{{ }}` in its value (`title="Hi {{ name }}"`), which Angular binds:
+    /// the expressions, between each `{{` and `}}`, read as in text.
+    Interpolation(ArenaBox<'a, ArenaVec<'a, Span>>),
+}
+
+impl AngularAttribute<'_> {
+    /// The part of `name` (the attribute's) between the delimiters: `x` of `[(x)]`, `i18n-x` and `*x`; empty for `i18n`.
+    pub fn target(&self, name: Span) -> Span {
+        let (start, end) = match self {
+            Self::Property | Self::Event => (1, 1),
+            Self::TwoWay => (2, 2),
+            Self::Template(_) => (1, 0),
+            Self::Interpolation(_) => (0, 0),
+            Self::I18n => ((name.end - name.start).min(5), 0),
+        };
+        Span::new(name.start + start, name.end - end)
+    }
+}
+
+/// A binding of a structural directive's microsyntax (`*ngFor="let item of items; trackBy: f"`).
+///
+/// Read as Angular's compiler reads it (`parseTemplateBindings`); each span inside [`Attribute::value`].
+/// A key is identifiers, keywords or strings joined by `-`, as written; the `:` and the `;` or `,` after a binding are optional.
+#[derive(Clone, Copy, Debug)]
+pub enum TemplateBinding {
+    /// `key: expression`, or the directive's own first (`key` `None`: `items` of `*ngIf="items"`);
+    /// `expression` `None` when none follows (`*ngIf="as x"`).
+    Expression { key: Option<Span>, expression: Option<Span> },
+    /// `let name` / `let name = value`.
+    Let { name: Span, value: Option<Span> },
+    /// `as alias`, right after the [`Expression`](Self::Expression) whose key it names (`items | async as list`),
+    /// or after a key of its own (`index as i`).
+    As { key: Option<Span>, alias: Span },
 }
 
 /// A Vue directive name split into its parts, each a span inside [`Attribute::name`].
@@ -281,14 +356,148 @@ pub struct ConditionalStart {
 pub struct Block<'a> {
     /// After `@`, as written (`if`, `else if`, `else   if`).
     pub name: Span,
-    /// Between the parentheses, split at `;` outside quotes and parentheses, each trimmed.
+    /// The name as Angular's compiler reads it.
+    pub kind: BlockKind,
+    /// Between the parentheses, split at `;` outside quotes and parentheses.
     /// Empty without parentheses.
-    pub parameters: ArenaVec<'a, Span>,
+    pub parameters: ArenaVec<'a, BlockParameter<'a>>,
     /// From `@` through the `{`, or through the parameters (or `;`) for a block without a body.
     pub open: Span,
     /// The `}`; `None` for a block without a body
     /// (`@case (a)` right before another case, `@default never;`).
     pub close: Option<Span>,
+}
+
+/// An Angular block's name, as its compiler reads it: the words of `else if` and `default never` are apart by
+/// whitespace that its `/^else[^\S\r\n]+if/` takes (NBSP too), not a line break or U+000E–U+001F.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BlockKind {
+    If,
+    ElseIf,
+    Else,
+    For,
+    Empty,
+    Switch,
+    Case,
+    Default,
+    /// `default never`, which may go without a body (`@default never;`; then [`Block::close`] is `None`).
+    DefaultNever,
+    Defer,
+    Placeholder,
+    Loading,
+    Error,
+    Boundary,
+    Content,
+    /// A name it reports (`@iffy`, `@else⏎if`, `@else iffy`; DIVERGENCES.md#block-names-read-by-prefix).
+    Unknown,
+}
+
+impl BlockKind {
+    /// Every kind but [`Unknown`](Self::Unknown).
+    pub const KNOWN: [Self; 15] = [
+        Self::If,
+        Self::ElseIf,
+        Self::Else,
+        Self::For,
+        Self::Empty,
+        Self::Switch,
+        Self::Case,
+        Self::Default,
+        Self::DefaultNever,
+        Self::Defer,
+        Self::Placeholder,
+        Self::Loading,
+        Self::Error,
+        Self::Boundary,
+        Self::Content,
+    ];
+
+    /// The name with one space between its words; `None` for [`Unknown`](Self::Unknown).
+    pub fn name(self) -> Option<&'static str> {
+        Some(match self {
+            Self::If => "if",
+            Self::ElseIf => "else if",
+            Self::Else => "else",
+            Self::For => "for",
+            Self::Empty => "empty",
+            Self::Switch => "switch",
+            Self::Case => "case",
+            Self::Default => "default",
+            Self::DefaultNever => "default never",
+            Self::Defer => "defer",
+            Self::Placeholder => "placeholder",
+            Self::Loading => "loading",
+            Self::Error => "error",
+            Self::Boundary => "boundary",
+            Self::Content => "content",
+            Self::Unknown => return None,
+        })
+    }
+}
+
+#[derive(Debug)]
+pub struct BlockParameter<'a> {
+    /// Trimmed.
+    pub span: Span,
+    pub kind: BlockParameterKind<'a>,
+}
+
+/// A parameter of `@for`, `@if` or `@else if`, split as Angular's compiler reads it
+/// (`parseForLoopParameters`, `parseConditionalBlockParameters`), each part trimmed and inside [`BlockParameter::span`].
+///
+/// [`Plain`](Self::Plain) for the other blocks' parameters, the first of `@if`, and a shape the compiler reports;
+/// the checks it makes of the names (`$index`, duplicates) are not repeated.
+#[derive(Debug)]
+pub enum BlockParameterKind<'a> {
+    Plain,
+    /// `@for`'s first: `item of expression`, inside the parentheses Angular strips (`(item of items)`).
+    ForOf {
+        item: Span,
+        expression: Span,
+    },
+    /// `@for`'s `track expression`.
+    Track {
+        expression: Span,
+    },
+    /// `@for`'s `let name = variable, …`.
+    Let(ArenaVec<'a, LetVariable>),
+    /// `@if`'s and `@else if`'s `as alias`.
+    As {
+        alias: Span,
+    },
+}
+
+/// `i = $index` of `@for`'s `let i = $index, e = $even`.
+#[derive(Clone, Copy, Debug)]
+pub struct LetVariable {
+    pub name: Span,
+    pub value: Span,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct LetDeclaration {
+    /// After `@let` and whitespace; empty when none is written (`@let = 1;`).
+    pub name: Span,
+    /// Between `=` and `;`, trimmed.
+    pub value: Span,
+}
+
+/// The whitespace between the cases is no node, as in Angular's AST;
+/// at the start of a case it is text, which Angular's lexer skips.
+#[derive(Clone, Copy, Debug)]
+pub struct Icu {
+    /// Before the first `,`, trimmed (`n`).
+    pub expression: Span,
+    /// Between the `,`s, trimmed (`plural`, `select`).
+    pub type_name: Span,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct IcuCase {
+    /// Before the `{`, trimmed (`=0`, `other`).
+    pub value: Span,
+    /// The offset of its `{`; the `}` ends the node's span.
+    pub open: u32,
 }
 
 #[derive(Clone, Copy, Debug)]

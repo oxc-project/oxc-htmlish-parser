@@ -7,11 +7,10 @@
 // `<source>` as a JSON string literal is unescaped (`"<a> </a>"`); `-` reads it from stdin.
 // `all` runs every dialect (step 4's shared reading), the source in `<template>` for Vue unless it is a file already.
 import fs from "node:fs";
-import { parseTemplate } from "@angular/compiler";
 import { compile as compileVue, parse as parseVue } from "@vue/compiler-dom";
 import { parse as parseDocument, parseFragment } from "parse5";
 import * as prettier from "prettier";
-import { DIALECTS, matchShape, ours } from "./dialects.ts";
+import { compileTemplate, DIALECTS, matchShape, ours, withUnknownAsOurs } from "./dialects.ts";
 
 const [which, arg] = process.argv.slice(2);
 if (!(which in DIALECTS || which === "all") || arg === undefined) {
@@ -58,7 +57,7 @@ function normErrors(dialect: string, source: string): string[] {
     }
     return errors;
   }
-  return parseTemplate(source, "template.html", { preserveWhitespaces: true }).errors?.map((e: any) => e.msg) ?? [];
+  return compileTemplate(source).errors?.map((e: any) => e.msg) ?? [];
 }
 
 /** What browsers build: parse5, as a fragment in `<body>` unless the input is a page, with scripting on. */
@@ -96,6 +95,7 @@ async function probe(dialect: string, source: string) {
   let oracle: unknown;
   try {
     oracle = spec.oracle(source);
+    oracle = withUnknownAsOurs(normalized, oracle);
   } catch (e) {
     oracle = `threw: ${e}`;
   }
