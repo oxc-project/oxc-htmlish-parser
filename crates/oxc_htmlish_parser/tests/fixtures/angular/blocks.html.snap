@@ -5,6 +5,9 @@ Root sfc=false
   Element [1..3] "ul" Html end_tag=[125..130] "</ul>"
     Text [4..7] "\n  " (nl|nl)
     Block name=[8..11] "for" parameters=["[13..26] \"item of items\"", "[28..41] \"track item.id\"", "[43..57] \"let i = $index\""] open=[7..60] "@for (item of items; track item.id; let i = $index) {" close=[92..93] "}"
+      % for item=[13..17] "item" of=[21..26] "items"
+      % track [34..41] "item.id"
+      % let [47..48] "i" = [51..57] "$index"
       Text [60..65] "\n    " (nl|nl)
       Element [66..68] "li" Html end_tag=[84..89] "</li>"
         Interpolation expression=[71..82] " item.name "

@@ -332,14 +332,53 @@ pub struct ConditionalStart {
 pub struct Block<'a> {
     /// After `@`, as written (`if`, `else if`, `else   if`).
     pub name: Span,
-    /// Between the parentheses, split at `;` outside quotes and parentheses, each trimmed.
+    /// Between the parentheses, split at `;` outside quotes and parentheses.
     /// Empty without parentheses.
-    pub parameters: ArenaVec<'a, Span>,
+    pub parameters: ArenaVec<'a, BlockParameter<'a>>,
     /// From `@` through the `{`, or through the parameters (or `;`) for a block without a body.
     pub open: Span,
     /// The `}`; `None` for a block without a body
     /// (`@case (a)` right before another case, `@default never;`).
     pub close: Option<Span>,
+}
+
+#[derive(Debug)]
+pub struct BlockParameter<'a> {
+    /// Trimmed.
+    pub span: Span,
+    pub kind: BlockParameterKind<'a>,
+}
+
+/// A parameter of `@for`, `@if` or `@else if`, split as Angular's compiler reads it
+/// (`parseForLoopParameters`, `parseConditionalBlockParameters`), each part trimmed and inside [`BlockParameter::span`].
+///
+/// [`Plain`](Self::Plain) for the other blocks' parameters, the first of `@if`, and a shape the compiler reports;
+/// the checks it makes of the names (`$index`, duplicates) are not repeated.
+#[derive(Debug)]
+pub enum BlockParameterKind<'a> {
+    Plain,
+    /// `@for`'s first: `item of expression`, inside the parentheses Angular strips (`(item of items)`).
+    ForOf {
+        item: Span,
+        expression: Span,
+    },
+    /// `@for`'s `track expression`.
+    Track {
+        expression: Span,
+    },
+    /// `@for`'s `let name = variable, …`.
+    Let(ArenaVec<'a, LetVariable>),
+    /// `@if`'s and `@else if`'s `as alias`.
+    As {
+        alias: Span,
+    },
+}
+
+/// `i = $index` of `@for`'s `let i = $index, e = $even`.
+#[derive(Clone, Copy, Debug)]
+pub struct LetVariable {
+    pub name: Span,
+    pub value: Span,
 }
 
 #[derive(Clone, Copy, Debug)]

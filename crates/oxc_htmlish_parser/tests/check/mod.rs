@@ -1,11 +1,12 @@
 //! The AST invariants a formatter relies on, shared by `tests/ast.rs` and `tasks/sig` (the differential fuzz):
 //! links are consistent (`next` chains end at `last_child`);
 //! siblings are ordered and disjoint, inside their parent, and so are attributes inside the start tag;
-//! an attribute holds its name, then its value; a directive's parts are in the name, in order, and `v-for`'s in the value.
+//! an attribute holds its name, then its value; a directive's parts are in the name, in order, and `v-for`'s in the value;
+//! a block's parameters are in its start, in order, and their parts in each.
 
 use oxc_htmlish_parser::{
     Span,
-    ast::{AttributeKind, NodeId, NodeKind, Root},
+    ast::{AttributeKind, BlockParameterKind, NodeId, NodeKind, Root},
 };
 
 /// The first broken invariant under `id`.
@@ -60,7 +61,32 @@ pub fn check(root: &Root<'_>, id: NodeId) -> Result<(), String> {
             Span::new(el.start_tag.end, el.end_tag.map_or(parent.span.end, |tag| tag.span.start))
         }
         NodeKind::ConditionalComment(n) => n.content,
-        NodeKind::Block(b) => Span::new(b.open.end, b.close.map_or(parent.span.end, |c| c.start)),
+        NodeKind::Block(b) => {
+            let mut at = b.open.start;
+            for parameter in &b.parameters {
+                let span = parameter.span;
+                let parts: Vec<Span> = match &parameter.kind {
+                    BlockParameterKind::Plain => vec![],
+                    BlockParameterKind::ForOf { item, expression } => vec![*item, *expression],
+                    BlockParameterKind::Track { expression } => vec![*expression],
+                    BlockParameterKind::Let(variables) => {
+                        variables.iter().flat_map(|v| [v.name, v.value]).collect()
+                    }
+                    BlockParameterKind::As { alias } => vec![*alias],
+                };
+                let bounds = parts.iter().flat_map(|part| [part.start, part.end]);
+                let bounds =
+                    [at, span.start].into_iter().chain(bounds).chain([span.end, b.open.end]);
+                if !bounds.is_sorted() {
+                    return Err(format!(
+                        "block parameter {parameter:?} after {at} in {:?}",
+                        b.open
+                    ));
+                }
+                at = span.end;
+            }
+            Span::new(b.open.end, b.close.map_or(parent.span.end, |c| c.start))
+        }
         NodeKind::IcuCase(c) => Span::new(c.open + 1, parent.span.end - 1),
         _ => parent.span,
     };

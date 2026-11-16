@@ -1,0 +1,9 @@
+@for (item of items; track item.id; let i = $index, e = $even) {x}
+@for ( ( item  of  items | async ) ;track $index;let  odd=$odd) {x}
+@for (item of items; track trackFn(item); let i = $index = 1) {x}
+@for (of items; track $index) {x}
+@for (item in items; trackBy: f) {x}
+@if (user$ | async; as user) {a} @else if (b;as  c) {b} @else {c}
+@if (a; as b c) {a}
+@switch (a) { @case (1) {x} }
+@defer (on viewport; prefetch on idle) {x}

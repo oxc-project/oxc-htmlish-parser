@@ -129,16 +129,16 @@ fn for_expression(source: &str, value: Span) -> Option<VueFor> {
 }
 
 /// JS's `\s` and `trim()`: Unicode's White_Space without U+0085, and U+FEFF.
-fn is_js_space(c: char) -> bool {
+pub(super) fn is_js_space(c: char) -> bool {
     (c.is_whitespace() && c != '\u{85}') || c == '\u{feff}'
 }
 
-fn skip_space(s: &str, from: usize) -> usize {
+pub(super) fn skip_space(s: &str, from: usize) -> usize {
     s.len() - s[from..].trim_start_matches(is_js_space).len()
 }
 
 /// `range` of `s` without JS whitespace at its edges.
-fn trim(s: &str, (start, end): (usize, usize)) -> (usize, usize) {
+pub(super) fn trim(s: &str, (start, end): (usize, usize)) -> (usize, usize) {
     let part = &s[start..end];
     let lead = part.len() - part.trim_start_matches(is_js_space).len();
     let trail = part.trim_end_matches(is_js_space).len();

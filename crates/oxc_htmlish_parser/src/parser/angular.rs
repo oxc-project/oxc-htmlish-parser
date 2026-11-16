@@ -133,6 +133,13 @@ impl<'a> Builder<'a> {
             at = self.skip_ws(at);
         }
         let name = &self.source[name_start..name_end];
+        let reading = control_flow::Reading::of(name);
+        let parameters = ArenaVec::from_iter_in(
+            parameters.iter().enumerate().map(|(index, &parameter)| {
+                control_flow::parameter(self.allocator, self.source, reading, index, parameter)
+            }),
+            &self.allocator,
+        );
         let body = self.byte(at) == Some(b'{');
         // `@default never;` has no body;
         // cases fall through to the next one without one.

@@ -77,7 +77,7 @@ fn node(source: &str, root: &Root<'_>, id: NodeId) -> Value {
         // Never compared: the oracles report it
         NodeKind::EndTag(_) => raw("e"),
         NodeKind::Block(b) => {
-            let parameters: Vec<&str> = b.parameters.iter().map(|p| p.slice(source)).collect();
+            let parameters: Vec<&str> = b.parameters.iter().map(|p| p.span.slice(source)).collect();
             json!(["b", b.name.slice(source), parameters, children(source, root, id)])
         }
         NodeKind::LetDeclaration(n) => json!(["l", n.name.slice(source), n.value.slice(source)]),

@@ -10,7 +10,10 @@ use insta::{Settings, assert_snapshot, glob};
 
 use oxc_htmlish_parser::{
     Allocator, Dialect, Parser, Span,
-    ast::{Attribute, AttributeKind, Content, NodeId, NodeKind, Quote, Root, Whitespace},
+    ast::{
+        Attribute, AttributeKind, BlockParameterKind, Content, NodeId, NodeKind, Quote, Root,
+        Whitespace,
+    },
 };
 
 mod check;
@@ -156,7 +159,7 @@ impl Printer<'_, '_> {
             NodeKind::Cdata => format!("Cdata {}", q(node.span)),
             NodeKind::EndTag(tag) => format!("EndTag name={}", q(tag.name)),
             NodeKind::Block(b) => {
-                let parameters: Vec<_> = b.parameters.iter().map(|p| q(*p)).collect();
+                let parameters: Vec<_> = b.parameters.iter().map(|p| q(p.span)).collect();
                 let close = b.close.map_or("no_body".to_string(), |c| format!("close={}", q(c)));
                 format!(
                     "Block name={} parameters={parameters:?} open={} {close}",
@@ -175,6 +178,13 @@ impl Printer<'_, '_> {
             }
         };
         self.line(&head);
+        if let NodeKind::Block(block) = &node.kind {
+            self.depth += 1;
+            for parameter in &block.parameters {
+                self.block_parameter(&parameter.kind);
+            }
+            self.depth -= 1;
+        }
         if let NodeKind::Element(el) = &node.kind {
             self.depth += 1;
             for attribute in &el.attributes {
@@ -183,6 +193,24 @@ impl Printer<'_, '_> {
             self.depth -= 1;
         }
         self.children(id);
+    }
+
+    fn block_parameter(&mut self, kind: &BlockParameterKind<'_>) {
+        let q = |span| quoted(self.source, span);
+        let line = match kind {
+            BlockParameterKind::Plain => return,
+            BlockParameterKind::ForOf { item, expression } => {
+                format!("% for item={} of={}", q(*item), q(*expression))
+            }
+            BlockParameterKind::Track { expression } => format!("% track {}", q(*expression)),
+            BlockParameterKind::Let(variables) => {
+                let variables: Vec<_> =
+                    variables.iter().map(|v| format!("{} = {}", q(v.name), q(v.value))).collect();
+                format!("% let {}", variables.join(", "))
+            }
+            BlockParameterKind::As { alias } => format!("% as {}", q(*alias)),
+        };
+        self.line(&line);
     }
 
     fn attribute(&mut self, attribute: &Attribute<'_>) {
