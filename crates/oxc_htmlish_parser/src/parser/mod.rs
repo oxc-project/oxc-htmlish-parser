@@ -196,10 +196,13 @@ struct Context {
     v_pre: bool,
     /// Inside an Angular ICU case: `}` closes it, and blocks and `@let` do not start.
     icu: bool,
+    /// Angular: in the HTML namespace under a prefix that names none (`<x:g>`, `<html:p>`),
+    /// which its compiler gives the descendants too (`:x:p`): the tag table applies to no name.
+    prefixed: bool,
 }
 
 impl Context {
-    const ROOT: Self = Self { namespace: Namespace::Html, v_pre: false, icu: false };
+    const ROOT: Self = Self { namespace: Namespace::Html, v_pre: false, icu: false, prefixed: false };
 }
 
 enum Stop {
@@ -504,11 +507,19 @@ impl<'a> Builder<'a> {
     }
 
     /// The tag table as the dialect reads it: the one place for case and namespace policy.
-    /// `svg_prefixed`: Angular's `svg:` prefix named the namespace.
-    fn tag(&self, name: &str, lowercase: &str, namespace: Namespace, svg_prefixed: bool) -> Tag {
+    /// `svg_prefixed`: Angular's `svg:` prefix named the namespace;
+    /// `prefixed`: an Angular prefix that names none applies ([`Context::prefixed`]), read as a foreign namespace.
+    fn tag(
+        &self,
+        name: &str,
+        lowercase: &str,
+        namespace: Namespace,
+        svg_prefixed: bool,
+        prefixed: bool,
+    ) -> Tag {
         let table = tags::html(lowercase, self.rules.whatwg);
         if self.rules.html {
-            if namespace == Namespace::Html {
+            if namespace == Namespace::Html && !prefixed {
                 return table;
             }
             // `angular-html-parser` reads raw text by name in every namespace, and nothing else of the table.

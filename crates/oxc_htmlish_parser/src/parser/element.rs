@@ -28,7 +28,8 @@ impl<'a> Builder<'a> {
 
         let mut buf = [0; 16];
         let lowercase = tags::lowercase(name, &mut buf);
-        if self.tag(name, lowercase, self.context().namespace, false).void {
+        let context = self.context();
+        if self.tag(name, lowercase, context.namespace, false, context.prefixed).void {
             return error(DiagnosticKind::VoidEndTag, tag.span);
         }
         // Every dialect so far matches end tags case-insensitively
@@ -170,9 +171,10 @@ impl<'a> Builder<'a> {
         };
 
         // The outermost open element this start tag closes, through omittable ones with `whatwg`
-        // (`<li><p>a<li>`, `<tbody><tr><td>a<tbody>`; DIVERGENCES.md#implicit-end-tags).
+        // (`<li><p>a<li>`, `<tbody><tr><td>a<tbody>`; DIVERGENCES.md#implicit-end-tags);
+        // in Angular none for a prefixed name, which its compiler looks up with the prefix (`:svg:div`).
         let mut closed = None;
-        let mut end = self.stack.len();
+        let mut end = if prefixed.is_some() { 0 } else { self.stack.len() };
         while let Some(index) = self.stack[..end].last().and_then(|open| open.look) {
             let open = &self.stack[index];
             if open.tag.closed_by.contains(&key) {
@@ -189,7 +191,10 @@ impl<'a> Builder<'a> {
 
         let inherited = self.context();
         let namespace = prefixed.unwrap_or_else(|| tags::namespace(key, inherited.namespace));
-        let tag = self.tag(name_str, lowercase, namespace, prefixed == Some(Namespace::Svg));
+        let in_prefix = namespace == Namespace::Html
+            && (prefixed == Some(Namespace::Html) || (prefixed.is_none() && inherited.prefixed));
+        let tag =
+            self.tag(name_str, lowercase, namespace, prefixed == Some(Namespace::Svg), in_prefix);
         let closes_now = tag.void
             || (self_closing
                 && (self.rules.self_close_any
@@ -256,6 +261,7 @@ impl<'a> Builder<'a> {
             context: Context {
                 namespace: tags::children_namespace(local, namespace),
                 v_pre,
+                prefixed: in_prefix,
                 ..inherited
             },
         };
