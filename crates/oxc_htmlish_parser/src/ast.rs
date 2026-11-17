@@ -339,7 +339,7 @@ impl Interpolation<'_> {
     }
 }
 
-/// An Angular expression (`{{ }}`, a property binding's value), as its compiler reads it (`parsePipe`).
+/// An Angular expression (`{{ }}`'s, a binding's value, a microsyntax's, a block parameter's, `@let`'s), as its compiler reads it (`parsePipe`).
 ///
 /// The pipes at its root split off, and the comment it ends in; each span is from the first token to the last.
 /// Read as written: Angular reads it with its character references decoded, so `&quot;` is a `"` there, but not here.

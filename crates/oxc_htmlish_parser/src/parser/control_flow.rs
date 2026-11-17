@@ -1,5 +1,5 @@
 //! Angular's `@for` and `@if` parameters, split as its compiler reads them
-//! (`parseForLoopParameters`, `parseConditionalBlockParameters`).
+//! (`parseForLoopParameters`, `parseConditionalBlockParameters`), and their expressions' readings (`angular_expression.rs`).
 
 use oxc_allocator::{Allocator, ArenaVec};
 

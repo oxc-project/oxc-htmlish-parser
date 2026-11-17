@@ -1,6 +1,7 @@
 //! Angular's expressions, on its compiler's lexer's tokens, which takes no JS parse:
 //! the lexer, shared with the microsyntax (`microsyntax.rs`),
-//! and an expression's pipes at the root and its comment (`parsePipe`, `_stripComments`).
+//! an expression's pipes at the root and its comment (`parsePipe`, `_stripComments`),
+//! and an action's statements and its comment (`parseAction`).
 
 use oxc_allocator::{Allocator, ArenaBox, ArenaVec};
 
@@ -95,12 +96,19 @@ impl<'s> Code<'s> {
         Some(Self { tokens, comment, base })
     }
 
+    /// Where the tokens in `[first, end)` are; `None` when there are none.
+    fn span(&self, first: usize, end: usize) -> Option<Span> {
+        (first < end).then(|| {
+            span(self.base + self.tokens[first].start, self.base + self.tokens[end - 1].end)
+        })
+    }
+
     /// The tokens in `[first, end)` as a piece of code; `None` when there are none.
     fn piece(&self, first: usize, end: usize) -> Option<AngularCode> {
-        (first < end).then(|| AngularCode {
-            span: span(self.base + self.tokens[first].start, self.base + self.tokens[end - 1].end),
-            conditional: self.tokens[first..end].iter().any(|t| t.is(Kind::Operator, "?"))
-                && is_conditional(&self.tokens[first..end]),
+        let tokens = &self.tokens[first..end];
+        Some(AngularCode {
+            span: self.span(first, end)?,
+            conditional: tokens.iter().any(|t| t.is(Kind::Operator, "?")) && is_conditional(tokens),
         })
     }
 }
@@ -139,7 +147,8 @@ pub fn action<'a>(
     Some(ArenaBox::new_in(AngularAction { statements, comment: code.comment }, &allocator))
 }
 
-/// The expression at `at` (`{{ }}`'s, a property binding's value) as Angular reads it;
+/// The expression at `at` (`{{ }}`'s, a property binding's value, a microsyntax's, a block parameter's, `@let`'s)
+/// as Angular reads it (`parseBinding`): its code, the pipes at its root and its comment;
 /// `None` where it reports an error the tokens show (no code, a `;`, a `:` no `?` or pipe takes, a pipe's name missing,
 /// a bracket left open, `{{` and `}}` in it).
 pub fn expression<'a>(
@@ -149,8 +158,6 @@ pub fn expression<'a>(
 ) -> Option<ArenaBox<'a, AngularExpression<'a>>> {
     let read = Code::read(source, at)?;
     let tokens = &read.tokens;
-    let comment = read.comment;
-    let base = read.base;
 
     // The root's `|` and the `:` after one, which end a segment: the code, a pipe's name or one of its arguments.
     // Angular has no bitwise or: any other `|` is a pipe too, which JS does not read so
@@ -178,13 +185,9 @@ pub fn expression<'a>(
     if depth > 0 {
         return None;
     }
-    let segment = |first: usize, end: usize| {
-        (first < end).then(|| span(base + tokens[first].start, base + tokens[end - 1].end))
-    };
-    let code_of = |first: usize, end: usize| read.piece(first, end);
     let mut ends = breaks.iter().copied().chain([tokens.len()]);
     let code_end = ends.next()?;
-    let code = code_of(0, code_end)?;
+    let code = read.piece(0, code_end)?;
     let mut pipes: ArenaVec<'a, Pipe<'a>> = ArenaVec::new_in(&allocator);
     let mut first = code_end + 1;
     for end in ends {
@@ -193,14 +196,16 @@ pub fn expression<'a>(
             if end - first != 1 || !matches!(tokens[first].kind, Kind::Identifier | Kind::Keyword) {
                 return None;
             }
-            pipes
-                .push(Pipe { name: segment(first, end)?, arguments: ArenaVec::new_in(&allocator) });
+            pipes.push(Pipe {
+                name: read.span(first, end)?,
+                arguments: ArenaVec::new_in(&allocator),
+            });
         } else {
-            pipes.last_mut()?.arguments.push(code_of(first, end)?);
+            pipes.last_mut()?.arguments.push(read.piece(first, end)?);
         }
         first = end + 1;
     }
-    Some(ArenaBox::new_in(AngularExpression { code, pipes, comment }, &allocator))
+    Some(ArenaBox::new_in(AngularExpression { code, pipes, comment: read.comment }, &allocator))
 }
 
 /// Whether the root of `tokens` (a piece's), past parens around all of them, is a conditional:
