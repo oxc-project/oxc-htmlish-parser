@@ -97,9 +97,9 @@ pub fn check(root: &Root<'_>, id: NodeId) -> Result<(), String> {
             for parameter in &b.parameters {
                 let span = parameter.span;
                 let parts: Vec<Span> = match &parameter.kind {
-                    BlockParameterKind::Plain => vec![],
-                    BlockParameterKind::ForOf { item, expression } => vec![*item, *expression],
-                    BlockParameterKind::Track { expression } => vec![*expression],
+                    BlockParameterKind::Plain(_) => vec![],
+                    BlockParameterKind::ForOf { item, expression, .. } => vec![*item, *expression],
+                    BlockParameterKind::Track { expression, .. } => vec![*expression],
                     BlockParameterKind::Let(variables) => {
                         variables.iter().flat_map(|v| [v.name, v.value]).collect()
                     }

@@ -20,16 +20,20 @@ pub fn parameter<'a>(
     let s = parameter.slice(source);
     let base = parameter.start as usize;
     let at = |(start, end): (usize, usize)| span(base + start, base + end);
+    let read =
+        |expression: Span| super::angular_expression::expression(allocator, source, expression);
     let kind = match (block, index) {
         (BlockKind::For, 0) => for_of(s).map(|(item, expression)| BlockParameterKind::ForOf {
             item: at(item),
             expression: at(expression),
+            angular: read(at(expression)),
         }),
         // `let` first, as Angular tries it
         (BlockKind::For, _) => match after_keyword(s, "let") {
             Some(from) => let_variables(allocator, s, from, at).map(BlockParameterKind::Let),
-            None => after_keyword(s, "track").map(|from| BlockParameterKind::Track {
-                expression: at(trim_js(s, (from, s.len()))),
+            None => after_keyword(s, "track").map(|from| {
+                let expression = at(trim_js(s, (from, s.len())));
+                BlockParameterKind::Track { expression, angular: read(expression) }
             }),
         },
         (BlockKind::If | BlockKind::ElseIf, 1..) => after_keyword(s, "as")
@@ -38,22 +42,15 @@ pub fn parameter<'a>(
             .map(|alias| BlockParameterKind::As { alias: at(alias) }),
         _ => None,
     };
-    let kind = kind.unwrap_or(BlockParameterKind::Plain);
-    let expression = match (&kind, block, index) {
-        (
-            BlockParameterKind::Plain,
-            BlockKind::If | BlockKind::ElseIf | BlockKind::Switch | BlockKind::Case,
-            0,
-        ) => Some(parameter),
-        (
-            BlockParameterKind::ForOf { expression, .. } | BlockParameterKind::Track { expression },
-            ..,
-        ) => Some(*expression),
-        _ => None,
-    };
-    let angular =
-        expression.and_then(|e| super::angular_expression::expression(allocator, source, e));
-    BlockParameter { span: parameter, kind, angular }
+    let kind = kind.unwrap_or_else(|| {
+        let expression = index == 0
+            && matches!(
+                block,
+                BlockKind::If | BlockKind::ElseIf | BlockKind::Switch | BlockKind::Case
+            );
+        BlockParameterKind::Plain(if expression { read(parameter) } else { None })
+    });
+    BlockParameter { span: parameter, kind }
 }
 
 /// `/^word\s+/` at the start of `s`: where the rest starts.

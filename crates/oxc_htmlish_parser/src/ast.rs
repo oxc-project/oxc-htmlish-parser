@@ -400,12 +400,13 @@ pub struct Pipe<'a> {
     pub arguments: ArenaVec<'a, AngularCode>,
 }
 
-/// A piece of code of an [`AngularExpression`]: its code, or a pipe's argument.
+/// A piece of code: an [`AngularExpression`]'s code or a pipe's argument, or an [`AngularAction`]'s statement.
 #[derive(Clone, Copy, Debug)]
 pub struct AngularCode {
     pub span: Span,
     /// Its root is a conditional, parens around all of it aside (`a ? b : c`, `(a ? b : c)`):
     /// a pipe after it is its branch's unless it is in parens (`a ? b : c | p` is `a ? b : (c | p)`).
+    /// `false` for a statement, which no pipe follows.
     pub conditional: bool,
 }
 
@@ -521,10 +522,6 @@ pub struct BlockParameter<'a> {
     /// Trimmed.
     pub span: Span,
     pub kind: BlockParameterKind<'a>,
-    /// Angular's reading of its expression: all of it for the first of `@if`, `@else if`, `@switch` and `@case`,
-    /// the one of [`ForOf`](BlockParameterKind::ForOf) and [`Track`](BlockParameterKind::Track);
-    /// `None` for no expression, and where Angular reports an error its tokens show.
-    pub angular: Option<ArenaBox<'a, AngularExpression<'a>>>,
 }
 
 /// A parameter of `@for`, `@if` or `@else if`, split as Angular's compiler reads it
@@ -532,24 +529,21 @@ pub struct BlockParameter<'a> {
 ///
 /// [`Plain`](Self::Plain) for the other blocks' parameters, the first of `@if`, and a shape the compiler reports;
 /// the checks it makes of the names (`$index`, duplicates) are not repeated.
+///
+/// Each `angular` is Angular's reading of the expression; `None` where it reports an error its tokens show.
 #[derive(Debug)]
 pub enum BlockParameterKind<'a> {
-    Plain,
+    /// All of it: the expression of the first of `@if`, `@else if`, `@switch` and `@case`, with its reading;
+    /// no reading for another block's (`@defer`'s `on viewport`) and a shape the compiler reports.
+    Plain(Option<ArenaBox<'a, AngularExpression<'a>>>),
     /// `@for`'s first: `item of expression`, inside the parentheses Angular strips (`(item of items)`).
-    ForOf {
-        item: Span,
-        expression: Span,
-    },
+    ForOf { item: Span, expression: Span, angular: Option<ArenaBox<'a, AngularExpression<'a>>> },
     /// `@for`'s `track expression`.
-    Track {
-        expression: Span,
-    },
+    Track { expression: Span, angular: Option<ArenaBox<'a, AngularExpression<'a>>> },
     /// `@for`'s `let name = variable, …`.
     Let(ArenaVec<'a, LetVariable>),
     /// `@if`'s and `@else if`'s `as alias`.
-    As {
-        alias: Span,
-    },
+    As { alias: Span },
 }
 
 /// `i = $index` of `@for`'s `let i = $index, e = $even`.

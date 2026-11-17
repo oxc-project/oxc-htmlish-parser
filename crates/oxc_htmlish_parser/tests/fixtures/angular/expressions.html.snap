@@ -69,7 +69,7 @@ Root sfc=false
   Text [577..578] "\n" (nl|nl)
   Element [579..580] "p" Html end_tag=[671..675] "</p>"
     @[581..584] "(a)" =" [586..597] "b(); c = d;" Event target="a" statements=["b()", "c = d"]
-    @[599..602] "(e)" =" [604..624] "f;; g ? h() : i // j" Event target="e" statements=["f", ?"g ? h() : i"] comment="// j"
+    @[599..602] "(e)" =" [604..624] "f;; g ? h() : i // j" Event target="e" statements=["f", "g ? h() : i"] comment="// j"
     @[626..629] "(k)" =" [631..636] "l | m" Event target="k"
     @[638..641] "(n)" =" [643..643] "" Event target="n"
     @[645..648] "(o)" =" [650..659] "p(); // q" Event target="o" statements=["p()"] comment="// q"

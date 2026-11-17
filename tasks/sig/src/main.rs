@@ -120,32 +120,26 @@ fn node(source: &str, root: &Root<'_>, id: NodeId) -> Value {
 fn block_reading(source: &str, block: &Block<'_>) -> Value {
     let (mut item, mut expression, mut track, mut lets, mut alias) =
         (None, None, None, vec![], None);
+    // Angular's readings of the expressions: the block's own (`@if`'s, `@for`'s `of`, `@switch`'s, `@case`'s), and `track`'s
+    let (mut own, mut track_reading) = (None, None);
+    let reading = |e: &Option<_>| e.as_deref().map(|e| self::expression(source, e));
     for parameter in &block.parameters {
         match &parameter.kind {
-            BlockParameterKind::Plain => {}
-            BlockParameterKind::ForOf { item: i, expression: e } => {
+            BlockParameterKind::Plain(e) => own = own.or_else(|| reading(e)),
+            BlockParameterKind::ForOf { item: i, expression: e, angular } => {
                 (item, expression) = (Some(i.slice(source)), Some(e.slice(source)));
+                own = own.or_else(|| reading(angular));
             }
-            BlockParameterKind::Track { expression: e } => track = Some(e.slice(source)),
+            BlockParameterKind::Track { expression: e, angular } => {
+                track = Some(e.slice(source));
+                track_reading = track_reading.or_else(|| reading(angular));
+            }
             BlockParameterKind::Let(variables) => lets.extend(
                 variables.iter().map(|v| json!([v.name.slice(source), v.value.slice(source)])),
             ),
             BlockParameterKind::As { alias: a } => alias = Some(a.slice(source)),
         }
     }
-    // Angular's readings of the expressions: the block's own (`@if`'s, `@for`'s `of`, `@switch`'s, `@case`'s), and `track`'s
-    let reading = |kind: fn(&BlockParameterKind<'_>) -> bool| {
-        block
-            .parameters
-            .iter()
-            .find(|p| kind(&p.kind) && p.angular.is_some())
-            .and_then(|p| p.angular.as_deref())
-            .map(|e| self::expression(source, e))
-    };
-    let own = reading(|kind| {
-        matches!(kind, BlockParameterKind::Plain | BlockParameterKind::ForOf { .. })
-    });
-    let track_reading = reading(|kind| matches!(kind, BlockParameterKind::Track { .. }));
     json!([item, expression, track, lets, alias, [own, track_reading]])
 }
 

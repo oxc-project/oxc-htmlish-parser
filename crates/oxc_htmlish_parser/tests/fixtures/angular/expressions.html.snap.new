@@ -1,0 +1,92 @@
+---
+source: crates/oxc_htmlish_parser/tests/ast.rs
+assertion_line: 58
+---
+Root sfc=false
+  Element [1..2] "p" Html end_tag=[58..62] "</p>"
+    Interpolation expression=[5..8] " a " code="a"
+    Text [10..11] " " (sp|sp)
+    Interpolation expression=[13..20] " a | p " code="a" | p[]
+    Text [22..23] " " (sp|sp)
+    Interpolation expression=[25..43] " a | p: x : y | q " code="a" | p["x", "y"] | q[]
+    Text [45..46] " " (sp|sp)
+    Interpolation expression=[48..56] " a // c " code="a" comment="// c"
+  Text [62..63] "\n" (nl|nl)
+  Element [64..65] "p" Html end_tag=[154..158] "</p>"
+    Interpolation expression=[68..77] " (a | p) " code="(a | p)"
+    Text [79..80] " " (sp|sp)
+    Interpolation expression=[82..92] " f(a | p) " code="f(a | p)"
+    Text [94..95] " " (sp|sp)
+    Interpolation expression=[97..109] " `${a | p}` " code="`${a | p}`"
+    Text [111..112] " " (sp|sp)
+    Interpolation expression=[114..129] " a ? b : c | p " code=?"a ? b : c | p"
+    Text [131..132] " " (sp|sp)
+    Interpolation expression=[134..152] " a | p: b ? c : d " code="a" | p[?"b ? c : d"]
+  Text [158..159] "\n" (nl|nl)
+  Element [160..161] "p" Html end_tag=[227..231] "</p>"
+    Interpolation expression=[164..172] " a || b " code="a || b"
+    Text [174..175] " " (sp|sp)
+    Interpolation expression=[177..189] " '|' + \"//\" " code="'|' + \"//\""
+    Text [191..192] " " (sp|sp)
+    Interpolation expression=[194..213] " /a|b/.test(x) | p " code="/a|b/.test(x)" | p[]
+    Text [215..216] " " (sp|sp)
+    Interpolation expression=[218..225] " a / b " code="a / b"
+  Text [231..232] "\n" (nl|nl)
+  Element [233..234] "p" Html end_tag=[301..305] "</p>"
+    Interpolation expression=[237..242] " a | "
+    Text [244..245] " " (sp|sp)
+    Interpolation expression=[247..253] " a; b "
+    Text [255..256] " " (sp|sp)
+    Interpolation expression=[258..259] " "
+    Text [261..262] " " (sp|sp)
+    Interpolation expression=[264..271] " a : b "
+    Text [273..274] " " (sp|sp)
+    Interpolation expression=[276..285] " a | p q "
+    Text [287..288] " " (sp|sp)
+    Interpolation expression=[290..299] " a | 'p' "
+  Text [305..306] "\n" (nl|nl)
+  Element [307..308] "p" Html end_tag=[369..373] "</p>"
+    @[309..312] "[x]" =" [314..322] "a | p: 1" Property target="x" code="a" | p["1"]
+    @[324..327] "[y]" =" [329..335] "{a: 1}" Property target="y" code="{a: 1}"
+    @[337..340] "[z]" =" [342..351] "a ? b : c" Property target="z" code=?"a ? b : c"
+    @[353..356] "[w]" =" [358..363] "a : b" Property target="w"
+    @[365..368] "[v]" Property target="v"
+  Text [373..374] "\n" (nl|nl)
+  Element [375..376] "p" Html end_tag=[511..515] "</p>"
+    Interpolation expression=[379..396] " (a ? b : c) | p " code=?"(a ? b : c)" | p[]
+    Text [398..399] " " (sp|sp)
+    Interpolation expression=[401..445] " ((a ? b : c)) | p: (x ? y : z) : w ? v : u " code=?"((a ? b : c))" | p[?"(x ? y : z)", ?"w ? v : u"]
+    Text [447..448] " " (sp|sp)
+    Interpolation expression=[450..469] " (a ? b : c).d | p " code="(a ? b : c).d" | p[]
+    Text [471..472] " " (sp|sp)
+    Interpolation expression=[474..489] " (a) + (b) | p " code="(a) + (b)" | p[]
+    Text [491..492] " " (sp|sp)
+    Interpolation expression=[494..509] " a?.b ?? c | p " code="a?.b ?? c" | p[]
+  Text [515..516] "\n" (nl|nl)
+  Element [517..518] "p" Html end_tag=[573..577] "</p>"
+    Interpolation expression=[521..543] " (x => a ? b : c) | p " code="(x => a ? b : c)" | p[]
+    Text [545..546] " " (sp|sp)
+    Interpolation expression=[548..571] " f | p: x => a ? b : c " code="f" | p["x => a ? b : c"]
+  Text [577..578] "\n" (nl|nl)
+  Element [579..580] "p" Html end_tag=[671..675] "</p>"
+    @[581..584] "(a)" =" [586..597] "b(); c = d;" Event target="a" statements=["b()", "c = d"]
+    @[599..602] "(e)" =" [604..624] "f;; g ? h() : i // j" Event target="e" statements=["f", "g ? h() : i"] comment="// j"
+    @[626..629] "(k)" =" [631..636] "l | m" Event target="k"
+    @[638..641] "(n)" =" [643..643] "" Event target="n"
+    @[645..648] "(o)" =" [650..659] "p(); // q" Event target="o" statements=["p()"] comment="// q"
+    @[661..664] "(r)" =" [666..669] "(s)" Event target="r" statements=["(s)"]
+  Text [675..676] "\n" (nl|nl)
+  Element [677..678] "p" Html end_tag=[730..734] "</p>"
+    @[679..682] "(a)" =" [684..689] "f(a,)" Event target="a"
+    @[691..694] "[b]" =" [696..700] "[c,]" Property target="b" code="[c,]"
+    @[702..705] "[d]" =" [707..717] "g({e: 1,})" Property target="d" code="g({e: 1,})"
+    Interpolation expression=[721..728] " h(i,) "
+  Text [734..735] "\n" (nl|nl)
+  Element [736..741] "input" Html void no_end_tag span_end=783
+    @[742..747] "[(a)]" =" [749..752] "b.c" TwoWay target="a" code="b.c"
+    @[754..759] "[(d)]" =" [761..766] "e | f" TwoWay target="d" code="e" | f[]
+    @[768..773] "[(g)]" =" [775..781] "h // i" TwoWay target="g" code="h" comment="// i"
+  Text [783..784] "\n" (nl|nl)
+  Element [785..786] "p" Html end_tag=[872..876] "</p>"
+    @[787..792] "title" =" [794..870] "Hi {{ name | uppercase }}, {{ a // c }} {{ (b ? c : d) | p: x }} {{ f(g,) }}" Interpolation target="title" [" name | uppercase ", " a // c ", " (b ? c : d) | p: x ", " f(g,) "] code="name" | uppercase[] code="a" comment="// c" code=?"(b ? c : d)" | p["x"]
+  Text [876..877] "\n" (nl|nl)

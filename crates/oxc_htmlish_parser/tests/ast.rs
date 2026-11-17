@@ -195,7 +195,10 @@ impl Printer<'_, '_> {
             self.depth += 1;
             for parameter in &block.parameters {
                 self.block_parameter(&parameter.kind);
-                if let Some(angular) = &parameter.angular {
+                if let BlockParameterKind::Plain(Some(angular))
+                | BlockParameterKind::ForOf { angular: Some(angular), .. }
+                | BlockParameterKind::Track { angular: Some(angular), .. } = &parameter.kind
+                {
                     self.line(&format!("% expression{}", angular_expression(self.source, angular)));
                 }
             }
@@ -214,11 +217,11 @@ impl Printer<'_, '_> {
     fn block_parameter(&mut self, kind: &BlockParameterKind<'_>) {
         let q = |span| quoted(self.source, span);
         let line = match kind {
-            BlockParameterKind::Plain => return,
-            BlockParameterKind::ForOf { item, expression } => {
+            BlockParameterKind::Plain(_) => return,
+            BlockParameterKind::ForOf { item, expression, .. } => {
                 format!("% for item={} of={}", q(*item), q(*expression))
             }
-            BlockParameterKind::Track { expression } => format!("% track {}", q(*expression)),
+            BlockParameterKind::Track { expression, .. } => format!("% track {}", q(*expression)),
             BlockParameterKind::Let(variables) => {
                 let variables: Vec<_> =
                     variables.iter().map(|v| format!("{} = {}", q(v.name), q(v.value))).collect();

@@ -330,7 +330,8 @@ function actionReading(code: string): unknown {
   const commentText = comment === null ? null : code.slice(comment).replace(/[\x00-\x20\xa0]+$/, "");
   if (ast.constructor.name === "EmptyExpr") return commentText === null ? null : [[], commentText];
   const statements = ast.constructor.name === "Chain" ? ast.expressions : [ast];
-  return [statements.map((n: any) => pieceOf(code, n)), commentText];
+  // A statement's conditional is no fact: no pipe follows one
+  return [statements.map((n: any) => [pieceOf(code, n)[0], false]), commentText];
 }
 
 /** A piece of code: its text, and whether its root, parens around it aside, is a conditional. */

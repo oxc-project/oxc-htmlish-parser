@@ -103,6 +103,11 @@ impl<'s> Code<'s> {
         })
     }
 
+    /// The tokens in `[first, end)` as an action's statement, which no pipe follows; `None` when there are none.
+    fn statement(&self, first: usize, end: usize) -> Option<AngularCode> {
+        Some(AngularCode { span: self.span(first, end)?, conditional: false })
+    }
+
     /// The tokens in `[first, end)` as a piece of code; `None` when there are none.
     fn piece(&self, first: usize, end: usize) -> Option<AngularCode> {
         let tokens = &self.tokens[first..end];
@@ -131,7 +136,7 @@ pub fn action<'a>(
             // `Cannot have a pipe in an action expression`, anywhere in it
             Kind::Operator if t.text == "|" => return None,
             Kind::Character(b';') if depth == 0 => {
-                statements.extend(code.piece(first, i));
+                statements.extend(code.statement(first, i));
                 first = i + 1;
             }
             _ => {}
@@ -140,7 +145,7 @@ pub fn action<'a>(
     if depth > 0 {
         return None;
     }
-    statements.extend(code.piece(first, code.tokens.len()));
+    statements.extend(code.statement(first, code.tokens.len()));
     if statements.is_empty() && code.comment.is_none() {
         return None;
     }
