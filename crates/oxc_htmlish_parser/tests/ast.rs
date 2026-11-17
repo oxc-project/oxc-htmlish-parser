@@ -11,8 +11,9 @@ use insta::{Settings, assert_snapshot, glob};
 use oxc_htmlish_parser::{
     Allocator, Dialect, Parser, Span,
     ast::{
-        AngularAttribute, AngularExpression, Attribute, AttributeKind, BlockParameterKind, Content,
-        Interpolation, NodeId, NodeKind, Quote, Root, TemplateBinding, Whitespace,
+        AngularAttribute, AngularCode, AngularExpression, Attribute, AttributeKind,
+        BlockParameterKind, Content, Interpolation, NodeId, NodeKind, Quote, Root, TemplateBinding,
+        Whitespace,
     },
 };
 
@@ -180,15 +181,26 @@ impl Printer<'_, '_> {
             NodeKind::IcuCase(n) => {
                 format!("IcuCase value={} open={}", q(n.value), n.open)
             }
-            NodeKind::LetDeclaration(n) => {
-                format!("LetDeclaration name={} value={}", q(n.name), q(n.value))
-            }
+            NodeKind::LetDeclaration(n) => format!(
+                "LetDeclaration name={} value={}{}",
+                q(n.name),
+                q(n.value),
+                n.angular
+                    .as_deref()
+                    .map_or_else(String::new, |e| angular_expression(self.source, e))
+            ),
         };
         self.line(&head);
         if let NodeKind::Block(block) = &node.kind {
             self.depth += 1;
             for parameter in &block.parameters {
                 self.block_parameter(&parameter.kind);
+                if let BlockParameterKind::Plain(Some(angular))
+                | BlockParameterKind::ForOf { angular: Some(angular), .. }
+                | BlockParameterKind::Track { angular: Some(angular), .. } = &parameter.kind
+                {
+                    self.line(&format!("% expression{}", angular_expression(self.source, angular)));
+                }
             }
             self.depth -= 1;
         }
@@ -205,11 +217,11 @@ impl Printer<'_, '_> {
     fn block_parameter(&mut self, kind: &BlockParameterKind<'_>) {
         let q = |span| quoted(self.source, span);
         let line = match kind {
-            BlockParameterKind::Plain => return,
-            BlockParameterKind::ForOf { item, expression } => {
+            BlockParameterKind::Plain(_) => return,
+            BlockParameterKind::ForOf { item, expression, .. } => {
                 format!("% for item={} of={}", q(*item), q(*expression))
             }
-            BlockParameterKind::Track { expression } => format!("% track {}", q(*expression)),
+            BlockParameterKind::Track { expression, .. } => format!("% track {}", q(*expression)),
             BlockParameterKind::Let(variables) => {
                 let variables: Vec<_> =
                     variables.iter().map(|v| format!("{} = {}", q(v.name), q(v.value))).collect();
@@ -232,12 +244,12 @@ impl Printer<'_, '_> {
         }
         match &attribute.kind {
             AttributeKind::Plain => {}
-            AttributeKind::Comment => line.push_str(" comment"),
+            AttributeKind::Comment(kind) => write!(line, " comment({kind:?})").unwrap(),
             AttributeKind::Angular(kind) => {
                 let name = match kind {
-                    AngularAttribute::Property(_) => "Property",
-                    AngularAttribute::Event => "Event",
-                    AngularAttribute::TwoWay => "TwoWay",
+                    AngularAttribute::Property(..) => "Property",
+                    AngularAttribute::Event(..) => "Event",
+                    AngularAttribute::TwoWay(..) => "TwoWay",
                     AngularAttribute::Template(_) => "Template",
                     AngularAttribute::I18n => "I18n",
                     AngularAttribute::Interpolation(_) => "Interpolation",
@@ -245,25 +257,61 @@ impl Printer<'_, '_> {
                 let target = kind.target(attribute.name).slice(self.source);
                 write!(line, " {name} target={target:?}").unwrap();
                 if let AngularAttribute::Interpolation(expressions) = kind {
-                    let expressions: Vec<_> =
-                        expressions.iter().map(|e| e.slice(self.source)).collect();
-                    write!(line, " {expressions:?}").unwrap();
+                    let texts: Vec<_> =
+                        expressions.iter().map(|e| e.expression.slice(self.source)).collect();
+                    write!(line, " {texts:?}").unwrap();
+                    for e in expressions.iter() {
+                        if let Some(angular) = &e.angular {
+                            line.push_str(&angular_expression(self.source, angular));
+                        }
+                    }
                 }
-                if let AngularAttribute::Property(Some(expression)) = kind {
+                if let AngularAttribute::Property(Some(expression), _)
+                | AngularAttribute::TwoWay(Some(expression), _) = kind
+                {
                     line.push_str(&angular_expression(self.source, expression));
+                }
+                if let AngularAttribute::Event(Some(action), _) = kind {
+                    let statements: Vec<_> = action
+                        .statements
+                        .iter()
+                        .map(|s| {
+                            format!(
+                                "{}{:?}",
+                                if s.conditional { "?" } else { "" },
+                                s.span.slice(self.source)
+                            )
+                        })
+                        .collect();
+                    write!(line, " statements=[{}]", statements.join(", ")).unwrap();
+                    if let Some(comment) = action.comment {
+                        write!(line, " comment={:?}", comment.slice(self.source)).unwrap();
+                    }
                 }
                 if let AngularAttribute::Template(Some(bindings)) = kind {
                     let s = |span: Option<Span>| span.map(|span| span.slice(self.source));
                     for binding in bindings.iter() {
-                        match *binding {
-                            TemplateBinding::Expression { key, expression } => {
-                                write!(line, " [{:?}: {:?}]", s(key), s(expression))
+                        match binding {
+                            TemplateBinding::Expression { key, expression, angular, alias } => {
+                                write!(
+                                    line,
+                                    " [{:?}: {:?}{}{}]",
+                                    s(*key),
+                                    s(*expression),
+                                    angular.as_deref().map_or_else(String::new, |e| {
+                                        angular_expression(self.source, e)
+                                    }),
+                                    alias.map_or_else(String::new, |a| format!(
+                                        " as {:?}",
+                                        s(Some(a))
+                                    ))
+                                )
                             }
                             TemplateBinding::Let { name, value } => {
-                                write!(line, " [let {:?} = {:?}]", s(Some(name)), s(value))
+                                write!(line, " [let {:?} = {:?}]", s(Some(*name)), s(*value))
                             }
                             TemplateBinding::As { key, alias } => {
-                                write!(line, " [{:?} as {:?}]", s(key), s(Some(alias)))
+                                write!(line, " [{:?} as {:?}]", s(Some(*key)), s(Some(*alias)))
                             }
                         }
                         .unwrap();
@@ -308,10 +356,14 @@ fn quoted(source: &str, span: Span) -> String {
 
 /// ` code="a" | p["x", "y"] comment="// c"`
 fn angular_expression(source: &str, e: &AngularExpression<'_>) -> String {
-    let mut out = format!(" code={:?}", e.code.slice(source));
+    let piece = |code: &AngularCode| {
+        let conditional = if code.conditional { "?" } else { "" };
+        format!("{conditional}{:?}", code.span.slice(source))
+    };
+    let mut out = format!(" code={}", piece(&e.code));
     for pipe in &e.pipes {
-        let arguments: Vec<_> = pipe.arguments.iter().map(|a| a.slice(source)).collect();
-        write!(out, " | {}{arguments:?}", pipe.name.slice(source)).unwrap();
+        let arguments: Vec<_> = pipe.arguments.iter().map(piece).collect();
+        write!(out, " | {}[{}]", pipe.name.slice(source), arguments.join(", ")).unwrap();
     }
     if let Some(comment) = e.comment {
         write!(out, " comment={:?}", comment.slice(source)).unwrap();

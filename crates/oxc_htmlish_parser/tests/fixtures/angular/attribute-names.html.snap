@@ -4,19 +4,19 @@ source: crates/oxc_htmlish_parser/tests/ast.rs
 Root sfc=false
   Element [1..6] "input" Html void no_end_tag span_end=99
     @[7..14] "[value]" =" [16..17] "a" Property target="value" code="a"
-    @[19..26] "(input)" =" [28..37] "b($event)" Event target="input"
-    @[39..50] "[(ngModel)]" =" [52..53] "c" TwoWay target="ngModel"
-    @[55..60] "*ngIf" =" [62..71] "d; else e" Template target="ngIf" [None: Some("d")] [Some("else"): Some("e")]
+    @[19..26] "(input)" =" [28..37] "b($event)" Event target="input" statements=["b($event)"]
+    @[39..50] "[(ngModel)]" =" [52..53] "c" TwoWay target="ngModel" code="c"
+    @[55..60] "*ngIf" =" [62..71] "d; else e" Template target="ngIf" [None: Some("d") code="d"] [Some("else"): Some("e") code="e"]
     @[73..77] "i18n" I18n target=""
     @[78..88] "i18n-title" I18n target="title"
     @[89..94] "title" =" [96..97] "t"
   Text [99..100] "\n" (nl|nl)
   Element [101..102] "p" Html end_tag=[198..202] "</p>"
     @[103..110] "[@fade]" =" [112..113] "x" Property target="@fade" code="x"
-    @[115..127] "(@fade.done)" =" [129..132] "y()" Event target="@fade.done"
+    @[115..127] "(@fade.done)" =" [129..132] "y()" Event target="@fade.done" statements=["y()"]
     @[134..148] "[class.active]" =" [150..151] "z" Property target="class.active" code="z"
     @[153..170] "[attr.aria-label]" =" [172..173] "l" Property target="attr.aria-label" code="l"
-    @[175..190] "(keydown.enter)" =" [192..195] "k()" Event target="keydown.enter"
+    @[175..190] "(keydown.enter)" =" [192..195] "k()" Event target="keydown.enter" statements=["k()"]
     Text [197..198] "p" (-|-) content=[197..198] "p"
   Text [202..203] "\n" (nl|nl)
   Element [204..215] "ng-template" Html end_tag=[286..300] "</ng-template>"
@@ -24,12 +24,12 @@ Root sfc=false
     @[221..229] "let-item"
     @[230..236] "[ngIf]" =" [238..239] "i" Property target="ngIf" code="i"
     @[241..246] "@fade"
-    @[247..253] "bind-a" =" [255..256] "b"
-    @[258..262] "on-c" =" [264..265] "d"
-    @[267..275] "bindon-e" =" [277..278] "f"
+    @[247..253] "bind-a" =" [255..256] "b" Property target="a" code="b"
+    @[258..262] "on-c" =" [264..265] "d" Event target="c" statements=["d"]
+    @[267..275] "bindon-e" =" [277..278] "f" TwoWay target="e" code="f"
     @[280..285] "ref-g"
   Text [300..301] "\n" (nl|nl)
-  Element [302..303] "p" Html end_tag=[333..337] "</p>"
+  Element [302..303] "p" Html end_tag=[351..355] "</p>"
     @[304..306] "[]"
     @[307..309] "()"
     @[310..314] "[()]"
@@ -37,5 +37,8 @@ Root sfc=false
     @[320..323] "(a]"
     @[324..329] "i18n-" I18n target=""
     @[330..331] "*" Template target=""
-    Text [332..333] "q" (-|-) content=[332..333] "q"
-  Text [337..338] "\n" (nl|nl)
+    @[332..337] "bind-"
+    @[338..341] "on-"
+    @[342..349] "bindon-"
+    Text [350..351] "q" (-|-) content=[350..351] "q"
+  Text [355..356] "\n" (nl|nl)

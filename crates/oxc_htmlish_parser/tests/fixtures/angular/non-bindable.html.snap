@@ -1,0 +1,31 @@
+---
+source: crates/oxc_htmlish_parser/tests/ast.rs
+---
+Root sfc=false
+  Element [1..4] "div" Html end_tag=[167..173] "</div>"
+    @[5..18] "ngNonBindable"
+    @[19..22] "[a]" =" [24..25] "b" Property target="a" code="b"
+    @[27..32] "title" =" [34..41] "{{ c }}" Interpolation target="title" [" c "] code="c"
+    Text [43..62] "x {{ d }} @if (e) {" (-|-) content=[43..62] "x {{ d }} @if (e) {"
+    Element [63..67] "span" Html end_tag=[90..97] "</span>"
+      @[68..71] "[f]" =" [73..74] "g"
+      @[76..78] "*h" =" [80..81] "i"
+      Text [83..90] "{{ j }}" (-|-) content=[83..90] "{{ j }}"
+    Text [97..148] "} @let k = l; @for (m of n; track m) {o} @else {p} " (-|sp) content=[97..147] "} @let k = l; @for (m of n; track m) {o} @else {p}"
+    Icu expression=[149..150] "q" type=[152..158] "plural"
+      IcuCase value=[160..162] "=0" open=163
+        Text [164..165] "r" (-|-) content=[164..165] "r"
+  Text [173..174] "\n" (nl|nl)
+  Element [175..176] "p" Html end_tag=[220..224] "</p>"
+    @[177..190] "ngNonBindable"
+    Text [191..211] "{{ a < b }}@if (c) {" (-|-) content=[191..211] "{{ a < b }}@if (c) {"
+    Element [212..213] "i" Html end_tag=[215..219] "</i>"
+      Text [214..215] "d" (-|-) content=[214..215] "d"
+    Text [219..220] "}" (-|-) content=[219..220] "}"
+  Text [224..225] "\n" (nl|nl)
+  Block If name=[226..228] "if" parameters=["[230..231] \"a\""] open=[225..234] "@if (a) {" close=[266..267] "}"
+    % expression code="a"
+    Element [235..236] "p" Html end_tag=[262..266] "</p>"
+      @[237..250] "ngNonBindable"
+      Text [251..262] "@if (b) {c}" (-|-) content=[251..262] "@if (b) {c}"
+  Text [267..268] "\n" (nl|nl)

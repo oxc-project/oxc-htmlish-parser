@@ -79,6 +79,8 @@ const ANGULAR_TOKENS = [
   "{{ a | p: x : y | q }}", "{{ (a | p) }}", "{{ a ? b : c | p }}", "{{ a | p: b ? c : d }}", "{{ `${a | p}` }}",
   "{{ /a|b/.test(c) | p }}", "{{ a || b | p }}", "{{ a | p // c }}", "{{ a | }}", "{{ a | p q }}",
   "<p [a]=\"b | p: 1\">", "<p [a]=\"{b: c} | p\">", "<p [a]=\"a : b\">", "<p [a]=\"f(a | p)\">",
+  "{{ (a ? b : c) | p }}", "{{ ((a ? b : c)) | p: (x ? y : z) : w ? v : u }}", "{{ (a ? b : c).d | p }}", "{{ (a) ? (b) : c }}", "{{ (x => a ? b : c) | p }}", "{{ f | p: x => a ? b : c }}",
+  "<p (a)=\"b(); c = d;\">", "<p (a)=\"b;; c ? d() : e // f\">", "<p (a)=\"b | c\">", "<p (a)=\"\">", "<p (a)=\"f(); // c\">", "{{ f(a,) }}", "<p (a)=\"f(a, b,)\">", "{{ [a,] }}", "{{ g({a: 1,}) }}", "<input [(a)]=\"b.c | d\">", "<input [(a)]=\"b // c\">", "<p bind-a=\"b | c: d\">", "<p on-a=\"b(); c\">", "<input bindon-a=\"b\">", "<p bind-=\"a\" on-=\"b\">", "<div ngNonBindable>", "<p ngNonBindable [a]=\"b\">@if (c) {<i [d]=\"e\">{{ f }}</i>} @let g = h; {{ i < j }}</p>",
 ];
 
 // ---
@@ -91,7 +93,8 @@ function stripQuotes(value: string): string {
 const LEADING_LF = /^(\r\n|\n|\r)/;
 const IGNORES_FIRST_LF = new Set(["pre", "textarea", "listing"]);
 export const VOID = new Set("area,base,br,col,embed,hr,img,input,link,meta,param,source,track,wbr".split(","));
-const VOID_TAG = `<(?:${[...VOID].join("|")})\\b[^<>]*(?<!/)>`;
+// Its attributes' quoted values may hold `<` and `>`
+const VOID_TAG = `<(?:${[...VOID].join("|")})\\b(?:"[^"]*"|'[^']*'|[^<>"'])*(?<!/)>`;
 
 /** The line break `pre` / `textarea` / `listing` drop: strip it from the first text. */
 function leadingLf(children: unknown[][]): boolean {
@@ -167,8 +170,22 @@ function angularCompilerSig(source: string): Sig {
   // Compiled only for a template with a block to compare
   let readings: Map<number, unknown> | undefined;
   const slice = (span: any) => sliceOf(source, span);
-  const nodes = (nodes: any[]): unknown[][] => nodes.flatMap((n) => (n.constructor.name === "Text" ? node(n) : [node(n)])) as unknown[][];
-  function node(n: any): any {
+  // Under `ngNonBindable` (`nonBindable`) as its template compiler reads it (`NonBindableVisitor`):
+  // a block's markers, `@let` and `{{ }}` are text, an attribute is a plain one
+  const asText = (n: any): unknown[][] | null => {
+    switch (n.constructor.name) {
+      case "Text":
+      case "LetDeclaration":
+        return [["t", slice(n.sourceSpan)]];
+      case "Block":
+        return [["t", slice(n.startSourceSpan)], ...nodes(n.children, true), ...(n.endSourceSpan ? [["t", slice(n.endSourceSpan)]] : [])];
+      default:
+        return null;
+    }
+  };
+  const nodes = (nodes: any[], nonBindable = false): unknown[][] =>
+    nodes.flatMap((n) => (nonBindable && asText(n)) || (n.constructor.name === "Text" ? node(n, nonBindable) : [node(n, nonBindable)])) as unknown[][];
+  function node(n: any, nonBindable: boolean): any {
     switch (n.constructor.name) {
       case "Element": {
         // As written: Angular's name carries the namespace (`:svg:rect`)
@@ -181,11 +198,17 @@ function angularCompilerSig(source: string): Sig {
         const attrs = [
           ...n.attrs.map((a: any) => {
             const attr: unknown[] = [slice(a.keySpan), a.valueSpan ? slice(a.valueSpan) : null];
+            if (nonBindable) return [a.sourceSpan.start.offset, attr];
             // Its compiler binds the `{{ }}` in a name it reads as no binding of another kind (`parseAttribute`)
             const interpolations = (a.valueTokens ?? []).filter((t: any) => t.type === ATTR_VALUE_INTERPOLATION && t.parts.length === 3).map((t: any) => t.parts[1]);
-            if (interpolations.length > 0 && !BOUND_NAME.test(attr[0] as string)) attr.push(interpolations);
+            if (interpolations.length > 0 && !BOUND_NAME.test(attr[0] as string)) {
+              attr.push(interpolations, interpolations.map(expressionReading));
+            }
             if (PROPERTY_NAME.test(attr[0] as string) && a.valueSpan) {
               attr.push(["ex", expressionReading(attr[1] as string)]);
+            }
+            if (EVENT_NAME.test(attr[0] as string) && a.valueSpan) {
+              attr.push(["ac", actionReading(attr[1] as string)]);
             }
             if (attr[0].startsWith("*") && a.valueSpan) {
               const bindings = templateBindings(attr[0].slice(1), attr[1]);
@@ -198,7 +221,8 @@ function angularCompilerSig(source: string): Sig {
         ]
           .sort((a, b) => a[0] - b[0])
           .map((a) => a[1]);
-        return elementSig(source, n, name, ended, attrs, nodes(n.children));
+        const childrenNonBindable = nonBindable || n.attrs.some((a: any) => a.name === "ngNonBindable");
+        return elementSig(source, n, name, ended, attrs, nodes(n.children, childrenNonBindable));
       }
       // Its interpolations are tokens; one without its `}}` is text to us
       case "Text":
@@ -214,16 +238,18 @@ function angularCompilerSig(source: string): Sig {
       // Our parameters are trimmed (`Block::parameters`).
       case "Block": {
         // Its template compiler drops a `@for` or `@if` whose parameters it reports: no reading to compare
-        const read = ["for", "if", "else if"].includes(n.name);
+        const read = ["for", "if", "else if", "switch", "case"].includes(n.name);
         const reading = read ? ((readings ??= blockReadings(source)).get(n.startSourceSpan.start.offset) ?? UNKNOWN) : NO_READING;
         return ["b", n.name, n.parameters.map((p: any) => p.expression.replace(/^[ \t\n\f\r]+|[ \t\n\f\r]+$/g, "")), nodes(n.children), reading];
       }
       // Our value is trimmed (`LetDeclaration::value`).
-      case "LetDeclaration":
-        return ["l", n.name, n.value.replace(/[ \t\n\f\r]+$/, "")];
+      case "LetDeclaration": {
+        const value = n.value.replace(/[ \t\n\f\r]+$/, "");
+        return ["l", n.name, value, expressionReading(value.replace(/^[ \t\n\f\r]+/, ""))];
+      }
       // Ours are trimmed (`Icu`, `IcuCase`); Angular's lexer skips the whitespace at the start of a case.
       case "Expansion":
-        return ["icu", n.switchValue.trim(), n.type.trim(), n.cases.map((c: any) => ["case", c.value, nodes(c.expression)])];
+        return ["icu", n.switchValue.trim(), n.type.trim(), n.cases.map((c: any) => ["case", c.value, nodes(c.expression, nonBindable)])];
       default:
         throw new UnknownNode(`unexpected node ${n.constructor.name}`);
     }
@@ -236,7 +262,7 @@ function angularCompilerSig(source: string): Sig {
 const BOUND_NAME = /^(?:\*|i18n(?:-|$)|bind-|let-|ref-|#|on-|bindon-|@|\[\(.+\)\]$|\[.+\]$|\(.+\)$)/;
 /** What an oracle could not tell: it matches any reading of ours (`withUnknownAsOurs`). */
 export const UNKNOWN = "?";
-const NO_READING = [null, null, null, [], null];
+const NO_READING = [null, null, null, [], null, [null, null]];
 
 /** `oracle` with each `UNKNOWN` in it replaced by what `ours` holds there. */
 export function withUnknownAsOurs(ours: unknown, oracle: unknown): unknown {
@@ -264,11 +290,15 @@ function blockReadings(source: string): Map<number, unknown> {
   const slice = (span: any) => sliceOf(source, span);
   const walk = (nodes: any[]) => {
     for (const n of nodes) {
+      // An expression's reading, from the source the compiler parsed (`null` for none)
+      const read = (e: any) => (e === null || e === undefined ? null : typeof e.source === "string" ? expressionReading(e.source.trim()) : UNKNOWN);
       if (n.constructor.name === "ForLoopBlock") {
         const lets = n.contextVariables.filter((v: any) => v.keySpan.start.offset !== v.keySpan.end.offset).map((v: any) => [slice(v.keySpan), slice(v.valueSpan)]);
-        set(n, [n.item.name, n.expression.source.trim(), n.trackBy.source.trim(), lets, null]);
+        set(n, [n.item.name, n.expression.source.trim(), n.trackBy.source.trim(), lets, null, [read(n.expression), read(n.trackBy)]]);
       } else if (n.constructor.name === "IfBlockBranch") {
-        set(n, [null, null, null, [], n.expressionAlias?.name ?? null]);
+        set(n, [null, null, null, [], n.expressionAlias?.name ?? null, [read(n.expression), null]]);
+      } else if (n.constructor.name === "SwitchBlock" || n.constructor.name === "SwitchBlockCase") {
+        set(n, [null, null, null, [], null, [read(n.expression), null]]);
       }
       for (const value of Object.values(n)) {
         if (Array.isArray(value)) walk(value.filter((x) => x?.sourceSpan !== undefined));
@@ -284,8 +314,33 @@ const expressionParser = new ExpressionParser(new Lexer());
 /** The directive's own key is placed before the value, so that its spans tell it apart. */
 const KEY_OFFSET = -1e6;
 
-/** A property binding's name (`[x]`, not `[(x)]`), as `parseAttribute` reads it. */
-const PROPERTY_NAME = /^\[(?!\().+\]$/;
+/** A property binding's name (`[x]`, `bind-x`) or a two-way one's (`[(x)]`, `bindon-x`), both binding an expression,
+ * as `parseAttribute` reads it: the delimiters by the prefix alone, so `[(a)-]` binds nothing. */
+const PROPERTY_NAME = /^(?:bind(?:on)?-.+|\[\(.+\)\]|\[(?!\().+\])$/;
+
+/** An event binding's name (`(x)`, `on-x`), as `parseAttribute` reads it. */
+const EVENT_NAME = /^(?:on-.+|\(.+\))$/;
+
+/** An action (an event binding's value) as Angular's compiler reads it, in `tasks/sig`'s shape (`["ac", …]`):
+ * `[[statement, …], comment]`, each statement `[text, conditional]`; `null` for an empty one, `UNKNOWN` where it reports an error. */
+function actionReading(code: string): unknown {
+  const location = new ParseLocation(new ParseSourceFile(code, "t.html"), 0, 0, 0);
+  const { ast, errors } = expressionParser.parseAction(code, new ParseSourceSpan(location, location), 0);
+  if (errors.length > 0) return UNKNOWN;
+  const comment = (expressionParser as any)._commentStart(code);
+  const commentText = comment === null ? null : code.slice(comment).replace(/[\x00-\x20\xa0]+$/, "");
+  if (ast.constructor.name === "EmptyExpr") return commentText === null ? null : [[], commentText];
+  const statements = ast.constructor.name === "Chain" ? ast.expressions : [ast];
+  // A statement's conditional is no fact: no pipe follows one
+  return [statements.map((n: any) => [pieceOf(code, n)[0], false]), commentText];
+}
+
+/** A piece of code: its text, and whether its root, parens around it aside, is a conditional. */
+function pieceOf(code: string, n: any): unknown[] {
+  let inner = n;
+  while (inner.constructor.name === "ParenthesizedExpression") inner = inner.expression;
+  return [code.slice(n.span.start, n.span.end), inner.constructor.name === "Conditional"];
+}
 
 /** An expression (`{{ }}`'s, a property binding's) as Angular's compiler reads it, in `tasks/sig`'s shape (`expression`);
  * `null` for an empty one, `UNKNOWN` where it reports an error: ours finds some of them only (`None`, the formatter keeps it as written). */
@@ -294,15 +349,15 @@ function expressionReading(code: string): unknown {
   const { ast, errors } = expressionParser.parseBinding(code, new ParseSourceSpan(location, location), 0);
   if (errors.length > 0) return UNKNOWN;
   if (ast.constructor.name === "EmptyExpr") return null;
-  const text = (span: any) => code.slice(span.start, span.end);
+  const piece = (n: any) => pieceOf(code, n);
   const pipes: unknown[] = [];
   let root = ast;
   while (root.constructor.name === "BindingPipe") {
-    pipes.unshift([root.name, root.args.map((a: any) => text(a.span))]);
+    pipes.unshift([root.name, root.args.map(piece)]);
     root = root.exp;
   }
   const comment = (expressionParser as any)._commentStart(code);
-  return [text(root.span), pipes, comment === null ? null : code.slice(comment).replace(/[\x00-\x20\xa0]+$/, "")];
+  return [piece(root), pipes, comment === null ? null : code.slice(comment).replace(/[\x00-\x20\xa0]+$/, "")];
 }
 
 /** A `*x` value's microsyntax as Angular's compiler reads it, in `tasks/sig`'s shape; the error it reports. */
@@ -312,7 +367,10 @@ function templateBindings(key: string, value: string): unknown[] | string {
   if (errors.length > 0) return errors[0].msg;
   const text = (k: any) => (k === null ? null : k.span.start < 0 ? null : value.slice(k.span.start, k.span.end));
   return templateBindings.map((b: any) => {
-    if (b.constructor.name === "ExpressionBinding") return ["e", text(b.key), b.value === null ? null : b.value.source];
+    if (b.constructor.name === "ExpressionBinding") {
+      const source = b.value === null ? null : b.value.source;
+      return ["e", text(b.key), source, source === null ? null : expressionReading(source)];
+    }
     const start = b.sourceSpan.start;
     return start >= 0 && /^let(?![\w$])/.test(value.slice(start)) ? ["l", text(b.key), text(b.value)] : ["a", text(b.value), text(b.key)];
   });
@@ -512,13 +570,13 @@ function whatwgClosing(source: string): boolean {
 
 /**
  * Ours in the shape of Angular's AST (DIVERGENCES.md "How Angular's AST holds a node"): it drops doctypes,
- * and the bogus comments `<!` opens, which it reads as doctypes;
- * and it reads a bogus comment `<?` opens, and CDATA, as text, and trims comments.
+ * the bogus comments `<!` opens, which it reads as doctypes, and the ones `<?` opens, processing instructions;
+ * it reads CDATA as text, and trims comments.
  */
 function angularShape(nodes: any[]): any[] {
   const out = nodes
-    .filter((n) => n[0] !== "d" && !(n[0] === "bc" && n[2] === "<!"))
-    .map((n) => (n[0] === "x" ? ["t", n[1].slice(9, -3)] : n[0] === "bc" && n[2] === "<?" ? ["t", `<${n[1]}>`] : n));
+    .filter((n) => n[0] !== "d" && !(n[0] === "bc" && (n[2] === "<!" || n[2] === "<?")))
+    .map((n) => (n[0] === "x" ? ["t", n[1].slice(9, -3)] : n));
   return bogusAsComment(mergeTexts(out)).map((n) => {
     if (n[0] === "c") return ["c", n[1].replace(/\r\n?/g, "\n").trim()];
     // Its lexer skips the whitespace at the start of a case

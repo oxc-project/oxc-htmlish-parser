@@ -37,11 +37,13 @@ impl<'a> Builder<'a> {
         let index = if htm {
             self.stack.len().checked_sub(1)
         } else if self.is_template_placeholder(name) {
+            self.stack.iter().rposition(|open| {
+                open.braced == Braced::No && self.is_template_placeholder(open.name)
+            })
+        } else {
             self.stack
                 .iter()
-                .rposition(|open| !open.braced && self.is_template_placeholder(open.name))
-        } else {
-            self.stack.iter().rposition(|open| !open.braced && open.name.eq_ignore_ascii_case(name))
+                .rposition(|open| open.braced == Braced::No && open.name.eq_ignore_ascii_case(name))
         };
         let Some(index) = index else {
             if self.omitted_element_end(tag, lowercase) {
@@ -201,6 +203,24 @@ impl<'a> Builder<'a> {
                     || namespace != Namespace::Html
                     || self.is_template_placeholder(name_str)));
 
+        // Read where the element is, past the elements its start tag closes
+        let mut non_bindable = inherited.non_bindable;
+        if self.rules.angular && !inherited.non_bindable {
+            for attribute in &mut attributes {
+                non_bindable |= attribute.name.slice(self.source) == "ngNonBindable";
+                // A start-tag comment is none
+                if matches!(attribute.kind, AttributeKind::Plain)
+                    && let Some(kind) = angular::attribute(
+                        self.allocator,
+                        self.source,
+                        attribute.name,
+                        attribute.value.map(|v| v.span),
+                    )
+                {
+                    attribute.kind = AttributeKind::Angular(kind);
+                }
+            }
+        }
         let v_pre = self.rules.vue
             && (inherited.v_pre
                 || attributes.iter().any(|a| vue::is_v_pre(a.name.slice(self.source).as_bytes())));
@@ -254,7 +274,7 @@ impl<'a> Builder<'a> {
         let open = Open {
             id,
             name: name_str,
-            braced: false,
+            braced: Braced::No,
             tag,
             omittable,
             look,
@@ -262,6 +282,7 @@ impl<'a> Builder<'a> {
                 namespace: tags::children_namespace(local, namespace),
                 v_pre,
                 prefixed: in_prefix,
+                non_bindable,
                 ..inherited
             },
         };
@@ -301,15 +322,7 @@ impl<'a> Builder<'a> {
         }
         let name = span(start, name_end);
         let value = self.attribute_value(name_end)?;
-        let kind = if self.rules.angular
-            && let Some(kind) =
-                angular::attribute(self.allocator, self.source, name, value.map(|v| v.span))
-        {
-            AttributeKind::Angular(kind)
-        } else {
-            AttributeKind::Plain
-        };
-        Ok(Attribute { name, value, kind })
+        Ok(Attribute { name, value, kind: AttributeKind::Plain })
     }
 
     /// The value after the name ending at `name_end`, when a `=` follows.
@@ -353,7 +366,8 @@ impl<'a> Builder<'a> {
     /// `//` up to the line break, which it may run past the `>` to (`<div a // c>`), its trailing whitespace left out;
     /// `/*` through `*/`.
     fn start_tag_comment(&self, tag_start: usize, at: usize) -> PResult<Attribute<'a>> {
-        let end = if self.bytes[at + 1] == b'/' {
+        let line = self.bytes[at + 1] == b'/';
+        let end = if line {
             let rest = &self.bytes[at + 2..];
             let line_end = at + 2 + memchr2(b'\n', b'\r', rest).unwrap_or(rest.len());
             self.trimmed(at, line_end).end as usize
@@ -366,7 +380,8 @@ impl<'a> Builder<'a> {
             };
             close + 2
         };
-        Ok(Attribute { name: span(at, end), value: None, kind: AttributeKind::Comment })
+        let kind = if line { StartTagComment::Line } else { StartTagComment::Block };
+        Ok(Attribute { name: span(at, end), value: None, kind: AttributeKind::Comment(kind) })
     }
 
     /// Content up to `</name>` (case-insensitive) as one text, `{{ }}` split when `escapable`;

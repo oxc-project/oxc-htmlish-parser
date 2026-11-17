@@ -37,23 +37,41 @@ impl Builder<'_> {
                     continue;
                 }
                 // Not in an ICU case (DIVERGENCES.md#inside-an-icu-case)
+                // Under `ngNonBindable` read as Angular reads them, but text: the run goes on
                 b'@' if angular
                     && !self.context().icu
                     && (self.at_let(self.pos) || self.at_block(self.pos)) =>
                 {
-                    self.push_text(start, self.pos);
+                    let text = self.context().non_bindable;
+                    if !text {
+                        self.push_text(start, self.pos);
+                    }
                     if self.at_let(self.pos) {
                         self.let_declaration()?;
                     } else {
                         self.block_start()?;
                     }
-                    start = self.pos;
+                    if !text {
+                        start = self.pos;
+                    }
                     continue;
                 }
                 b'}' if angular => {
-                    self.push_text(start, self.pos);
-                    self.block_close()?;
-                    start = self.pos;
+                    let at = self.pos;
+                    // A block read as text closes in the run, but for the elements left open in it, which close at the `}`
+                    let in_text = self
+                        .stack
+                        .last()
+                        .is_some_and(|open| matches!(open.braced, Braced::Text(_)));
+                    if !in_text {
+                        self.push_text(start, at);
+                    }
+                    let text = self.block_close()?;
+                    if !text {
+                        start = self.pos;
+                    } else if !in_text {
+                        start = at;
+                    }
                     continue;
                 }
                 b'@' => {
@@ -88,6 +106,10 @@ impl Builder<'_> {
             } else {
                 self.vue_interpolation_end(open, limit)?
             };
+            if self.context().non_bindable {
+                self.pos = close + 2;
+                continue;
+            }
             self.push_text(start, open);
             self.push(
                 NodeKind::Interpolation(Interpolation {

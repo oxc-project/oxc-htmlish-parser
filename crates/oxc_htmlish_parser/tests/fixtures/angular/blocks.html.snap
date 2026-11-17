@@ -6,7 +6,9 @@ Root sfc=false
     Text [4..7] "\n  " (nl|nl)
     Block For name=[8..11] "for" parameters=["[13..26] \"item of items\"", "[28..41] \"track item.id\"", "[43..57] \"let i = $index\""] open=[7..60] "@for (item of items; track item.id; let i = $index) {" close=[92..93] "}"
       % for item=[13..17] "item" of=[21..26] "items"
+      % expression code="items"
       % track [34..41] "item.id"
+      % expression code="item.id"
       % let [47..48] "i" = [51..57] "$index"
       Text [60..65] "\n    " (nl|nl)
       Element [66..68] "li" Html end_tag=[84..89] "</li>"
@@ -21,12 +23,14 @@ Root sfc=false
     Text [124..125] "\n" (nl|nl)
   Text [130..131] "\n" (nl|nl)
   Block If name=[132..134] "if" parameters=["[136..141] \"a > b\""] open=[131..144] "@if (a > b) {" close=[165..166] "}"
+    % expression code="a > b"
     Text [144..147] "\n  " (nl|nl)
     Element [148..149] "p" Html end_tag=[160..164] "</p>"
       Interpolation expression=[152..158] " '}}' " code="'}}'"
     Text [164..165] "\n" (nl|nl)
   Text [166..167] " " (sp|sp)
   Block ElseIf name=[168..177] "else   if" parameters=["[179..180] \"b\""] open=[167..183] "@else   if (b) {" close=[201..202] "}"
+    % expression code="b"
     Text [183..186] "\n  " (nl|nl)
     Element [187..191] "span" Html end_tag=[193..200] "</span>"
       Text [192..193] "b" (-|-) content=[192..193] "b"
@@ -36,10 +40,13 @@ Root sfc=false
     Text [210..215] "\n  c\n" (nl|nl) content=[213..214] "c"
   Text [216..217] "\n" (nl|nl)
   Block Switch name=[218..224] "switch" parameters=["[226..230] \"mode\""] open=[217..233] "@switch (mode) {" close=[296..297] "}"
+    % expression code="mode"
     Text [233..236] "\n  " (nl|nl)
     Block Case name=[237..241] "case" parameters=["[243..246] \"'a'\""] open=[236..247] "@case ('a')" no_body
+      % expression code="'a'"
     Text [247..250] "\n  " (nl|nl)
     Block Case name=[251..255] "case" parameters=["[257..260] \"'b'\""] open=[250..263] "@case ('b') {" close=[276..277] "}"
+      % expression code="'b'"
       Text [263..268] "\n    " (nl|nl)
       Element [269..270] "p" Html no_end_tag span_end=276
         Text [271..276] "ab\n  " (-|nl) content=[271..273] "ab"
@@ -50,6 +57,7 @@ Root sfc=false
   Element [299..300] "p" Html end_tag=[320..324] "</p>"
     Text [301..302] "a" (-|-) content=[301..302] "a"
     Block If name=[303..305] "if" parameters=["[306..307] \"x\""] open=[302..309] "@if(x){" close=[310..311] "}"
+      % expression code="x"
       Text [309..310] "b" (-|-) content=[309..310] "b"
     Text [311..320] "c a@b.com" (-|-) content=[311..320] "c a@b.com"
   Text [324..325] "\n" (nl|nl)
@@ -66,6 +74,7 @@ Root sfc=false
   Text [429..430] "\n" (nl|nl)
   Element [431..434] "div" Html end_tag=[486..492] "</div>"
     Block If name=[436..438] "if" parameters=["[440..441] \"a\""] open=[435..444] "@if (a) {" close=[467..468] "}"
+      % expression code="a"
       Element [445..456] "nz-progress" Html self_closing no_end_tag span_end=467
         @[457..460] "[x]" =" [462..463] "y" Property target="x" code="y"
     Text [468..469] " " (sp|sp)
@@ -76,17 +85,40 @@ Root sfc=false
     Interpolation expression=[498..509] " a // it's " code="a" comment="// it's"
   Text [515..516] "\n" (nl|nl)
   Block If name=[517..519] "if" parameters=["[521..530] \"f(\\\"a;b)\\\")\"", "[533..534] \"c\""] open=[516..537] "@if (f(\"a;b)\") ; c) {" close=[538..539] "}"
+    % expression code="f(\"a;b)\")"
     Text [537..538] "x" (-|-) content=[537..538] "x"
   Text [539..540] "\n" (nl|nl)
   Block If name=[541..543] "if" parameters=["[545..546] \"a\""] open=[540..549] "@if (a) {" close=[550..551] "}"
+    % expression code="a"
     Text [549..550] "x" (-|-) content=[549..550] "x"
   Text [551..552] " " (sp|sp)
   Block ElseIf name=[553..561] "else\u{a0}if" parameters=["[563..564] \"b\""] open=[552..567] "@else\u{a0}if (b) {" close=[568..569] "}"
+    % expression code="b"
     Text [567..568] "y" (-|-) content=[567..568] "y"
   Text [569..570] "\n" (nl|nl)
   Block If name=[571..573] "if" parameters=["[575..576] \"a\""] open=[570..579] "@if (a) {" close=[580..581] "}"
+    % expression code="a"
     Text [579..580] "x" (-|-) content=[579..580] "x"
   Text [581..582] " " (sp|sp)
   Block Unknown name=[583..592] "else iffy" parameters=["[594..595] \"b\""] open=[582..598] "@else iffy (b) {" close=[599..600] "}"
     Text [598..599] "y" (-|-) content=[598..599] "y"
   Text [600..601] "\n" (nl|nl)
+  Block If name=[602..604] "if" parameters=["[606..619] \"user$ | async\"", "[621..628] \"as user\""] open=[601..631] "@if (user$ | async; as user) {" close=[631..632] "}"
+    % expression code="user$" | async[]
+    % as [624..628] "user"
+  Text [632..633] " " (sp|sp)
+  Block Switch name=[634..640] "switch" parameters=["[642..647] \"a | p\""] open=[633..650] "@switch (a | p) {" close=[672..673] "}"
+    % expression code="a" | p[]
+    Text [650..651] " " (sp|sp)
+    Block Case name=[652..656] "case" parameters=["[658..667] \"b ? c : d\""] open=[651..670] "@case (b ? c : d) {" close=[670..671] "}"
+      % expression code=?"b ? c : d"
+    Text [671..672] " " (sp|sp)
+  Text [673..674] "\n" (nl|nl)
+  Block For name=[675..678] "for" parameters=["[680..701] \"item of items | async\"", "[703..716] \"track item.id\""] open=[674..719] "@for (item of items | async; track item.id) {" close=[719..720] "}"
+    % for item=[680..684] "item" of=[688..701] "items | async"
+    % expression code="items" | async[]
+    % track [709..716] "item.id"
+    % expression code="item.id"
+  Text [720..721] "\n" (nl|nl)
+  LetDeclaration name=[726..727] "v" value=[730..748] "a | p: (b ? c : d)" code="a" | p[?"(b ? c : d)"]
+  Text [749..750] "\n" (nl|nl)

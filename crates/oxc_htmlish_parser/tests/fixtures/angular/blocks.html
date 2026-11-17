@@ -30,3 +30,6 @@
 @if (f("a;b)") ; c) {x}
 @if (a) {x} @else if (b) {y}
 @if (a) {x} @else iffy (b) {y}
+@if (user$ | async; as user) {} @switch (a | p) { @case (b ? c : d) {} }
+@for (item of items | async; track item.id) {}
+@let v = a | p: (b ? c : d);

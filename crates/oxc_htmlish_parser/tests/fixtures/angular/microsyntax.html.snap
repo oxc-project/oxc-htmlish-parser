@@ -3,31 +3,31 @@ source: crates/oxc_htmlish_parser/tests/ast.rs
 ---
 Root sfc=false
   Element [1..3] "li" Html end_tag=[62..67] "</li>"
-    @[4..10] "*ngFor" =" [12..59] "let item of items; index as i; trackBy: trackFn" Template target="ngFor" [None: None] [let Some("item") = None] [Some("of"): Some("items")] [Some("index") as Some("i")] [Some("trackBy"): Some("trackFn")]
+    @[4..10] "*ngFor" =" [12..59] "let item of items; index as i; trackBy: trackFn" Template target="ngFor" [None: None] [let Some("item") = None] [Some("of"): Some("items") code="items"] [Some("index") as Some("i")] [Some("trackBy"): Some("trackFn") code="trackFn"]
     Text [61..62] "a" (-|-) content=[61..62] "a"
   Text [67..68] "\n" (nl|nl)
   Element [69..71] "li" Html end_tag=[140..145] "</li>"
-    @[72..78] "*ngFor" =" [80..137] "let item of items | slice: 0 : n trackBy f; let odd = odd" Template target="ngFor" [None: None] [let Some("item") = None] [Some("of"): Some("items | slice: 0 : n")] [Some("trackBy"): Some("f")] [let Some("odd") = Some("odd")]
+    @[72..78] "*ngFor" =" [80..137] "let item of items | slice: 0 : n trackBy f; let odd = odd" Template target="ngFor" [None: None] [let Some("item") = None] [Some("of"): Some("items | slice: 0 : n") code="items" | slice["0", "n"]] [Some("trackBy"): Some("f") code="f"] [let Some("odd") = Some("odd")]
     Text [139..140] "b" (-|-) content=[139..140] "b"
   Text [145..146] "\n" (nl|nl)
   Element [147..148] "p" Html end_tag=[194..198] "</p>"
-    @[149..154] "*ngIf" =" [156..191] "user$ | async as user; else loading" Template target="ngIf" [None: Some("user$ | async")] [None as Some("user")] [Some("else"): Some("loading")]
+    @[149..154] "*ngIf" =" [156..191] "user$ | async as user; else loading" Template target="ngIf" [None: Some("user$ | async") code="user$" | async[] as Some("user")] [Some("else"): Some("loading") code="loading"]
     Text [193..194] "c" (-|-) content=[193..194] "c"
   Text [198..199] "\n" (nl|nl)
   Element [200..201] "p" Html end_tag=[229..233] "</p>"
-    @[202..207] "*ngIf" =" [209..226] "a ? b : c; then t" Template target="ngIf" [None: Some("a ? b : c")] [Some("then"): Some("t")]
+    @[202..207] "*ngIf" =" [209..226] "a ? b : c; then t" Template target="ngIf" [None: Some("a ? b : c") code=?"a ? b : c"] [Some("then"): Some("t") code="t"]
     Text [228..229] "d" (-|-) content=[228..229] "d"
   Text [233..234] "\n" (nl|nl)
   Element [235..236] "p" Html end_tag=[280..284] "</p>"
-    @[237..242] "*ngIf" =" [244..277] "f('a; b', [c, d]) && x?.y!.z in o" Template target="ngIf" [None: Some("f('a; b', [c, d]) && x?.y!.z in o")]
+    @[237..242] "*ngIf" =" [244..277] "f('a; b', [c, d]) && x?.y!.z in o" Template target="ngIf" [None: Some("f('a; b', [c, d]) && x?.y!.z in o") code="f('a; b', [c, d]) && x?.y!.z in o"]
     Text [279..280] "e" (-|-) content=[279..280] "e"
   Text [284..285] "\n" (nl|nl)
   Element [286..287] "p" Html end_tag=[318..322] "</p>"
-    @[288..293] "*ngIf" =" [295..315] "re.test(/a;b/g) as m" Template target="ngIf" [None: Some("re.test(/a;b/g)")] [None as Some("m")]
+    @[288..293] "*ngIf" =" [295..315] "re.test(/a;b/g) as m" Template target="ngIf" [None: Some("re.test(/a;b/g)") code="re.test(/a;b/g)" as Some("m")]
     Text [317..318] "f" (-|-) content=[317..318] "f"
   Text [322..323] "\n" (nl|nl)
   Element [324..325] "p" Html end_tag=[396..400] "</p>"
-    @[326..343] "*ngTemplateOutlet" =" [345..393] "tpl; context: {$implicit: x, y: `${ {a: 1}.a }`}" Template target="ngTemplateOutlet" [None: Some("tpl")] [Some("context"): Some("{$implicit: x, y: `${ {a: 1}.a }`}")]
+    @[326..343] "*ngTemplateOutlet" =" [345..393] "tpl; context: {$implicit: x, y: `${ {a: 1}.a }`}" Template target="ngTemplateOutlet" [None: Some("tpl") code="tpl"] [Some("context"): Some("{$implicit: x, y: `${ {a: 1}.a }`}") code="{$implicit: x, y: `${ {a: 1}.a }`}"]
     Text [395..396] "g" (-|-) content=[395..396] "g"
   Text [400..401] "\n" (nl|nl)
   Element [402..403] "p" Html end_tag=[414..418] "</p>"
@@ -39,7 +39,7 @@ Root sfc=false
     Text [428..429] "i" (-|-) content=[428..429] "i"
   Text [433..434] "\n" (nl|nl)
   Element [435..436] "p" Html end_tag=[458..462] "</p>"
-    @[437..442] "*ngIf" =" [444..455] "a b-c 'd' e" Template target="ngIf" [None: Some("a")] [Some("b-c"): Some("'d'")] [Some("e"): None]
+    @[437..442] "*ngIf" =" [444..455] "a b-c 'd' e" Template target="ngIf" [None: Some("a") code="a"] [Some("b-c"): Some("'d'") code="'d'"] [Some("e"): None]
     Text [457..458] "j" (-|-) content=[457..458] "j"
   Text [462..463] "\n" (nl|nl)
   Element [464..465] "p" Html end_tag=[479..483] "</p>"

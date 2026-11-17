@@ -200,11 +200,19 @@ struct Context {
     /// Angular: in the HTML namespace under a prefix that names none (`<x:g>`, `<html:p>`),
     /// which its compiler gives the descendants too (`:x:p`): the tag table applies to no name.
     prefixed: bool,
+    /// Angular: under an element with `ngNonBindable`, which its compiler reads as its `NonBindableVisitor` does:
+    /// blocks, `@let` and `{{ }}` as text, attributes as plain ones.
+    non_bindable: bool,
 }
 
 impl Context {
-    const ROOT: Self =
-        Self { namespace: Namespace::Html, v_pre: false, icu: false, prefixed: false };
+    const ROOT: Self = Self {
+        namespace: Namespace::Html,
+        v_pre: false,
+        icu: false,
+        prefixed: false,
+        non_bindable: false,
+    };
 }
 
 enum Stop {
@@ -260,10 +268,13 @@ fn is_identifier_part(b: u8) -> bool {
     b.is_ascii_alphanumeric() || matches!(b, b'_' | b'$')
 }
 
-/// `<` followed by a letter, `/` or `!` at `at`: a tag, a comment or a declaration starts (Angular's `_isTagStart`).
+/// `<` followed by a letter, `/`, `!` or `?` at `at`: a tag, a comment, a declaration or a processing instruction starts
+/// (Angular's `_isTagStart`).
 fn is_tag_start(bytes: &[u8], at: usize) -> bool {
     bytes[at] == b'<'
-        && bytes.get(at + 1).is_some_and(|b| b.is_ascii_alphabetic() || matches!(b, b'/' | b'!'))
+        && bytes
+            .get(at + 1)
+            .is_some_and(|b| b.is_ascii_alphabetic() || matches!(b, b'/' | b'!' | b'?'))
 }
 
 /// Where the leading ASCII whitespace of `bytes` ends and the trailing one starts.
@@ -273,12 +284,23 @@ fn trim(bytes: &[u8]) -> (usize, usize) {
 }
 
 /// An element (or an Angular block or ICU) whose end has not been seen yet.
+/// What a `}` closes ([`Open::braced`]).
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Braced {
+    /// An element, closed by its end tag.
+    No,
+    /// A block, an ICU expression or one of its cases, the node at [`Open::id`].
+    Node,
+    /// A block under `ngNonBindable`, read as text from the offset: no node of its own, [`Open::id`] its parent.
+    Text(usize),
+}
+
 struct Open<'a> {
     id: NodeId,
     /// The tag name as written, for matching end tags; empty for a braced one.
     name: &'a str,
-    /// A block, an ICU expression or one of its cases: `}` closes it, and no end tag.
-    braced: bool,
+    /// What `}` closes, and no end tag: a block, an ICU expression or one of its cases.
+    braced: Braced,
     tag: Tag,
     /// The element may go without an end tag when its parent's closes it
     /// (closed by its parent, or a `/>` HTML ignored: `<my-el />`, closed as in browsers).
@@ -340,17 +362,23 @@ impl<'a> Builder<'a> {
             self.markup()?;
         }
         while let Some(open) = self.stack.pop() {
-            if open.braced {
-                let node = &self.nodes[open.id.index()];
-                let kind = if matches!(node.kind, NodeKind::Block(_)) {
-                    DiagnosticKind::UnclosedBlock
-                } else {
-                    DiagnosticKind::InvalidIcu
-                };
-                let start = node.span.start as usize;
-                return error(kind, span(start, start + 1));
-            }
-            self.close(&open, None, self.bytes.len());
+            let (kind, start) = match open.braced {
+                Braced::No => {
+                    self.close(&open, None, self.bytes.len());
+                    continue;
+                }
+                Braced::Text(start) => (DiagnosticKind::UnclosedBlock, start),
+                Braced::Node => {
+                    let node = &self.nodes[open.id.index()];
+                    let kind = if matches!(node.kind, NodeKind::Block(_)) {
+                        DiagnosticKind::UnclosedBlock
+                    } else {
+                        DiagnosticKind::InvalidIcu
+                    };
+                    (kind, node.span.start as usize)
+                }
+            };
+            return error(kind, span(start, start + 1));
         }
         Ok(())
     }
@@ -464,11 +492,11 @@ impl<'a> Builder<'a> {
         self.bytes[at..].get(..pat.len()).is_some_and(|b| b.eq_ignore_ascii_case(pat.as_bytes()))
     }
 
-    /// `<` followed by what can start markup (`<?` too); any other `<` is text.
+    /// `<` followed by what can start markup; any other `<` is text.
     /// In a Vue SFC, a void element's end tag (`</br>`) is text too: Vue drops it (DIVERGENCES.md#void-element-end-tags).
     #[inline]
     fn at_markup(&self, at: usize) -> bool {
-        (is_tag_start(self.bytes, at) || self.bytes[at..].starts_with(b"<?"))
+        is_tag_start(self.bytes, at)
             && !(self.rules.sfc && self.byte(at + 1) == Some(b'/') && self.at_void_end_tag(at))
             && !(self.rules.angular && self.at_prefix_without_name(at))
     }
@@ -495,6 +523,11 @@ impl<'a> Builder<'a> {
     }
 
     /// What the current element's next child inherits.
+    /// Where the next node goes.
+    fn parent(&self) -> NodeId {
+        self.stack.last().map_or(self.base_parent, |open| open.id)
+    }
+
     fn context(&self) -> Context {
         self.stack.last().map_or(self.base, |open| open.context)
     }
@@ -543,7 +576,7 @@ impl<'a> Builder<'a> {
 
     /// Appends a node as the last child of the current element.
     fn push(&mut self, kind: NodeKind<'a>, span: Span) -> NodeId {
-        let parent = self.stack.last().map_or(self.base_parent, |open| open.id);
+        let parent = self.parent();
         let id = NodeId::from_index(self.nodes.len());
         let prev = self.nodes[parent.index()].last_child;
         self.nodes.push(Node {
@@ -709,7 +742,7 @@ mod tests {
             let NodeKind::Element(el) = &node.kind else { panic!() };
             let found: Vec<_> = match &el.attributes[0].kind {
                 AttributeKind::Angular(AngularAttribute::Interpolation(expressions)) => {
-                    expressions.iter().map(|e| e.slice(source)).collect()
+                    expressions.iter().map(|e| e.expression.slice(source)).collect()
                 }
                 _ => vec![],
             };

@@ -22,8 +22,8 @@ mod check;
 use oxc_htmlish_parser::{
     Allocator, Dialect, Parser,
     ast::{
-        AngularAttribute, AngularExpression, AttributeKind, Block, BlockParameterKind, Element,
-        NodeId, NodeKind, Root, TemplateBinding,
+        AngularAttribute, AngularCode, AngularExpression, AttributeKind, Block, BlockParameterKind,
+        Element, NodeId, NodeKind, Root, TemplateBinding,
     },
 };
 use serde_json::{Value, json};
@@ -100,7 +100,12 @@ fn node(source: &str, root: &Root<'_>, id: NodeId) -> Value {
             let name = b.kind.name().unwrap_or_else(|| b.name.slice(source));
             json!(["b", name, parameters, children(source, root, id), block_reading(source, b)])
         }
-        NodeKind::LetDeclaration(n) => json!(["l", n.name.slice(source), n.value.slice(source)]),
+        NodeKind::LetDeclaration(n) => json!([
+            "l",
+            n.name.slice(source),
+            n.value.slice(source),
+            n.angular.as_deref().map(|e| expression(source, e))
+        ]),
         NodeKind::Icu(n) => json!([
             "icu",
             n.expression.slice(source),
@@ -115,43 +120,63 @@ fn node(source: &str, root: &Root<'_>, id: NodeId) -> Value {
 fn block_reading(source: &str, block: &Block<'_>) -> Value {
     let (mut item, mut expression, mut track, mut lets, mut alias) =
         (None, None, None, vec![], None);
+    // Angular's readings of the expressions: the block's own (`@if`'s, `@for`'s `of`, `@switch`'s, `@case`'s), and `track`'s
+    let (mut own, mut track_reading) = (None, None);
+    let reading = |e: &Option<_>| e.as_deref().map(|e| self::expression(source, e));
     for parameter in &block.parameters {
         match &parameter.kind {
-            BlockParameterKind::Plain => {}
-            BlockParameterKind::ForOf { item: i, expression: e } => {
+            BlockParameterKind::Plain(e) => own = own.or_else(|| reading(e)),
+            BlockParameterKind::ForOf { item: i, expression: e, angular } => {
                 (item, expression) = (Some(i.slice(source)), Some(e.slice(source)));
+                own = own.or_else(|| reading(angular));
             }
-            BlockParameterKind::Track { expression: e } => track = Some(e.slice(source)),
+            BlockParameterKind::Track { expression: e, angular } => {
+                track = Some(e.slice(source));
+                track_reading = track_reading.or_else(|| reading(angular));
+            }
             BlockParameterKind::Let(variables) => lets.extend(
                 variables.iter().map(|v| json!([v.name.slice(source), v.value.slice(source)])),
             ),
             BlockParameterKind::As { alias: a } => alias = Some(a.slice(source)),
         }
     }
-    json!([item, expression, track, lets, alias])
+    json!([item, expression, track, lets, alias, [own, track_reading]])
 }
 
-/// `[code, [[name, [argument, …]], …], comment]`
+/// `[code, [[name, [argument, …]], …], comment]`, each piece of code `[text, conditional]`
 fn expression(source: &str, e: &AngularExpression<'_>) -> Value {
     let pipes: Vec<Value> = e
         .pipes
         .iter()
         .map(|p| {
-            let arguments: Vec<&str> = p.arguments.iter().map(|a| a.slice(source)).collect();
+            let arguments: Vec<Value> = p.arguments.iter().map(|a| code(source, a)).collect();
             json!([p.name.slice(source), arguments])
         })
         .collect();
-    json!([e.code.slice(source), pipes, e.comment.map(|c| c.slice(source))])
+    json!([code(source, &e.code), pipes, e.comment.map(|c| c.slice(source))])
+}
+
+/// `[text, conditional]`
+fn code(source: &str, code: &AngularCode) -> Value {
+    json!([code.span.slice(source), code.conditional])
 }
 
 fn template_bindings(source: &str, bindings: &[TemplateBinding]) -> Value {
     let s = |span: Option<oxc_htmlish_parser::Span>| span.map(|span| span.slice(source));
+    // Flat as Angular's: an expression's alias one of its own, of the expression's key
     bindings
         .iter()
-        .map(|binding| match *binding {
-            TemplateBinding::Expression { key, expression } => json!(["e", s(key), s(expression)]),
-            TemplateBinding::Let { name, value } => json!(["l", s(Some(name)), s(value)]),
-            TemplateBinding::As { key, alias } => json!(["a", s(key), s(Some(alias))]),
+        .flat_map(|binding| match binding {
+            TemplateBinding::Expression { key, expression, angular, alias } => {
+                let reading = angular.as_deref().map(|e| self::expression(source, e));
+                let mut out = vec![json!(["e", s(*key), s(*expression), reading])];
+                out.extend(alias.map(|alias| json!(["a", s(*key), s(Some(alias))])));
+                out
+            }
+            TemplateBinding::Let { name, value } => vec![json!(["l", s(Some(*name)), s(*value)])],
+            TemplateBinding::As { key, alias } => {
+                vec![json!(["a", s(Some(*key)), s(Some(*alias))])]
+            }
         })
         .collect()
 }
@@ -175,9 +200,13 @@ fn element(source: &str, root: &Root<'_>, id: NodeId, el: &Element<'_>) -> Value
             let value = a.value.map(|v| v.span.slice(source));
             match &a.kind {
                 AttributeKind::Angular(AngularAttribute::Interpolation(expressions)) => {
-                    let expressions: Vec<&str> =
-                        expressions.iter().map(|e| e.slice(source)).collect();
-                    json!([name, value, expressions])
+                    let texts: Vec<&str> =
+                        expressions.iter().map(|e| e.expression.slice(source)).collect();
+                    let readings: Vec<Value> = expressions
+                        .iter()
+                        .map(|e| json!(e.angular.as_deref().map(|e| expression(source, e))))
+                        .collect();
+                    json!([name, value, texts, readings])
                 }
                 AttributeKind::Angular(AngularAttribute::Template(bindings))
                     if a.value.is_some() =>
@@ -188,11 +217,21 @@ fn element(source: &str, root: &Root<'_>, id: NodeId, el: &Element<'_>) -> Value
                         ["tb", bindings.as_ref().map(|b| template_bindings(source, b))]
                     ])
                 }
-                AttributeKind::Angular(AngularAttribute::Property(e)) if value.is_some() => {
+                AttributeKind::Angular(AngularAttribute::Event(action, _)) if value.is_some() => {
+                    let action = action.as_deref().map(|action| {
+                        let statements: Vec<Value> =
+                            action.statements.iter().map(|s| code(source, s)).collect();
+                        json!([statements, action.comment.map(|c| c.slice(source))])
+                    });
+                    json!([name, value, ["ac", action]])
+                }
+                AttributeKind::Angular(
+                    AngularAttribute::Property(e, _) | AngularAttribute::TwoWay(e, _),
+                ) if value.is_some() => {
                     json!([name, value, ["ex", e.as_deref().map(|e| expression(source, e))]])
                 }
                 AttributeKind::Plain | AttributeKind::Angular(_) => json!([name, value]),
-                AttributeKind::Comment => json!(["comment", name]),
+                AttributeKind::Comment(_) => json!(["comment", name]),
                 AttributeKind::Vue(d) => {
                     let shorthand = d.name.slice(source);
                     let dir = match shorthand {

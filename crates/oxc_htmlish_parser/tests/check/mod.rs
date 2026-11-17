@@ -31,15 +31,17 @@ pub fn check(root: &Root<'_>, id: NodeId) -> Result<(), String> {
                 }
                 // A new kind lists its own parts here
                 let parts: Vec<Span> = match &attribute.kind {
-                    AttributeKind::Plain | AttributeKind::Comment => Vec::new(),
+                    AttributeKind::Plain | AttributeKind::Comment(_) => Vec::new(),
                     AttributeKind::Angular(kind) => {
                         if let AngularAttribute::Template(Some(bindings)) = kind {
-                            let parts = bindings.iter().flat_map(|binding| match *binding {
-                                TemplateBinding::Expression { key, expression } => {
-                                    [key, expression]
+                            let parts = bindings.iter().flat_map(|binding| match binding {
+                                TemplateBinding::Expression { key, expression, alias, .. } => {
+                                    [*key, *expression, *alias]
                                 }
-                                TemplateBinding::Let { name, value } => [Some(name), value],
-                                TemplateBinding::As { key, alias } => [key, Some(alias)],
+                                TemplateBinding::Let { name, value } => [Some(*name), *value, None],
+                                TemplateBinding::As { key, alias } => {
+                                    [Some(*key), Some(*alias), None]
+                                }
                             });
                             if bindings.is_empty()
                                 || !parts
@@ -52,6 +54,7 @@ pub fn check(root: &Root<'_>, id: NodeId) -> Result<(), String> {
                         if let AngularAttribute::Interpolation(expressions) = kind
                             && !expressions
                                 .iter()
+                                .map(|e| e.expression)
                                 .all(|e| value.start + 2 <= e.start && e.end + 2 <= value.end)
                         {
                             return Err(format!("interpolations {expressions:?} in {value:?}"));
@@ -94,9 +97,9 @@ pub fn check(root: &Root<'_>, id: NodeId) -> Result<(), String> {
             for parameter in &b.parameters {
                 let span = parameter.span;
                 let parts: Vec<Span> = match &parameter.kind {
-                    BlockParameterKind::Plain => vec![],
-                    BlockParameterKind::ForOf { item, expression } => vec![*item, *expression],
-                    BlockParameterKind::Track { expression } => vec![*expression],
+                    BlockParameterKind::Plain(_) => vec![],
+                    BlockParameterKind::ForOf { item, expression, .. } => vec![*item, *expression],
+                    BlockParameterKind::Track { expression, .. } => vec![*expression],
                     BlockParameterKind::Let(variables) => {
                         variables.iter().flat_map(|v| [v.name, v.value]).collect()
                     }

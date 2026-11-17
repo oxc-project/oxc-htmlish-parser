@@ -15,12 +15,19 @@ pub fn template_bindings<'a>(
     allocator: &'a Allocator,
     source: &str,
     value: Span,
-) -> Option<ArenaVec<'a, TemplateBinding>> {
+) -> Option<ArenaVec<'a, TemplateBinding<'a>>> {
     let s = value.slice(source);
     let mut tokens = vec![];
     Lexer::new(s).scan(&mut tokens, false)?;
     let base = value.start as usize;
-    let mut parser = Bindings { tokens: &tokens, at: 0, base, out: ArenaVec::new_in(&allocator) };
+    let mut parser = Bindings {
+        allocator,
+        source,
+        tokens: &tokens,
+        at: 0,
+        base,
+        out: ArenaVec::new_in(&allocator),
+    };
     parser.directive_bindings(None)?;
     while parser.at < tokens.len() {
         if parser.peek_keyword("let") {
@@ -36,7 +43,10 @@ pub fn template_bindings<'a>(
             parser.terminator();
         } else {
             let key = parser.key()?;
-            if !parser.as_binding(Some(key))? {
+            if parser.peek_keyword("as") {
+                let alias = parser.alias()?;
+                parser.out.push(TemplateBinding::As { key, alias });
+            } else {
                 parser.directive_bindings(Some(key))?;
             }
         }
@@ -46,10 +56,12 @@ pub fn template_bindings<'a>(
 }
 
 struct Bindings<'t, 's, 'a> {
+    allocator: &'a Allocator,
+    source: &'s str,
     tokens: &'t [Token<'s>],
     at: usize,
     base: usize,
-    out: ArenaVec<'a, TemplateBinding>,
+    out: ArenaVec<'a, TemplateBinding<'a>>,
 }
 
 impl Bindings<'_, '_, '_> {
@@ -90,16 +102,12 @@ impl Bindings<'_, '_, '_> {
         }
     }
 
-    /// `as alias` after `key`'s binding (`parseAsBinding`); whether there is one.
-    fn as_binding(&mut self, key: Option<Span>) -> Option<bool> {
-        if !self.peek_keyword("as") {
-            return Some(false);
-        }
+    /// `as alias` at an `as` (`parseAsBinding`).
+    fn alias(&mut self) -> Option<Span> {
         self.at += 1;
         let alias = self.key()?;
-        self.out.push(TemplateBinding::As { key, alias });
         self.terminator();
-        Some(true)
+        Some(alias)
     }
 
     /// `key`'s `:`, expression and `as alias` (`parseDirectiveKeywordBindings`); `key` `None` for the directive's own.
@@ -117,10 +125,15 @@ impl Bindings<'_, '_, '_> {
             self.at = expression_end(self.tokens, first)?;
             Some(self.span(first, self.at - 1))
         };
-        self.out.push(TemplateBinding::Expression { key, expression });
-        if !self.as_binding(key)? {
+        let angular = expression
+            .and_then(|e| super::angular_expression::expression(self.allocator, self.source, e));
+        let alias = if self.peek_keyword("as") {
+            Some(self.alias()?)
+        } else {
             self.terminator();
-        }
+            None
+        };
+        self.out.push(TemplateBinding::Expression { key, expression, angular, alias });
         Some(())
     }
 }

@@ -95,7 +95,7 @@ pub enum NodeKind<'a> {
     /// An Angular control flow block (`@if (a) { … }`); its content is the node's children.
     Block(ArenaBox<'a, Block<'a>>),
     /// `@let name = value;` (Angular).
-    LetDeclaration(ArenaBox<'a, LetDeclaration>),
+    LetDeclaration(ArenaBox<'a, LetDeclaration<'a>>),
     /// An Angular ICU expression (`{n, plural, =0 {none} other {many}}`); its cases are the node's children.
     Icu(ArenaBox<'a, Icu>),
     /// A case of an [`NodeKind::Icu`] (`=0 {none}`); its content is the node's children.
@@ -197,41 +197,61 @@ pub enum AttributeKind<'a> {
     Plain,
     Vue(ArenaBox<'a, VueDirective<'a>>),
     /// An Angular start-tag comment, among the attributes as written: [`Attribute::name`] is all of it, and there is no value.
-    /// `//` up to the line break, its trailing whitespace left out (the `>` it runs past is in it: `<div // c>`), or `/*` through `*/`.
-    Comment,
+    Comment(StartTagComment),
     Angular(AngularAttribute<'a>),
+}
+
+/// The kind of an Angular start-tag comment ([`AttributeKind::Comment`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum StartTagComment {
+    /// `//` up to the line break, its trailing whitespace left out (the `>` it runs past is in it: `<div // c>`).
+    Line,
+    /// `/*` through `*/`.
+    Block,
 }
 
 /// An Angular binding or i18n marker; the part of the name it binds is [`target`](Self::target).
 ///
 /// Read as the compiler's `parseAttribute` tells a binding from a plain attribute.
-/// Its other prefixes stay [`AttributeKind::Plain`] (`#ref`, `let-x`, `@animation`, and the old `bind-`, `on-`, `bindon-`, `ref-`),
-/// and so do the delimiters around an empty name (`[]`) or that do not close (`[(x]`).
+/// Its other prefixes stay [`AttributeKind::Plain`] (`#ref`, `let-x`, `@animation`, `ref-`),
+/// and so do the delimiters around an empty name (`[]`, `bind-`) or that do not close (`[(x]`).
 #[derive(Debug)]
 pub enum AngularAttribute<'a> {
-    /// `[x]`, its value read as an expression; `None` without a value, and where Angular reports an error its tokens show.
-    Property(Option<ArenaBox<'a, AngularExpression<'a>>>),
-    /// `(x)`.
-    Event,
-    /// `[(x)]`.
-    TwoWay,
+    /// `[x]` or `bind-x`, its value read as an expression; `None` without a value, and where Angular reports an error its tokens show.
+    Property(Option<ArenaBox<'a, AngularExpression<'a>>>, BindingForm),
+    /// `(x)` or `on-x`, its value read as an action; `None` without a value, and where Angular reports an error its tokens show.
+    Event(Option<ArenaBox<'a, AngularAction<'a>>>, BindingForm),
+    /// `[(x)]` or `bindon-x`, its value read as an expression, as `[x]`'s.
+    TwoWay(Option<ArenaBox<'a, AngularExpression<'a>>>, BindingForm),
     /// `*x`: a structural directive, its value split as its microsyntax ([`TemplateBinding`]);
     /// `None` without a value, and where Angular reports one.
     /// Split as written: Angular splits the value with its entities decoded, so `&#59;` is a `;` there, but not here.
-    Template(Option<ArenaBox<'a, ArenaVec<'a, TemplateBinding>>>),
+    Template(Option<ArenaBox<'a, ArenaVec<'a, TemplateBinding<'a>>>>),
     /// `i18n`, or `i18n-x`, which marks the attribute `x` for translation.
     I18n,
     /// Another name with `{{ }}` in its value (`title="Hi {{ name }}"`), which Angular binds:
-    /// the expressions, between each `{{` and `}}`, read as in text.
-    Interpolation(ArenaBox<'a, ArenaVec<'a, Span>>),
+    /// each `{{ }}`, read as in text.
+    Interpolation(ArenaBox<'a, ArenaVec<'a, ValueInterpolation<'a>>>),
+}
+
+/// How a binding's name is written: in delimiters (`[x]`, `(x)`, `[(x)]`), or after a prefix (`bind-x`, `on-x`, `bindon-x`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BindingForm {
+    Delimited,
+    Prefixed,
 }
 
 impl AngularAttribute<'_> {
-    /// The part of `name` (the attribute's) between the delimiters: `x` of `[(x)]`, `i18n-x` and `*x`; empty for `i18n`.
+    /// The part of `name` (the attribute's) between the delimiters or after the prefix:
+    /// `x` of `[(x)]`, `bind-x`, `i18n-x` and `*x`; empty for `i18n`.
     pub fn target(&self, name: Span) -> Span {
+        use BindingForm::{Delimited, Prefixed};
         let (start, end) = match self {
-            Self::Property(_) | Self::Event => (1, 1),
-            Self::TwoWay => (2, 2),
+            Self::Property(_, Delimited) | Self::Event(_, Delimited) => (1, 1),
+            Self::TwoWay(_, Delimited) => (2, 2),
+            Self::Property(_, Prefixed) => (5, 0),
+            Self::Event(_, Prefixed) => (3, 0),
+            Self::TwoWay(_, Prefixed) => (7, 0),
             Self::Template(_) => (1, 0),
             Self::Interpolation(_) => (0, 0),
             Self::I18n => ((name.end - name.start).min(5), 0),
@@ -244,16 +264,21 @@ impl AngularAttribute<'_> {
 ///
 /// Read as Angular's compiler reads it (`parseTemplateBindings`); each span inside [`Attribute::value`].
 /// A key is identifiers, keywords or strings joined by `-`, as written; the `:` and the `;` or `,` after a binding are optional.
-#[derive(Clone, Copy, Debug)]
-pub enum TemplateBinding {
-    /// `key: expression`, or the directive's own first (`key` `None`: `items` of `*ngIf="items"`);
-    /// `expression` `None` when none follows (`*ngIf="as x"`).
-    Expression { key: Option<Span>, expression: Option<Span> },
+#[derive(Debug)]
+pub enum TemplateBinding<'a> {
+    /// `key: expression as alias`, or the directive's own first (`key` `None`: `items` of `*ngIf="items"`);
+    /// `expression` `None` when none follows (`*ngIf="as x"`), and `angular` its reading (`None` where Angular reports an error its tokens show).
+    Expression {
+        key: Option<Span>,
+        expression: Option<Span>,
+        angular: Option<ArenaBox<'a, AngularExpression<'a>>>,
+        /// `as alias` right after it, which names it (`of items | async as list`).
+        alias: Option<Span>,
+    },
     /// `let name` / `let name = value`.
     Let { name: Span, value: Option<Span> },
-    /// `as alias`, right after the [`Expression`](Self::Expression) whose key it names (`items | async as list`),
-    /// or after a key of its own (`index as i`).
-    As { key: Option<Span>, alias: Span },
+    /// `key as alias` (`index as i`).
+    As { key: Span, alias: Span },
 }
 
 /// A Vue directive name split into its parts, each a span inside [`Attribute::name`].
@@ -335,18 +360,36 @@ impl Interpolation<'_> {
     }
 }
 
-/// An Angular expression (`{{ }}`, a property binding's value), as its compiler reads it (`parsePipe`).
+/// An Angular expression (`{{ }}`'s, a binding's value, a microsyntax's, a block parameter's, `@let`'s), as its compiler reads it (`parsePipe`).
 ///
 /// The pipes at its root split off, and the comment it ends in; each span is from the first token to the last.
 /// Read as written: Angular reads it with its character references decoded, so `&quot;` is a `"` there, but not here.
 #[derive(Debug)]
 pub struct AngularExpression<'a> {
     /// The code before the first pipe at the root, and before the comment.
-    /// A pipe not at the root stays in it: in brackets, a template literal's `${}`,
-    /// a conditional's branch (`a ? b : c | p` is `a ? b : (c | p)`).
-    pub code: Span,
+    /// A pipe not at the root stays in it: in brackets, a template literal's `${}`, a conditional's branch ([`AngularCode::conditional`]).
+    pub code: AngularCode,
     pub pipes: ArenaVec<'a, Pipe<'a>>,
     /// `//` to the end, its trailing whitespace left out: Angular reads no code past it, line breaks included.
+    pub comment: Option<Span>,
+}
+
+/// A `{{ }}` in an attribute's value ([`AngularAttribute::Interpolation`]).
+#[derive(Debug)]
+pub struct ValueInterpolation<'a> {
+    /// Between `{{` and `}}`.
+    pub expression: Span,
+    /// Angular's reading of it; `None` where it reports an error its tokens show.
+    pub angular: Option<ArenaBox<'a, AngularExpression<'a>>>,
+}
+
+/// An Angular action (an event binding's value), as its compiler reads it (`parseAction`):
+/// its statements, between the `;` at the root, and the comment it ends in. Read as written, as [`AngularExpression`].
+#[derive(Debug)]
+pub struct AngularAction<'a> {
+    /// Empty ones left out (`a;;b`, a trailing `;`), which Angular reads as none.
+    pub statements: ArenaVec<'a, AngularCode>,
+    /// `//` to the end, its trailing whitespace left out.
     pub comment: Option<Span>,
 }
 
@@ -354,7 +397,17 @@ pub struct AngularExpression<'a> {
 #[derive(Debug)]
 pub struct Pipe<'a> {
     pub name: Span,
-    pub arguments: ArenaVec<'a, Span>,
+    pub arguments: ArenaVec<'a, AngularCode>,
+}
+
+/// A piece of code: an [`AngularExpression`]'s code or a pipe's argument, or an [`AngularAction`]'s statement.
+#[derive(Clone, Copy, Debug)]
+pub struct AngularCode {
+    pub span: Span,
+    /// Its root is a conditional, parens around all of it aside (`a ? b : c`, `(a ? b : c)`):
+    /// a pipe after it is its branch's unless it is in parens (`a ? b : c | p` is `a ? b : (c | p)`).
+    /// `false` for a statement, which no pipe follows.
+    pub conditional: bool,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -476,24 +529,21 @@ pub struct BlockParameter<'a> {
 ///
 /// [`Plain`](Self::Plain) for the other blocks' parameters, the first of `@if`, and a shape the compiler reports;
 /// the checks it makes of the names (`$index`, duplicates) are not repeated.
+///
+/// Each `angular` is Angular's reading of the expression; `None` where it reports an error its tokens show.
 #[derive(Debug)]
 pub enum BlockParameterKind<'a> {
-    Plain,
+    /// All of it: the expression of the first of `@if`, `@else if`, `@switch` and `@case`, with its reading;
+    /// no reading for another block's (`@defer`'s `on viewport`) and a shape the compiler reports.
+    Plain(Option<ArenaBox<'a, AngularExpression<'a>>>),
     /// `@for`'s first: `item of expression`, inside the parentheses Angular strips (`(item of items)`).
-    ForOf {
-        item: Span,
-        expression: Span,
-    },
+    ForOf { item: Span, expression: Span, angular: Option<ArenaBox<'a, AngularExpression<'a>>> },
     /// `@for`'s `track expression`.
-    Track {
-        expression: Span,
-    },
+    Track { expression: Span, angular: Option<ArenaBox<'a, AngularExpression<'a>>> },
     /// `@for`'s `let name = variable, …`.
     Let(ArenaVec<'a, LetVariable>),
     /// `@if`'s and `@else if`'s `as alias`.
-    As {
-        alias: Span,
-    },
+    As { alias: Span },
 }
 
 /// `i = $index` of `@for`'s `let i = $index, e = $even`.
@@ -503,12 +553,14 @@ pub struct LetVariable {
     pub value: Span,
 }
 
-#[derive(Clone, Copy, Debug)]
-pub struct LetDeclaration {
+#[derive(Debug)]
+pub struct LetDeclaration<'a> {
     /// After `@let` and whitespace; empty when none is written (`@let = 1;`).
     pub name: Span,
     /// Between `=` and `;`, trimmed.
     pub value: Span,
+    /// Angular's reading of the value; `None` where it reports an error its tokens show.
+    pub angular: Option<ArenaBox<'a, AngularExpression<'a>>>,
 }
 
 /// The whitespace between the cases is no node, as in Angular's AST;

@@ -92,10 +92,12 @@ impl<'a> Builder<'a> {
             }
         }
         let kind = block_kind(&self.source[name_start..name_end]);
+        // Under `ngNonBindable` its markers are text, its content its parent's
+        let text = self.context().non_bindable;
         let mut parameters = ArenaVec::new_in(&self.allocator);
         let mut open_end = name_end;
         if self.byte(at) == Some(b'(') {
-            at = self.block_parameters(at + 1, kind, &mut parameters)?;
+            at = self.block_parameters(at + 1, kind, (!text).then_some(&mut parameters))?;
             open_end = at;
             at = self.skip_ws(at);
         }
@@ -108,29 +110,36 @@ impl<'a> Builder<'a> {
         } else if !(matches!(kind, BlockKind::Case | BlockKind::Default) && self.at_block(at)) {
             return error(DiagnosticKind::IncompleteBlock, span(start, open_end));
         }
-        let block = Block {
-            name: span(name_start, name_end),
-            kind,
-            parameters,
-            open: span(start, open_end),
-            close: None,
-        };
-        let id = self
-            .push(NodeKind::Block(ArenaBox::new_in(block, &self.allocator)), span(start, open_end));
         self.pos = open_end;
+        let id = if text {
+            self.parent()
+        } else {
+            let block = Block {
+                name: span(name_start, name_end),
+                kind,
+                parameters,
+                open: span(start, open_end),
+                close: None,
+            };
+            self.push(
+                NodeKind::Block(ArenaBox::new_in(block, &self.allocator)),
+                span(start, open_end),
+            )
+        };
         if body {
-            self.open_container(id, false);
+            let braced = if text { Braced::Text(start) } else { Braced::Node };
+            self.open_container(id, false, braced);
         }
         Ok(())
     }
 
-    /// Opens a block, an ICU expression or a case at `id`; `icu`: its content is a case's.
-    fn open_container(&mut self, id: NodeId, icu: bool) {
+    /// Opens a block, an ICU expression or a case at `id`, as `braced` says; `icu`: its content is a case's.
+    fn open_container(&mut self, id: NodeId, icu: bool, braced: Braced) {
         let context = Context { icu, ..self.context() };
         self.stack.push(Open {
             id,
             name: "",
-            braced: true,
+            braced,
             tag: Tag::default(),
             omittable: false,
             look: Some(self.stack.len()),
@@ -153,7 +162,7 @@ impl<'a> Builder<'a> {
         };
         let id = self
             .push(NodeKind::Icu(ArenaBox::new_in(icu, &self.allocator)), span(start, type_end + 1));
-        self.open_container(id, true);
+        self.open_container(id, true, Braced::Node);
         self.pos = type_end + 1;
         self.icu_next_case()
     }
@@ -171,54 +180,61 @@ impl<'a> Builder<'a> {
         };
         let case = IcuCase { value: self.trimmed(at, open), open: span(open, open + 1).start };
         let id = self.push(NodeKind::IcuCase(case), span(at, open + 1));
-        self.open_container(id, true);
+        self.open_container(id, true, Braced::Node);
         self.pos = open + 1;
         Ok(())
     }
 
-    /// Closes the container on top of the stack at the `}` at `at`.
-    fn close_container(&mut self, at: usize) {
+    /// Closes the container on top of the stack at the `}` at `at`; whether it was a block read as text.
+    fn close_container(&mut self, at: usize) -> bool {
         let open = self.stack.pop().expect("a container is open");
+        self.pos = at + 1;
+        if matches!(open.braced, Braced::Text(_)) {
+            return true;
+        }
         let node = &mut self.nodes[open.id.index()];
         node.span = span(node.span.start as usize, at + 1);
         if let NodeKind::Block(block) = &mut node.kind {
             block.close = Some(span(at, at + 1));
         }
-        self.pos = at + 1;
+        false
     }
 
-    /// The parameters after `(`, up to the `)`, which the returned offset follows, of a `block`.
+    /// The parameters after `(`, up to the `)`, which the returned offset follows, of a `block`, read into `out`
+    /// (none: only where they end).
     fn block_parameters(
         &self,
         from: usize,
         block: BlockKind,
-        out: &mut ArenaVec<'a, BlockParameter<'a>>,
+        mut out: Option<&mut ArenaVec<'a, BlockParameter<'a>>>,
     ) -> PResult<usize> {
-        let push = |start: usize, end: usize, out: &mut ArenaVec<'a, BlockParameter<'a>>| {
-            let parameter = self.trimmed(start, end);
-            if !parameter.is_empty() {
-                let index = out.len();
-                out.push(control_flow::parameter(
-                    self.allocator,
-                    self.source,
-                    block,
-                    index,
-                    parameter,
-                ));
-            }
-        };
+        let push =
+            |start: usize, end: usize, out: &mut Option<&mut ArenaVec<'a, BlockParameter<'a>>>| {
+                let Some(out) = out else { return };
+                let parameter = self.trimmed(start, end);
+                if !parameter.is_empty() {
+                    let index = out.len();
+                    out.push(control_flow::parameter(
+                        self.allocator,
+                        self.source,
+                        block,
+                        index,
+                        parameter,
+                    ));
+                }
+            };
         let (mut param_start, mut depth) = (from, 0);
         for at in self.unquoted(from, self.bytes.len()) {
             match self.bytes[at] {
                 b'(' => depth += 1,
                 b')' if depth > 0 => depth -= 1,
                 b')' => {
-                    push(param_start, at, out);
+                    push(param_start, at, &mut out);
                     return Ok(at + 1);
                 }
                 // Each parameter counts its own parentheses, as Angular's lexer does
                 b';' => {
-                    push(param_start, at, out);
+                    push(param_start, at, &mut out);
                     param_start = at + 1;
                     depth = 0;
                 }
@@ -258,11 +274,17 @@ impl<'a> Builder<'a> {
                 _ => at += string_step(b, &mut quote, true).0,
             }
         };
+        self.pos = semicolon + 1;
+        // Text under `ngNonBindable`
+        if self.context().non_bindable {
+            return Ok(());
+        }
+        let value = self.trimmed(value_start, semicolon);
         let declaration = LetDeclaration {
             name: span(name_start, name_end),
-            value: self.trimmed(value_start, semicolon),
+            value,
+            angular: angular_expression::expression(self.allocator, self.source, value),
         };
-        self.pos = semicolon + 1;
         self.push(
             NodeKind::LetDeclaration(ArenaBox::new_in(declaration, &self.allocator)),
             span(start, self.pos),
@@ -272,12 +294,12 @@ impl<'a> Builder<'a> {
 
     /// `}`: closes the innermost block, and the elements in it whose end tag may be omitted;
     /// in an ICU case, the case and every element left open in it, as Angular builds a case's content on its own,
-    /// then reads the next case.
-    pub(super) fn block_close(&mut self) -> PResult<()> {
+    /// then reads the next case; whether it closed a block read as text.
+    pub(super) fn block_close(&mut self) -> PResult<bool> {
         let at = self.pos;
         let icu = self.context().icu;
         // None in a conditional comment's content, parsed apart
-        let index = self.stack.iter().rposition(|open| open.braced);
+        let index = self.stack.iter().rposition(|open| open.braced != Braced::No);
         let closed = index.is_some_and(|index| {
             if icu {
                 self.close_down_to(index + 1, at);
@@ -289,8 +311,11 @@ impl<'a> Builder<'a> {
         if !closed {
             return error(DiagnosticKind::UnexpectedBlockClose, span(at, at + 1));
         }
-        self.close_container(at);
-        if icu { self.icu_next_case() } else { Ok(()) }
+        let text = self.close_container(at);
+        if icu {
+            self.icu_next_case()?;
+        }
+        Ok(text)
     }
 }
 
@@ -302,11 +327,16 @@ pub(super) fn attribute<'a>(
     name: Span,
     value: Option<Span>,
 ) -> Option<AngularAttribute<'a>> {
-    /// The prefixes it reads before the delimiters (`BIND_NAME_REGEXP`), none of them a kind of ours.
+    /// The prefixes it reads before the delimiters (`BIND_NAME_REGEXP`):
+    /// the bindings' ours when a name follows, the others none of our kinds.
     const KEYWORDS: [&str; 7] = ["bind-", "let-", "ref-", "#", "on-", "bindon-", "@"];
+    use BindingForm::{Delimited, Prefixed};
     let n = name.slice(source);
+    let prefixed = |prefix: &str| n.strip_prefix(prefix).is_some_and(|target| !target.is_empty());
+    // The delimiters by the prefix alone (`[(a)-]` binds nothing), around a name
+    let delimited = |close: &str| n.ends_with(close) && n.len() > close.len() * 2;
     // An empty name (`<a =b>`) binds a value's `{{ }}` too
-    let delimited = match n.as_bytes().first() {
+    let binding = match n.as_bytes().first() {
         Some(b'*') => {
             let bindings = value.and_then(|v| microsyntax::template_bindings(allocator, source, v));
             return Some(AngularAttribute::Template(
@@ -314,17 +344,26 @@ pub(super) fn attribute<'a>(
             ));
         }
         _ if n == "i18n" || n.starts_with("i18n-") => return Some(AngularAttribute::I18n),
-        Some(b'[') if n.starts_with("[(") => Some((AngularAttribute::TwoWay, ")]")),
-        Some(b'[') => Some((AngularAttribute::Property(None), "]")),
-        Some(b'(') => Some((AngularAttribute::Event, ")")),
+        Some(b'[') if n.starts_with("[(") => {
+            delimited(")]").then_some(AngularAttribute::TwoWay(None, Delimited))
+        }
+        Some(b'[') => delimited("]").then_some(AngularAttribute::Property(None, Delimited)),
+        Some(b'(') => delimited(")").then_some(AngularAttribute::Event(None, Delimited)),
+        _ if prefixed("bind-") => Some(AngularAttribute::Property(None, Prefixed)),
+        _ if prefixed("on-") => Some(AngularAttribute::Event(None, Prefixed)),
+        _ if prefixed("bindon-") => Some(AngularAttribute::TwoWay(None, Prefixed)),
         _ => None,
     };
-    if let Some((mut kind, close)) = delimited
-        && n.ends_with(close)
-        && n.len() > close.len() * 2
-    {
-        if let AngularAttribute::Property(expression) = &mut kind {
-            *expression = value.and_then(|v| angular_expression::expression(allocator, source, v));
+    if let Some(mut kind) = binding {
+        match &mut kind {
+            AngularAttribute::Property(expression, _) | AngularAttribute::TwoWay(expression, _) => {
+                *expression =
+                    value.and_then(|v| angular_expression::expression(allocator, source, v));
+            }
+            AngularAttribute::Event(action, _) => {
+                *action = value.and_then(|v| angular_expression::action(allocator, source, v));
+            }
+            _ => {}
         }
         return Some(kind);
     }
@@ -335,7 +374,13 @@ pub(super) fn attribute<'a>(
     let mut expressions =
         interpolations(source.as_bytes(), value.start as usize, value.end as usize).peekable();
     expressions.peek()?;
-    let expressions = ArenaVec::from_iter_in(expressions, &allocator);
+    let expressions = ArenaVec::from_iter_in(
+        expressions.map(|expression| ValueInterpolation {
+            expression,
+            angular: angular_expression::expression(allocator, source, expression),
+        }),
+        &allocator,
+    );
     Some(AngularAttribute::Interpolation(ArenaBox::new_in(expressions, &allocator)))
 }
 
