@@ -314,7 +314,7 @@ pub(super) fn attribute<'a>(
             ));
         }
         _ if n == "i18n" || n.starts_with("i18n-") => return Some(AngularAttribute::I18n),
-        Some(b'[') if n.starts_with("[(") => Some((AngularAttribute::TwoWay, ")]")),
+        Some(b'[') if n.starts_with("[(") => Some((AngularAttribute::TwoWay(None), ")]")),
         Some(b'[') => Some((AngularAttribute::Property(None), "]")),
         Some(b'(') => Some((AngularAttribute::Event(None), ")")),
         _ => None,
@@ -324,7 +324,7 @@ pub(super) fn attribute<'a>(
         && n.len() > close.len() * 2
     {
         match &mut kind {
-            AngularAttribute::Property(expression) => {
+            AngularAttribute::Property(expression) | AngularAttribute::TwoWay(expression) => {
                 *expression =
                     value.and_then(|v| angular_expression::expression(allocator, source, v));
             }

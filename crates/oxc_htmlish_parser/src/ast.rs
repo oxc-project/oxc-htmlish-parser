@@ -213,8 +213,8 @@ pub enum AngularAttribute<'a> {
     Property(Option<ArenaBox<'a, AngularExpression<'a>>>),
     /// `(x)`, its value read as an action; `None` without a value, and where Angular reports an error its tokens show.
     Event(Option<ArenaBox<'a, AngularAction<'a>>>),
-    /// `[(x)]`.
-    TwoWay,
+    /// `[(x)]`, its value read as an expression, as `[x]`'s.
+    TwoWay(Option<ArenaBox<'a, AngularExpression<'a>>>),
     /// `*x`: a structural directive, its value split as its microsyntax ([`TemplateBinding`]);
     /// `None` without a value, and where Angular reports one.
     /// Split as written: Angular splits the value with its entities decoded, so `&#59;` is a `;` there, but not here.
@@ -231,7 +231,7 @@ impl AngularAttribute<'_> {
     pub fn target(&self, name: Span) -> Span {
         let (start, end) = match self {
             Self::Property(_) | Self::Event(_) => (1, 1),
-            Self::TwoWay => (2, 2),
+            Self::TwoWay(_) => (2, 2),
             Self::Template(_) => (1, 0),
             Self::Interpolation(_) => (0, 0),
             Self::I18n => ((name.end - name.start).min(5), 0),

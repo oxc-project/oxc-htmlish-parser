@@ -238,7 +238,7 @@ impl Printer<'_, '_> {
                 let name = match kind {
                     AngularAttribute::Property(_) => "Property",
                     AngularAttribute::Event(_) => "Event",
-                    AngularAttribute::TwoWay => "TwoWay",
+                    AngularAttribute::TwoWay(_) => "TwoWay",
                     AngularAttribute::Template(_) => "Template",
                     AngularAttribute::I18n => "I18n",
                     AngularAttribute::Interpolation(_) => "Interpolation",
@@ -250,7 +250,9 @@ impl Printer<'_, '_> {
                         expressions.iter().map(|e| e.slice(self.source)).collect();
                     write!(line, " {expressions:?}").unwrap();
                 }
-                if let AngularAttribute::Property(Some(expression)) = kind {
+                if let AngularAttribute::Property(Some(expression))
+                | AngularAttribute::TwoWay(Some(expression)) = kind
+                {
                     line.push_str(&angular_expression(self.source, expression));
                 }
                 if let AngularAttribute::Event(Some(action)) = kind {

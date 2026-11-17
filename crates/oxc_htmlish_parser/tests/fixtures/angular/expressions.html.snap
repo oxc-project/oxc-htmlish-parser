@@ -81,3 +81,8 @@ Root sfc=false
     @[702..705] "[d]" =" [707..717] "g({e: 1,})" Property target="d" code="g({e: 1,})"
     Interpolation expression=[721..728] " h(i,) "
   Text [734..735] "\n" (nl|nl)
+  Element [736..741] "input" Html void no_end_tag span_end=783
+    @[742..747] "[(a)]" =" [749..752] "b.c" TwoWay target="a" code="b.c"
+    @[754..759] "[(d)]" =" [761..766] "e | f" TwoWay target="d" code="e" | f[]
+    @[768..773] "[(g)]" =" [775..781] "h // i" TwoWay target="g" code="h" comment="// i"
+  Text [783..784] "\n" (nl|nl)

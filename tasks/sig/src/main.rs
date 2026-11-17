@@ -201,7 +201,9 @@ fn element(source: &str, root: &Root<'_>, id: NodeId, el: &Element<'_>) -> Value
                     });
                     json!([name, value, ["ac", action]])
                 }
-                AttributeKind::Angular(AngularAttribute::Property(e)) if value.is_some() => {
+                AttributeKind::Angular(
+                    AngularAttribute::Property(e) | AngularAttribute::TwoWay(e),
+                ) if value.is_some() => {
                     json!([name, value, ["ex", e.as_deref().map(|e| expression(source, e))]])
                 }
                 AttributeKind::Plain | AttributeKind::Angular(_) => json!([name, value]),
