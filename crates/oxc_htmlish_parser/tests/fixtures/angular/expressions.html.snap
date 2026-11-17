@@ -1,0 +1,53 @@
+---
+source: crates/oxc_htmlish_parser/tests/ast.rs
+---
+Root sfc=false
+  Element [1..2] "p" Html end_tag=[58..62] "</p>"
+    Interpolation expression=[5..8] " a " code="a"
+    Text [10..11] " " (sp|sp)
+    Interpolation expression=[13..20] " a | p " code="a" | p[]
+    Text [22..23] " " (sp|sp)
+    Interpolation expression=[25..43] " a | p: x : y | q " code="a" | p["x", "y"] | q[]
+    Text [45..46] " " (sp|sp)
+    Interpolation expression=[48..56] " a // c " code="a" comment="// c"
+  Text [62..63] "\n" (nl|nl)
+  Element [64..65] "p" Html end_tag=[154..158] "</p>"
+    Interpolation expression=[68..77] " (a | p) " code="(a | p)"
+    Text [79..80] " " (sp|sp)
+    Interpolation expression=[82..92] " f(a | p) " code="f(a | p)"
+    Text [94..95] " " (sp|sp)
+    Interpolation expression=[97..109] " `${a | p}` " code="`${a | p}`"
+    Text [111..112] " " (sp|sp)
+    Interpolation expression=[114..129] " a ? b : c | p " code="a ? b : c | p"
+    Text [131..132] " " (sp|sp)
+    Interpolation expression=[134..152] " a | p: b ? c : d " code="a" | p["b ? c : d"]
+  Text [158..159] "\n" (nl|nl)
+  Element [160..161] "p" Html end_tag=[227..231] "</p>"
+    Interpolation expression=[164..172] " a || b " code="a || b"
+    Text [174..175] " " (sp|sp)
+    Interpolation expression=[177..189] " '|' + \"//\" " code="'|' + \"//\""
+    Text [191..192] " " (sp|sp)
+    Interpolation expression=[194..213] " /a|b/.test(x) | p " code="/a|b/.test(x)" | p[]
+    Text [215..216] " " (sp|sp)
+    Interpolation expression=[218..225] " a / b " code="a / b"
+  Text [231..232] "\n" (nl|nl)
+  Element [233..234] "p" Html end_tag=[301..305] "</p>"
+    Interpolation expression=[237..242] " a | "
+    Text [244..245] " " (sp|sp)
+    Interpolation expression=[247..253] " a; b "
+    Text [255..256] " " (sp|sp)
+    Interpolation expression=[258..259] " "
+    Text [261..262] " " (sp|sp)
+    Interpolation expression=[264..271] " a : b "
+    Text [273..274] " " (sp|sp)
+    Interpolation expression=[276..285] " a | p q "
+    Text [287..288] " " (sp|sp)
+    Interpolation expression=[290..299] " a | 'p' "
+  Text [305..306] "\n" (nl|nl)
+  Element [307..308] "p" Html end_tag=[369..373] "</p>"
+    @[309..312] "[x]" =" [314..322] "a | p: 1" Property target="x" code="a" | p["1"]
+    @[324..327] "[y]" =" [329..335] "{a: 1}" Property target="y" code="{a: 1}"
+    @[337..340] "[z]" =" [342..351] "a ? b : c" Property target="z" code="a ? b : c"
+    @[353..356] "[w]" =" [358..363] "a : b" Property target="w"
+    @[365..368] "[v]" Property target="v"
+  Text [373..374] "\n" (nl|nl)

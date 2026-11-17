@@ -22,11 +22,14 @@ mod check;
 use oxc_htmlish_parser::{
     Allocator, Dialect, Parser,
     ast::{
-        AngularAttribute, AttributeKind, Block, BlockParameterKind, Element, NodeId, NodeKind,
-        Root, TemplateBinding,
+        AngularAttribute, AngularExpression, AttributeKind, Block, BlockParameterKind, Element,
+        NodeId, NodeKind, Root, TemplateBinding,
     },
 };
 use serde_json::{Value, json};
+
+/// The dialect is Angular: `{{ }}` carries its reading.
+static ANGULAR: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
 
 fn main() {
     let dialect = match std::env::args().nth(1).as_deref() {
@@ -35,6 +38,7 @@ fn main() {
         Some("angular") => Dialect::Angular,
         other => panic!("unknown dialect {other:?}, expected html, vue or angular"),
     };
+    ANGULAR.set(dialect == Dialect::Angular).unwrap();
     let buf = std::io::read_to_string(std::io::stdin()).unwrap();
     let inputs: Vec<String> = serde_json::from_str(&buf).expect("JSON array of strings");
     let mut allocator = Allocator::default();
@@ -66,6 +70,14 @@ fn node(source: &str, root: &Root<'_>, id: NodeId) -> Value {
         NodeKind::Document => unreachable!(),
         NodeKind::Element(el) => element(source, root, id, el),
         NodeKind::Text(_) => raw("t"),
+        // Angular's reading of it, `null` where it reports an error
+        NodeKind::Interpolation(n) if ANGULAR.get() == Some(&true) => {
+            json!([
+                "i",
+                node.span.slice(source),
+                n.angular.as_deref().map(|e| expression(source, e))
+            ])
+        }
         NodeKind::Interpolation(_) => raw("i"),
         // A bogus comment keeps how it opened (`<!`, `<?`, `</`): Vue drops some kinds only.
         NodeKind::Comment(n) if n.bogus => {
@@ -119,6 +131,19 @@ fn block_reading(source: &str, block: &Block<'_>) -> Value {
     json!([item, expression, track, lets, alias])
 }
 
+/// `[code, [[name, [argument, …]], …], comment]`
+fn expression(source: &str, e: &AngularExpression<'_>) -> Value {
+    let pipes: Vec<Value> = e
+        .pipes
+        .iter()
+        .map(|p| {
+            let arguments: Vec<&str> = p.arguments.iter().map(|a| a.slice(source)).collect();
+            json!([p.name.slice(source), arguments])
+        })
+        .collect();
+    json!([e.code.slice(source), pipes, e.comment.map(|c| c.slice(source))])
+}
+
 fn template_bindings(source: &str, bindings: &[TemplateBinding]) -> Value {
     let s = |span: Option<oxc_htmlish_parser::Span>| span.map(|span| span.slice(source));
     bindings
@@ -162,6 +187,9 @@ fn element(source: &str, root: &Root<'_>, id: NodeId, el: &Element<'_>) -> Value
                         value,
                         ["tb", bindings.as_ref().map(|b| template_bindings(source, b))]
                     ])
+                }
+                AttributeKind::Angular(AngularAttribute::Property(e)) if value.is_some() => {
+                    json!([name, value, ["ex", e.as_deref().map(|e| expression(source, e))]])
                 }
                 AttributeKind::Plain | AttributeKind::Angular(_) => json!([name, value]),
                 AttributeKind::Comment => json!(["comment", name]),

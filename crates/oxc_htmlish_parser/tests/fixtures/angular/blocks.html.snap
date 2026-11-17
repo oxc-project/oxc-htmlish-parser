@@ -10,7 +10,7 @@ Root sfc=false
       % let [47..48] "i" = [51..57] "$index"
       Text [60..65] "\n    " (nl|nl)
       Element [66..68] "li" Html end_tag=[84..89] "</li>"
-        Interpolation expression=[71..82] " item.name "
+        Interpolation expression=[71..82] " item.name " code="item.name"
       Text [89..92] "\n  " (nl|nl)
     Text [93..94] " " (sp|sp)
     Block Empty name=[95..100] "empty" parameters=[] open=[94..102] "@empty {" close=[123..124] "}"
@@ -23,7 +23,7 @@ Root sfc=false
   Block If name=[132..134] "if" parameters=["[136..141] \"a > b\""] open=[131..144] "@if (a > b) {" close=[165..166] "}"
     Text [144..147] "\n  " (nl|nl)
     Element [148..149] "p" Html end_tag=[160..164] "</p>"
-      Interpolation expression=[152..158] " '}}' "
+      Interpolation expression=[152..158] " '}}' " code="'}}'"
     Text [164..165] "\n" (nl|nl)
   Text [166..167] " " (sp|sp)
   Block ElseIf name=[168..177] "else   if" parameters=["[179..180] \"b\""] open=[167..183] "@else   if (b) {" close=[201..202] "}"
@@ -67,13 +67,13 @@ Root sfc=false
   Element [431..434] "div" Html end_tag=[486..492] "</div>"
     Block If name=[436..438] "if" parameters=["[440..441] \"a\""] open=[435..444] "@if (a) {" close=[467..468] "}"
       Element [445..456] "nz-progress" Html self_closing no_end_tag span_end=467
-        @[457..460] "[x]" =" [462..463] "y" Property target="x"
+        @[457..460] "[x]" =" [462..463] "y" Property target="x" code="y"
     Text [468..469] " " (sp|sp)
     Block Else name=[470..474] "else" parameters=[] open=[469..476] "@else {" close=[485..486] "}"
       Element [477..483] "app-c1" Html self_closing no_end_tag span_end=485
   Text [492..493] "\n" (nl|nl)
   Element [494..495] "p" Html end_tag=[511..515] "</p>"
-    Interpolation expression=[498..509] " a // it's "
+    Interpolation expression=[498..509] " a // it's " code="a" comment="// it's"
   Text [515..516] "\n" (nl|nl)
   Block If name=[517..519] "if" parameters=["[521..530] \"f(\\\"a;b)\\\")\"", "[533..534] \"c\""] open=[516..537] "@if (f(\"a;b)\") ; c) {" close=[538..539] "}"
     Text [537..538] "x" (-|-) content=[537..538] "x"

@@ -19,5 +19,5 @@ Root sfc=false
     LetDeclaration name=[142..143] "i" value=[146..147] "a"
   Text [149..150] "\n" (nl|nl)
   Element [151..152] "p" Html end_tag=[165..169] "</p>"
-    Interpolation expression=[155..163] " '@let' "
+    Interpolation expression=[155..163] " '@let' " code="'@let'"
   Text [169..170] "\n" (nl|nl)

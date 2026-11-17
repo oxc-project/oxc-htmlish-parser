@@ -315,14 +315,17 @@ pub(super) fn attribute<'a>(
         }
         _ if n == "i18n" || n.starts_with("i18n-") => return Some(AngularAttribute::I18n),
         Some(b'[') if n.starts_with("[(") => Some((AngularAttribute::TwoWay, ")]")),
-        Some(b'[') => Some((AngularAttribute::Property, "]")),
+        Some(b'[') => Some((AngularAttribute::Property(None), "]")),
         Some(b'(') => Some((AngularAttribute::Event, ")")),
         _ => None,
     };
-    if let Some((kind, close)) = delimited
+    if let Some((mut kind, close)) = delimited
         && n.ends_with(close)
         && n.len() > close.len() * 2
     {
+        if let AngularAttribute::Property(expression) = &mut kind {
+            *expression = value.and_then(|v| angular_expression::expression(allocator, source, v));
+        }
         return Some(kind);
     }
     if KEYWORDS.iter().any(|keyword| n.starts_with(keyword)) {
@@ -392,7 +395,7 @@ pub(super) fn interpolations(
 /// One step through Angular expression text: string literals open at `'`, `"` and `` ` `` (when `opens`),
 /// and a `\\` escapes the next byte.
 /// Returns the bytes the step takes, and whether `b` lies outside any string (and is no escape).
-fn string_step(b: u8, quote: &mut Option<u8>, opens: bool) -> (usize, bool) {
+pub(super) fn string_step(b: u8, quote: &mut Option<u8>, opens: bool) -> (usize, bool) {
     match (b, *quote) {
         (b'\\', _) => (2, false),
         (b, Some(q)) if b == q => {

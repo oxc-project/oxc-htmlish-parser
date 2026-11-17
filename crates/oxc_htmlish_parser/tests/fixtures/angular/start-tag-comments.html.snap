@@ -36,6 +36,6 @@ Root sfc=false
     @[203..207] "// c" comment
   Text [209..210] "\n" (nl|nl)
   Element [211..214] "div" Html end_tag=[244..250] "</div>"
-    @[215..220] "[a.b]" =" [222..227] "'//x'" Property target="a.b"
+    @[215..220] "[a.b]" =" [222..227] "'//x'" Property target="a.b" code="'//x'"
     @[229..232] "(c)" =" [234..242] "d() // e" Event target="c"
   Text [250..251] "\n" (nl|nl)

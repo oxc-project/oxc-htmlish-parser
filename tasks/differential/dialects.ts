@@ -75,6 +75,10 @@ const ANGULAR_TOKENS = [
   "<li *ngFor=\"let x of xs | p: 1 : n; index as i trackBy f\">", "<p *ngIf=\"a ? b : c | async as d; else e\">",
   "<p *ngIf=\"f('; ,', [a, b]) && !c?.d in {e: `${ g }`}\">", "<p *x=\"a /b/ c\">",
   "<div a // c\n>", "<div /* c */ a>", "<div a=b/* c */>",
+  // Expressions: root pipes, pipes not at the root, comments, a regular expression
+  "{{ a | p: x : y | q }}", "{{ (a | p) }}", "{{ a ? b : c | p }}", "{{ a | p: b ? c : d }}", "{{ `${a | p}` }}",
+  "{{ /a|b/.test(c) | p }}", "{{ a || b | p }}", "{{ a | p // c }}", "{{ a | }}", "{{ a | p q }}",
+  "<p [a]=\"b | p: 1\">", "<p [a]=\"{b: c} | p\">", "<p [a]=\"a : b\">", "<p [a]=\"f(a | p)\">",
 ];
 
 // ---
@@ -180,6 +184,9 @@ function angularCompilerSig(source: string): Sig {
             // Its compiler binds the `{{ }}` in a name it reads as no binding of another kind (`parseAttribute`)
             const interpolations = (a.valueTokens ?? []).filter((t: any) => t.type === ATTR_VALUE_INTERPOLATION && t.parts.length === 3).map((t: any) => t.parts[1]);
             if (interpolations.length > 0 && !BOUND_NAME.test(attr[0] as string)) attr.push(interpolations);
+            if (PROPERTY_NAME.test(attr[0] as string) && a.valueSpan) {
+              attr.push(["ex", expressionReading(attr[1] as string)]);
+            }
             if (attr[0].startsWith("*") && a.valueSpan) {
               const bindings = templateBindings(attr[0].slice(1), attr[1]);
               if (typeof bindings === "string") bindingError ??= bindings;
@@ -196,7 +203,10 @@ function angularCompilerSig(source: string): Sig {
       // Its interpolations are tokens; one without its `}}` is text to us
       case "Text":
         return n.tokens
-          .map((t: any) => [t.type === INTERPOLATION && t.parts.length === 3 ? "i" : "t", slice(t.sourceSpan)])
+          .map((t: any) => {
+            if (t.type !== INTERPOLATION || t.parts.length !== 3) return ["t", slice(t.sourceSpan)];
+            return ["i", slice(t.sourceSpan), expressionReading(t.parts[1])];
+          })
           .filter((t: any) => t[1] !== "");
       // Trimmed, as Angular keeps it
       case "Comment":
@@ -273,6 +283,27 @@ function blockReadings(source: string): Map<number, unknown> {
 const expressionParser = new ExpressionParser(new Lexer());
 /** The directive's own key is placed before the value, so that its spans tell it apart. */
 const KEY_OFFSET = -1e6;
+
+/** A property binding's name (`[x]`, not `[(x)]`), as `parseAttribute` reads it. */
+const PROPERTY_NAME = /^\[(?!\().+\]$/;
+
+/** An expression (`{{ }}`'s, a property binding's) as Angular's compiler reads it, in `tasks/sig`'s shape (`expression`);
+ * `null` for an empty one, `UNKNOWN` where it reports an error: ours finds some of them only (`None`, the formatter keeps it as written). */
+function expressionReading(code: string): unknown {
+  const location = new ParseLocation(new ParseSourceFile(code, "t.html"), 0, 0, 0);
+  const { ast, errors } = expressionParser.parseBinding(code, new ParseSourceSpan(location, location), 0);
+  if (errors.length > 0) return UNKNOWN;
+  if (ast.constructor.name === "EmptyExpr") return null;
+  const text = (span: any) => code.slice(span.start, span.end);
+  const pipes: unknown[] = [];
+  let root = ast;
+  while (root.constructor.name === "BindingPipe") {
+    pipes.unshift([root.name, root.args.map((a: any) => text(a.span))]);
+    root = root.exp;
+  }
+  const comment = (expressionParser as any)._commentStart(code);
+  return [text(root.span), pipes, comment === null ? null : code.slice(comment).replace(/[\x00-\x20\xa0]+$/, "")];
+}
 
 /** A `*x` value's microsyntax as Angular's compiler reads it, in `tasks/sig`'s shape; the error it reports. */
 function templateBindings(key: string, value: string): unknown[] | string {

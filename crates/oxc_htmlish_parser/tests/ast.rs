@@ -11,8 +11,8 @@ use insta::{Settings, assert_snapshot, glob};
 use oxc_htmlish_parser::{
     Allocator, Dialect, Parser, Span,
     ast::{
-        AngularAttribute, Attribute, AttributeKind, BlockParameterKind, Content, NodeId, NodeKind,
-        Quote, Root, TemplateBinding, Whitespace,
+        AngularAttribute, AngularExpression, Attribute, AttributeKind, BlockParameterKind, Content,
+        Interpolation, NodeId, NodeKind, Quote, Root, TemplateBinding, Whitespace,
     },
 };
 
@@ -138,7 +138,13 @@ impl Printer<'_, '_> {
                     ws(text.trailing)
                 )
             }
-            NodeKind::Interpolation(n) => format!("Interpolation expression={}", q(n.expression)),
+            NodeKind::Interpolation(n) => format!(
+                "Interpolation expression={}{}",
+                q(Interpolation::expression(node.span)),
+                n.angular
+                    .as_deref()
+                    .map_or_else(String::new, |e| angular_expression(self.source, e))
+            ),
             NodeKind::Comment(n) => {
                 let bogus = if n.bogus { " bogus" } else { "" };
                 format!("Comment{bogus} content={}", q(n.content))
@@ -229,7 +235,7 @@ impl Printer<'_, '_> {
             AttributeKind::Comment => line.push_str(" comment"),
             AttributeKind::Angular(kind) => {
                 let name = match kind {
-                    AngularAttribute::Property => "Property",
+                    AngularAttribute::Property(_) => "Property",
                     AngularAttribute::Event => "Event",
                     AngularAttribute::TwoWay => "TwoWay",
                     AngularAttribute::Template(_) => "Template",
@@ -242,6 +248,9 @@ impl Printer<'_, '_> {
                     let expressions: Vec<_> =
                         expressions.iter().map(|e| e.slice(self.source)).collect();
                     write!(line, " {expressions:?}").unwrap();
+                }
+                if let AngularAttribute::Property(Some(expression)) = kind {
+                    line.push_str(&angular_expression(self.source, expression));
                 }
                 if let AngularAttribute::Template(Some(bindings)) = kind {
                     let s = |span: Option<Span>| span.map(|span| span.slice(self.source));
@@ -295,4 +304,17 @@ impl Printer<'_, '_> {
 /// `[a..b] "slice"`: the slice makes offsets reviewable.
 fn quoted(source: &str, span: Span) -> String {
     format!("[{}..{}] {:?}", span.start, span.end, span.slice(source))
+}
+
+/// ` code="a" | p["x", "y"] comment="// c"`
+fn angular_expression(source: &str, e: &AngularExpression<'_>) -> String {
+    let mut out = format!(" code={:?}", e.code.slice(source));
+    for pipe in &e.pipes {
+        let arguments: Vec<_> = pipe.arguments.iter().map(|a| a.slice(source)).collect();
+        write!(out, " | {}{arguments:?}", pipe.name.slice(source)).unwrap();
+    }
+    if let Some(comment) = e.comment {
+        write!(out, " comment={:?}", comment.slice(source)).unwrap();
+    }
+    out
 }

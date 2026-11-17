@@ -90,7 +90,17 @@ impl Builder<'_> {
             };
             self.push_text(start, open);
             self.push(
-                NodeKind::Interpolation(Interpolation { expression: span(open + 2, close) }),
+                NodeKind::Interpolation(Interpolation {
+                    angular: if self.rules.angular {
+                        angular_expression::expression(
+                            self.allocator,
+                            self.source,
+                            span(open + 2, close),
+                        )
+                    } else {
+                        None
+                    },
+                }),
                 span(open, close + 2),
             );
             self.pos = close + 2;

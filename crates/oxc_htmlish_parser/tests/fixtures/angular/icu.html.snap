@@ -9,7 +9,7 @@ Root sfc=false
         Text [36..40] "none" (-|-) content=[36..40] "none"
       IcuCase value=[44..46] "=1" open=47
         Text [48..52] "one " (-|sp) content=[48..51] "one"
-        Interpolation expression=[54..57] " n "
+        Interpolation expression=[54..57] " n " code="n"
       IcuCase value=[63..68] "other" open=69
         Icu expression=[71..72] "a" type=[74..80] "select"
           IcuCase value=[82..83] "m" open=84
