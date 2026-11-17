@@ -35,11 +35,13 @@ pub fn check(root: &Root<'_>, id: NodeId) -> Result<(), String> {
                     AttributeKind::Angular(kind) => {
                         if let AngularAttribute::Template(Some(bindings)) = kind {
                             let parts = bindings.iter().flat_map(|binding| match binding {
-                                TemplateBinding::Expression { key, expression, .. } => {
-                                    [*key, *expression]
+                                TemplateBinding::Expression { key, expression, alias, .. } => {
+                                    [*key, *expression, *alias]
                                 }
-                                TemplateBinding::Let { name, value } => [Some(*name), *value],
-                                TemplateBinding::As { key, alias } => [*key, Some(*alias)],
+                                TemplateBinding::Let { name, value } => [Some(*name), *value, None],
+                                TemplateBinding::As { key, alias } => {
+                                    [Some(*key), Some(*alias), None]
+                                }
                             });
                             if bindings.is_empty()
                                 || !parts

@@ -266,18 +266,19 @@ impl AngularAttribute<'_> {
 /// A key is identifiers, keywords or strings joined by `-`, as written; the `:` and the `;` or `,` after a binding are optional.
 #[derive(Debug)]
 pub enum TemplateBinding<'a> {
-    /// `key: expression`, or the directive's own first (`key` `None`: `items` of `*ngIf="items"`);
+    /// `key: expression as alias`, or the directive's own first (`key` `None`: `items` of `*ngIf="items"`);
     /// `expression` `None` when none follows (`*ngIf="as x"`), and `angular` its reading (`None` where Angular reports an error its tokens show).
     Expression {
         key: Option<Span>,
         expression: Option<Span>,
         angular: Option<ArenaBox<'a, AngularExpression<'a>>>,
+        /// `as alias` right after it, which names it (`of items | async as list`).
+        alias: Option<Span>,
     },
     /// `let name` / `let name = value`.
     Let { name: Span, value: Option<Span> },
-    /// `as alias`, right after the [`Expression`](Self::Expression) whose key it names, `key` that one's (`of items | async as list`),
-    /// or after a key of its own (`index as i`).
-    As { key: Option<Span>, alias: Span },
+    /// `key as alias` (`index as i`).
+    As { key: Span, alias: Span },
 }
 
 /// A Vue directive name split into its parts, each a span inside [`Attribute::name`].

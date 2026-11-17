@@ -289,21 +289,26 @@ impl Printer<'_, '_> {
                     let s = |span: Option<Span>| span.map(|span| span.slice(self.source));
                     for binding in bindings.iter() {
                         match binding {
-                            TemplateBinding::Expression { key, expression, angular } => write!(
-                                line,
-                                " [{:?}: {:?}{}]",
-                                s(*key),
-                                s(*expression),
-                                angular.as_deref().map_or_else(
-                                    String::new,
-                                    |e| angular_expression(self.source, e)
+                            TemplateBinding::Expression { key, expression, angular, alias } => {
+                                write!(
+                                    line,
+                                    " [{:?}: {:?}{}{}]",
+                                    s(*key),
+                                    s(*expression),
+                                    angular.as_deref().map_or_else(String::new, |e| {
+                                        angular_expression(self.source, e)
+                                    }),
+                                    alias.map_or_else(String::new, |a| format!(
+                                        " as {:?}",
+                                        s(Some(a))
+                                    ))
                                 )
-                            ),
+                            }
                             TemplateBinding::Let { name, value } => {
                                 write!(line, " [let {:?} = {:?}]", s(Some(*name)), s(*value))
                             }
                             TemplateBinding::As { key, alias } => {
-                                write!(line, " [{:?} as {:?}]", s(*key), s(Some(*alias)))
+                                write!(line, " [{:?} as {:?}]", s(Some(*key)), s(Some(*alias)))
                             }
                         }
                         .unwrap();

@@ -169,17 +169,20 @@ fn code(source: &str, code: &AngularCode) -> Value {
 
 fn template_bindings(source: &str, bindings: &[TemplateBinding]) -> Value {
     let s = |span: Option<oxc_htmlish_parser::Span>| span.map(|span| span.slice(source));
+    // Flat as Angular's: an expression's alias one of its own, of the expression's key
     bindings
         .iter()
-        .map(|binding| match binding {
-            TemplateBinding::Expression { key, expression, angular } => json!([
-                "e",
-                s(*key),
-                s(*expression),
-                angular.as_deref().map(|e| self::expression(source, e))
-            ]),
-            TemplateBinding::Let { name, value } => json!(["l", s(Some(*name)), s(*value)]),
-            TemplateBinding::As { key, alias } => json!(["a", s(*key), s(Some(*alias))]),
+        .flat_map(|binding| match binding {
+            TemplateBinding::Expression { key, expression, angular, alias } => {
+                let reading = angular.as_deref().map(|e| self::expression(source, e));
+                let mut out = vec![json!(["e", s(*key), s(*expression), reading])];
+                out.extend(alias.map(|alias| json!(["a", s(*key), s(Some(alias))])));
+                out
+            }
+            TemplateBinding::Let { name, value } => vec![json!(["l", s(Some(*name)), s(*value)])],
+            TemplateBinding::As { key, alias } => {
+                vec![json!(["a", s(Some(*key)), s(Some(*alias))])]
+            }
         })
         .collect()
 }

@@ -43,7 +43,10 @@ pub fn template_bindings<'a>(
             parser.terminator();
         } else {
             let key = parser.key()?;
-            if !parser.as_binding(Some(key))? {
+            if parser.peek_keyword("as") {
+                let alias = parser.alias()?;
+                parser.out.push(TemplateBinding::As { key, alias });
+            } else {
                 parser.directive_bindings(Some(key))?;
             }
         }
@@ -99,16 +102,12 @@ impl Bindings<'_, '_, '_> {
         }
     }
 
-    /// `as alias` after `key`'s binding (`parseAsBinding`); whether there is one.
-    fn as_binding(&mut self, key: Option<Span>) -> Option<bool> {
-        if !self.peek_keyword("as") {
-            return Some(false);
-        }
+    /// `as alias` at an `as` (`parseAsBinding`).
+    fn alias(&mut self) -> Option<Span> {
         self.at += 1;
         let alias = self.key()?;
-        self.out.push(TemplateBinding::As { key, alias });
         self.terminator();
-        Some(true)
+        Some(alias)
     }
 
     /// `key`'s `:`, expression and `as alias` (`parseDirectiveKeywordBindings`); `key` `None` for the directive's own.
@@ -128,10 +127,13 @@ impl Bindings<'_, '_, '_> {
         };
         let angular = expression
             .and_then(|e| super::angular_expression::expression(self.allocator, self.source, e));
-        self.out.push(TemplateBinding::Expression { key, expression, angular });
-        if !self.as_binding(key)? {
+        let alias = if self.peek_keyword("as") {
+            Some(self.alias()?)
+        } else {
             self.terminator();
-        }
+            None
+        };
+        self.out.push(TemplateBinding::Expression { key, expression, angular, alias });
         Some(())
     }
 }

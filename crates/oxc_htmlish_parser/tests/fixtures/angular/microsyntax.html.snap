@@ -11,7 +11,7 @@ Root sfc=false
     Text [139..140] "b" (-|-) content=[139..140] "b"
   Text [145..146] "\n" (nl|nl)
   Element [147..148] "p" Html end_tag=[194..198] "</p>"
-    @[149..154] "*ngIf" =" [156..191] "user$ | async as user; else loading" Template target="ngIf" [None: Some("user$ | async") code="user$" | async[]] [None as Some("user")] [Some("else"): Some("loading") code="loading"]
+    @[149..154] "*ngIf" =" [156..191] "user$ | async as user; else loading" Template target="ngIf" [None: Some("user$ | async") code="user$" | async[] as Some("user")] [Some("else"): Some("loading") code="loading"]
     Text [193..194] "c" (-|-) content=[193..194] "c"
   Text [198..199] "\n" (nl|nl)
   Element [200..201] "p" Html end_tag=[229..233] "</p>"
@@ -23,7 +23,7 @@ Root sfc=false
     Text [279..280] "e" (-|-) content=[279..280] "e"
   Text [284..285] "\n" (nl|nl)
   Element [286..287] "p" Html end_tag=[318..322] "</p>"
-    @[288..293] "*ngIf" =" [295..315] "re.test(/a;b/g) as m" Template target="ngIf" [None: Some("re.test(/a;b/g)") code="re.test(/a;b/g)"] [None as Some("m")]
+    @[288..293] "*ngIf" =" [295..315] "re.test(/a;b/g) as m" Template target="ngIf" [None: Some("re.test(/a;b/g)") code="re.test(/a;b/g)" as Some("m")]
     Text [317..318] "f" (-|-) content=[317..318] "f"
   Text [322..323] "\n" (nl|nl)
   Element [324..325] "p" Html end_tag=[396..400] "</p>"

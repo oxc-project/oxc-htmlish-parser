@@ -304,12 +304,16 @@ pub(super) fn attribute<'a>(
     name: Span,
     value: Option<Span>,
 ) -> Option<AngularAttribute<'a>> {
-    /// The prefixes it reads before the delimiters (`BIND_NAME_REGEXP`), the bindings' ours.
+    /// The prefixes it reads before the delimiters (`BIND_NAME_REGEXP`):
+    /// the bindings' ours when a name follows, the others none of our kinds.
     const KEYWORDS: [&str; 7] = ["bind-", "let-", "ref-", "#", "on-", "bindon-", "@"];
+    use BindingForm::{Delimited, Prefixed};
     let n = name.slice(source);
     let prefixed = |prefix: &str| n.strip_prefix(prefix).is_some_and(|target| !target.is_empty());
+    // The delimiters by the prefix alone (`[(a)-]` binds nothing), around a name
+    let delimited = |close: &str| n.ends_with(close) && n.len() > close.len() * 2;
     // An empty name (`<a =b>`) binds a value's `{{ }}` too
-    let delimited = match n.as_bytes().first() {
+    let binding = match n.as_bytes().first() {
         Some(b'*') => {
             let bindings = value.and_then(|v| microsyntax::template_bindings(allocator, source, v));
             return Some(AngularAttribute::Template(
@@ -317,25 +321,17 @@ pub(super) fn attribute<'a>(
             ));
         }
         _ if n == "i18n" || n.starts_with("i18n-") => return Some(AngularAttribute::I18n),
-        _ if prefixed("bind-") => {
-            Some((AngularAttribute::Property(None, BindingForm::Prefixed), ""))
-        }
-        _ if prefixed("on-") => Some((AngularAttribute::Event(None, BindingForm::Prefixed), "")),
-        _ if prefixed("bindon-") => {
-            Some((AngularAttribute::TwoWay(None, BindingForm::Prefixed), ""))
-        }
-        _ if KEYWORDS.iter().any(|keyword| n.starts_with(keyword)) => return None,
         Some(b'[') if n.starts_with("[(") => {
-            Some((AngularAttribute::TwoWay(None, BindingForm::Delimited), ")]"))
+            delimited(")]").then_some(AngularAttribute::TwoWay(None, Delimited))
         }
-        Some(b'[') => Some((AngularAttribute::Property(None, BindingForm::Delimited), "]")),
-        Some(b'(') => Some((AngularAttribute::Event(None, BindingForm::Delimited), ")")),
+        Some(b'[') => delimited("]").then_some(AngularAttribute::Property(None, Delimited)),
+        Some(b'(') => delimited(")").then_some(AngularAttribute::Event(None, Delimited)),
+        _ if prefixed("bind-") => Some(AngularAttribute::Property(None, Prefixed)),
+        _ if prefixed("on-") => Some(AngularAttribute::Event(None, Prefixed)),
+        _ if prefixed("bindon-") => Some(AngularAttribute::TwoWay(None, Prefixed)),
         _ => None,
     };
-    if let Some((mut kind, close)) = delimited
-        && n.ends_with(close)
-        && n.len() > close.len() * 2
-    {
+    if let Some(mut kind) = binding {
         match &mut kind {
             AngularAttribute::Property(expression, _) | AngularAttribute::TwoWay(expression, _) => {
                 *expression =
@@ -347,6 +343,9 @@ pub(super) fn attribute<'a>(
             _ => {}
         }
         return Some(kind);
+    }
+    if KEYWORDS.iter().any(|keyword| n.starts_with(keyword)) {
+        return None;
     }
     let value = value?;
     let mut expressions =
