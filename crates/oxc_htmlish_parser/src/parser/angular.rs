@@ -92,10 +92,12 @@ impl<'a> Builder<'a> {
             }
         }
         let kind = block_kind(&self.source[name_start..name_end]);
+        // Under `ngNonBindable` its markers are text, its content its parent's
+        let text = self.context().non_bindable;
         let mut parameters = ArenaVec::new_in(&self.allocator);
         let mut open_end = name_end;
         if self.byte(at) == Some(b'(') {
-            at = self.block_parameters(at + 1, kind, &mut parameters)?;
+            at = self.block_parameters(at + 1, kind, (!text).then_some(&mut parameters))?;
             open_end = at;
             at = self.skip_ws(at);
         }
@@ -109,10 +111,8 @@ impl<'a> Builder<'a> {
             return error(DiagnosticKind::IncompleteBlock, span(start, open_end));
         }
         self.pos = open_end;
-        // Under `ngNonBindable` its markers are text, its content its parent's
-        let text = self.context().non_bindable;
         let id = if text {
-            self.stack.last().map_or(self.base_parent, |open| open.id)
+            self.parent()
         } else {
             let block = Block {
                 name: span(name_start, name_end),
@@ -127,20 +127,19 @@ impl<'a> Builder<'a> {
             )
         };
         if body {
-            self.open_container(id, false, text);
+            let braced = if text { Braced::Text(start) } else { Braced::Node };
+            self.open_container(id, false, braced);
         }
         Ok(())
     }
 
-    /// Opens a block, an ICU expression or a case at `id`; `icu`: its content is a case's;
-    /// `text`: a block read as text, `id` its parent.
-    fn open_container(&mut self, id: NodeId, icu: bool, text: bool) {
+    /// Opens a block, an ICU expression or a case at `id`, as `braced` says; `icu`: its content is a case's.
+    fn open_container(&mut self, id: NodeId, icu: bool, braced: Braced) {
         let context = Context { icu, ..self.context() };
         self.stack.push(Open {
             id,
             name: "",
-            braced: true,
-            text,
+            braced,
             tag: Tag::default(),
             omittable: false,
             look: Some(self.stack.len()),
@@ -163,7 +162,7 @@ impl<'a> Builder<'a> {
         };
         let id = self
             .push(NodeKind::Icu(ArenaBox::new_in(icu, &self.allocator)), span(start, type_end + 1));
-        self.open_container(id, true, false);
+        self.open_container(id, true, Braced::Node);
         self.pos = type_end + 1;
         self.icu_next_case()
     }
@@ -181,57 +180,61 @@ impl<'a> Builder<'a> {
         };
         let case = IcuCase { value: self.trimmed(at, open), open: span(open, open + 1).start };
         let id = self.push(NodeKind::IcuCase(case), span(at, open + 1));
-        self.open_container(id, true, false);
+        self.open_container(id, true, Braced::Node);
         self.pos = open + 1;
         Ok(())
     }
 
-    /// Closes the container on top of the stack at the `}` at `at`.
-    fn close_container(&mut self, at: usize) {
+    /// Closes the container on top of the stack at the `}` at `at`; whether it was a block read as text.
+    fn close_container(&mut self, at: usize) -> bool {
         let open = self.stack.pop().expect("a container is open");
         self.pos = at + 1;
-        if open.text {
-            return;
+        if matches!(open.braced, Braced::Text(_)) {
+            return true;
         }
         let node = &mut self.nodes[open.id.index()];
         node.span = span(node.span.start as usize, at + 1);
         if let NodeKind::Block(block) = &mut node.kind {
             block.close = Some(span(at, at + 1));
         }
+        false
     }
 
-    /// The parameters after `(`, up to the `)`, which the returned offset follows, of a `block`.
+    /// The parameters after `(`, up to the `)`, which the returned offset follows, of a `block`, read into `out`
+    /// (none: only where they end).
     fn block_parameters(
         &self,
         from: usize,
         block: BlockKind,
-        out: &mut ArenaVec<'a, BlockParameter<'a>>,
+        mut out: Option<&mut ArenaVec<'a, BlockParameter<'a>>>,
     ) -> PResult<usize> {
-        let push = |start: usize, end: usize, out: &mut ArenaVec<'a, BlockParameter<'a>>| {
-            let parameter = self.trimmed(start, end);
-            if !parameter.is_empty() {
-                let index = out.len();
-                out.push(control_flow::parameter(
-                    self.allocator,
-                    self.source,
-                    block,
-                    index,
-                    parameter,
-                ));
-            }
-        };
+        let push =
+            |start: usize, end: usize, out: &mut Option<&mut ArenaVec<'a, BlockParameter<'a>>>| {
+                let Some(out) = out else { return };
+                let parameter = self.trimmed(start, end);
+                if !parameter.is_empty() {
+                    let index = out.len();
+                    out.push(control_flow::parameter(
+                        self.allocator,
+                        self.source,
+                        block,
+                        index,
+                        parameter,
+                    ));
+                }
+            };
         let (mut param_start, mut depth) = (from, 0);
         for at in self.unquoted(from, self.bytes.len()) {
             match self.bytes[at] {
                 b'(' => depth += 1,
                 b')' if depth > 0 => depth -= 1,
                 b')' => {
-                    push(param_start, at, out);
+                    push(param_start, at, &mut out);
                     return Ok(at + 1);
                 }
                 // Each parameter counts its own parentheses, as Angular's lexer does
                 b';' => {
-                    push(param_start, at, out);
+                    push(param_start, at, &mut out);
                     param_start = at + 1;
                     depth = 0;
                 }
@@ -291,12 +294,12 @@ impl<'a> Builder<'a> {
 
     /// `}`: closes the innermost block, and the elements in it whose end tag may be omitted;
     /// in an ICU case, the case and every element left open in it, as Angular builds a case's content on its own,
-    /// then reads the next case.
-    pub(super) fn block_close(&mut self) -> PResult<()> {
+    /// then reads the next case; whether it closed a block read as text.
+    pub(super) fn block_close(&mut self) -> PResult<bool> {
         let at = self.pos;
         let icu = self.context().icu;
         // None in a conditional comment's content, parsed apart
-        let index = self.stack.iter().rposition(|open| open.braced);
+        let index = self.stack.iter().rposition(|open| open.braced != Braced::No);
         let closed = index.is_some_and(|index| {
             if icu {
                 self.close_down_to(index + 1, at);
@@ -308,8 +311,11 @@ impl<'a> Builder<'a> {
         if !closed {
             return error(DiagnosticKind::UnexpectedBlockClose, span(at, at + 1));
         }
-        self.close_container(at);
-        if icu { self.icu_next_case() } else { Ok(()) }
+        let text = self.close_container(at);
+        if icu {
+            self.icu_next_case()?;
+        }
+        Ok(text)
     }
 }
 

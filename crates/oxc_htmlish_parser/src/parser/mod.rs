@@ -281,14 +281,23 @@ fn trim(bytes: &[u8]) -> (usize, usize) {
 }
 
 /// An element (or an Angular block or ICU) whose end has not been seen yet.
+/// What a `}` closes ([`Open::braced`]).
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Braced {
+    /// An element, closed by its end tag.
+    No,
+    /// A block, an ICU expression or one of its cases, the node at [`Open::id`].
+    Node,
+    /// A block under `ngNonBindable`, read as text from the offset: no node of its own, [`Open::id`] its parent.
+    Text(usize),
+}
+
 struct Open<'a> {
     id: NodeId,
     /// The tag name as written, for matching end tags; empty for a braced one.
     name: &'a str,
-    /// A block, an ICU expression or one of its cases: `}` closes it, and no end tag.
-    braced: bool,
-    /// A block under `ngNonBindable`, read as text: no node of its own, `id` its parent's.
-    text: bool,
+    /// What `}` closes, and no end tag: a block, an ICU expression or one of its cases.
+    braced: Braced,
     tag: Tag,
     /// The element may go without an end tag when its parent's closes it
     /// (closed by its parent, or a `/>` HTML ignored: `<my-el />`, closed as in browsers).
@@ -350,17 +359,23 @@ impl<'a> Builder<'a> {
             self.markup()?;
         }
         while let Some(open) = self.stack.pop() {
-            if open.braced {
-                let node = &self.nodes[open.id.index()];
-                let kind = if matches!(node.kind, NodeKind::Block(_)) {
-                    DiagnosticKind::UnclosedBlock
-                } else {
-                    DiagnosticKind::InvalidIcu
-                };
-                let start = node.span.start as usize;
-                return error(kind, span(start, start + 1));
-            }
-            self.close(&open, None, self.bytes.len());
+            let (kind, start) = match open.braced {
+                Braced::No => {
+                    self.close(&open, None, self.bytes.len());
+                    continue;
+                }
+                Braced::Text(start) => (DiagnosticKind::UnclosedBlock, start),
+                Braced::Node => {
+                    let node = &self.nodes[open.id.index()];
+                    let kind = if matches!(node.kind, NodeKind::Block(_)) {
+                        DiagnosticKind::UnclosedBlock
+                    } else {
+                        DiagnosticKind::InvalidIcu
+                    };
+                    (kind, node.span.start as usize)
+                }
+            };
+            return error(kind, span(start, start + 1));
         }
         Ok(())
     }
@@ -505,9 +520,9 @@ impl<'a> Builder<'a> {
     }
 
     /// What the current element's next child inherits.
-    /// Whether the innermost open block is one read as text (under `ngNonBindable`).
-    fn innermost_block_is_text(&self) -> bool {
-        self.stack.iter().rev().find(|open| open.braced).is_some_and(|open| open.text)
+    /// Where the next node goes.
+    fn parent(&self) -> NodeId {
+        self.stack.last().map_or(self.base_parent, |open| open.id)
     }
 
     fn context(&self) -> Context {
@@ -558,7 +573,7 @@ impl<'a> Builder<'a> {
 
     /// Appends a node as the last child of the current element.
     fn push(&mut self, kind: NodeKind<'a>, span: Span) -> NodeId {
-        let parent = self.stack.last().map_or(self.base_parent, |open| open.id);
+        let parent = self.parent();
         let id = NodeId::from_index(self.nodes.len());
         let prev = self.nodes[parent.index()].last_child;
         self.nodes.push(Node {

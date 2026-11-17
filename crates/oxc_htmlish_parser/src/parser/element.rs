@@ -37,11 +37,13 @@ impl<'a> Builder<'a> {
         let index = if htm {
             self.stack.len().checked_sub(1)
         } else if self.is_template_placeholder(name) {
+            self.stack.iter().rposition(|open| {
+                open.braced == Braced::No && self.is_template_placeholder(open.name)
+            })
+        } else {
             self.stack
                 .iter()
-                .rposition(|open| !open.braced && self.is_template_placeholder(open.name))
-        } else {
-            self.stack.iter().rposition(|open| !open.braced && open.name.eq_ignore_ascii_case(name))
+                .rposition(|open| open.braced == Braced::No && open.name.eq_ignore_ascii_case(name))
         };
         let Some(index) = index else {
             if self.omitted_element_end(tag, lowercase) {
@@ -202,11 +204,11 @@ impl<'a> Builder<'a> {
                     || self.is_template_placeholder(name_str)));
 
         // Read where the element is, past the elements its start tag closes
-        let non_bindable = self.rules.angular
-            && (inherited.non_bindable
-                || attributes.iter().any(|a| a.name.slice(self.source) == "ngNonBindable"));
+        let mut non_bindable = inherited.non_bindable;
         if self.rules.angular && !inherited.non_bindable {
             for attribute in &mut attributes {
+                non_bindable |= attribute.name.slice(self.source) == "ngNonBindable";
+                // A start-tag comment is none
                 if matches!(attribute.kind, AttributeKind::Plain)
                     && let Some(kind) = angular::attribute(
                         self.allocator,
@@ -272,8 +274,7 @@ impl<'a> Builder<'a> {
         let open = Open {
             id,
             name: name_str,
-            braced: false,
-            text: false,
+            braced: Braced::No,
             tag,
             omittable,
             look,
