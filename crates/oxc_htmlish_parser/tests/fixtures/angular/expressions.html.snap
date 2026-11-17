@@ -75,3 +75,9 @@ Root sfc=false
     @[645..648] "(o)" =" [650..659] "p(); // q" Event target="o" statements=["p()"] comment="// q"
     @[661..664] "(r)" =" [666..669] "(s)" Event target="r" statements=["(s)"]
   Text [675..676] "\n" (nl|nl)
+  Element [677..678] "p" Html end_tag=[730..734] "</p>"
+    @[679..682] "(a)" =" [684..689] "f(a,)" Event target="a"
+    @[691..694] "[b]" =" [696..700] "[c,]" Property target="b" code="[c,]"
+    @[702..705] "[d]" =" [707..717] "g({e: 1,})" Property target="d" code="g({e: 1,})"
+    Interpolation expression=[721..728] " h(i,) "
+  Text [734..735] "\n" (nl|nl)

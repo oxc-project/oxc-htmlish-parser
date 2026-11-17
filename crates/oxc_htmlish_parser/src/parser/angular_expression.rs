@@ -66,7 +66,8 @@ struct Code<'s> {
 }
 
 impl<'s> Code<'s> {
-    /// `None` where Angular reports an error: a character it does not lex, `{{` and `}}` in the code (`_checkNoInterpolation`).
+    /// `None` where Angular reports an error: a character it does not lex, `{{` and `}}` in the code (`_checkNoInterpolation`),
+    /// a `,` before a `)`, which a call's arguments and an arrow's params do not end in (`f(a,)`; `[a,]` and `{a: 1,}` do).
     fn read(source: &'s str, at: Span) -> Option<Self> {
         let s = at.slice(source);
         let base = at.start as usize;
@@ -76,6 +77,9 @@ impl<'s> Code<'s> {
         let code = &s[..comment_at.unwrap_or(s.len())];
         let mut tokens = vec![];
         Lexer::new(code).scan(&mut tokens, false)?;
+        if tokens.windows(2).any(|w| w[0].is_char(b',') && w[1].is_char(b')')) {
+            return None;
+        }
         if code.contains("{{") {
             let adjacent = |c: u8| {
                 tokens
