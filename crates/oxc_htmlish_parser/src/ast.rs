@@ -255,7 +255,7 @@ pub enum TemplateBinding<'a> {
     },
     /// `let name` / `let name = value`.
     Let { name: Span, value: Option<Span> },
-    /// `as alias`, right after the [`Expression`](Self::Expression) whose key it names (`items | async as list`),
+    /// `as alias`, right after the [`Expression`](Self::Expression) whose key it names, `key` that one's (`of items | async as list`),
     /// or after a key of its own (`index as i`).
     As { key: Option<Span>, alias: Span },
 }
