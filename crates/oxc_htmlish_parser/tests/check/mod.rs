@@ -52,6 +52,7 @@ pub fn check(root: &Root<'_>, id: NodeId) -> Result<(), String> {
                         if let AngularAttribute::Interpolation(expressions) = kind
                             && !expressions
                                 .iter()
+                                .map(|e| e.expression)
                                 .all(|e| value.start + 2 <= e.start && e.end + 2 <= value.end)
                         {
                             return Err(format!("interpolations {expressions:?} in {value:?}"));

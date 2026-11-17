@@ -86,3 +86,6 @@ Root sfc=false
     @[754..759] "[(d)]" =" [761..766] "e | f" TwoWay target="d" code="e" | f[]
     @[768..773] "[(g)]" =" [775..781] "h // i" TwoWay target="g" code="h" comment="// i"
   Text [783..784] "\n" (nl|nl)
+  Element [785..786] "p" Html end_tag=[872..876] "</p>"
+    @[787..792] "title" =" [794..870] "Hi {{ name | uppercase }}, {{ a // c }} {{ (b ? c : d) | p: x }} {{ f(g,) }}" Interpolation target="title" [" name | uppercase ", " a // c ", " (b ? c : d) | p: x ", " f(g,) "] code="name" | uppercase[] code="a" comment="// c" code=?"(b ? c : d)" | p["x"]
+  Text [876..877] "\n" (nl|nl)

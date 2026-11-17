@@ -709,7 +709,7 @@ mod tests {
             let NodeKind::Element(el) = &node.kind else { panic!() };
             let found: Vec<_> = match &el.attributes[0].kind {
                 AttributeKind::Angular(AngularAttribute::Interpolation(expressions)) => {
-                    expressions.iter().map(|e| e.slice(source)).collect()
+                    expressions.iter().map(|e| e.expression.slice(source)).collect()
                 }
                 _ => vec![],
             };

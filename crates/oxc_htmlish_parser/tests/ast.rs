@@ -246,9 +246,14 @@ impl Printer<'_, '_> {
                 let target = kind.target(attribute.name).slice(self.source);
                 write!(line, " {name} target={target:?}").unwrap();
                 if let AngularAttribute::Interpolation(expressions) = kind {
-                    let expressions: Vec<_> =
-                        expressions.iter().map(|e| e.slice(self.source)).collect();
-                    write!(line, " {expressions:?}").unwrap();
+                    let texts: Vec<_> =
+                        expressions.iter().map(|e| e.expression.slice(self.source)).collect();
+                    write!(line, " {texts:?}").unwrap();
+                    for e in expressions.iter() {
+                        if let Some(angular) = &e.angular {
+                            line.push_str(&angular_expression(self.source, angular));
+                        }
+                    }
                 }
                 if let AngularAttribute::Property(Some(expression))
                 | AngularAttribute::TwoWay(Some(expression)) = kind

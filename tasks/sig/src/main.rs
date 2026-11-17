@@ -180,9 +180,13 @@ fn element(source: &str, root: &Root<'_>, id: NodeId, el: &Element<'_>) -> Value
             let value = a.value.map(|v| v.span.slice(source));
             match &a.kind {
                 AttributeKind::Angular(AngularAttribute::Interpolation(expressions)) => {
-                    let expressions: Vec<&str> =
-                        expressions.iter().map(|e| e.slice(source)).collect();
-                    json!([name, value, expressions])
+                    let texts: Vec<&str> =
+                        expressions.iter().map(|e| e.expression.slice(source)).collect();
+                    let readings: Vec<Value> = expressions
+                        .iter()
+                        .map(|e| json!(e.angular.as_deref().map(|e| expression(source, e))))
+                        .collect();
+                    json!([name, value, texts, readings])
                 }
                 AttributeKind::Angular(AngularAttribute::Template(bindings))
                     if a.value.is_some() =>

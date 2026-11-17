@@ -342,7 +342,13 @@ pub(super) fn attribute<'a>(
     let mut expressions =
         interpolations(source.as_bytes(), value.start as usize, value.end as usize).peekable();
     expressions.peek()?;
-    let expressions = ArenaVec::from_iter_in(expressions, &allocator);
+    let expressions = ArenaVec::from_iter_in(
+        expressions.map(|expression| ValueInterpolation {
+            expression,
+            angular: angular_expression::expression(allocator, source, expression),
+        }),
+        &allocator,
+    );
     Some(AngularAttribute::Interpolation(ArenaBox::new_in(expressions, &allocator)))
 }
 

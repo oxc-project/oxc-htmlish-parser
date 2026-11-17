@@ -222,8 +222,8 @@ pub enum AngularAttribute<'a> {
     /// `i18n`, or `i18n-x`, which marks the attribute `x` for translation.
     I18n,
     /// Another name with `{{ }}` in its value (`title="Hi {{ name }}"`), which Angular binds:
-    /// the expressions, between each `{{` and `}}`, read as in text.
-    Interpolation(ArenaBox<'a, ArenaVec<'a, Span>>),
+    /// each `{{ }}`, read as in text.
+    Interpolation(ArenaBox<'a, ArenaVec<'a, ValueInterpolation<'a>>>),
 }
 
 impl AngularAttribute<'_> {
@@ -347,6 +347,15 @@ pub struct AngularExpression<'a> {
     pub pipes: ArenaVec<'a, Pipe<'a>>,
     /// `//` to the end, its trailing whitespace left out: Angular reads no code past it, line breaks included.
     pub comment: Option<Span>,
+}
+
+/// A `{{ }}` in an attribute's value ([`AngularAttribute::Interpolation`]).
+#[derive(Debug)]
+pub struct ValueInterpolation<'a> {
+    /// Between `{{` and `}}`.
+    pub expression: Span,
+    /// Angular's reading of it; `None` where it reports an error its tokens show.
+    pub angular: Option<ArenaBox<'a, AngularExpression<'a>>>,
 }
 
 /// An Angular action (an event binding's value), as its compiler reads it (`parseAction`):

@@ -185,7 +185,9 @@ function angularCompilerSig(source: string): Sig {
             const attr: unknown[] = [slice(a.keySpan), a.valueSpan ? slice(a.valueSpan) : null];
             // Its compiler binds the `{{ }}` in a name it reads as no binding of another kind (`parseAttribute`)
             const interpolations = (a.valueTokens ?? []).filter((t: any) => t.type === ATTR_VALUE_INTERPOLATION && t.parts.length === 3).map((t: any) => t.parts[1]);
-            if (interpolations.length > 0 && !BOUND_NAME.test(attr[0] as string)) attr.push(interpolations);
+            if (interpolations.length > 0 && !BOUND_NAME.test(attr[0] as string)) {
+              attr.push(interpolations, interpolations.map(expressionReading));
+            }
             if (PROPERTY_NAME.test(attr[0] as string) && a.valueSpan) {
               attr.push(["ex", expressionReading(attr[1] as string)]);
             }
