@@ -93,7 +93,8 @@ function stripQuotes(value: string): string {
 const LEADING_LF = /^(\r\n|\n|\r)/;
 const IGNORES_FIRST_LF = new Set(["pre", "textarea", "listing"]);
 export const VOID = new Set("area,base,br,col,embed,hr,img,input,link,meta,param,source,track,wbr".split(","));
-const VOID_TAG = `<(?:${[...VOID].join("|")})\\b[^<>]*(?<!/)>`;
+// Its attributes' quoted values may hold `<` and `>`
+const VOID_TAG = `<(?:${[...VOID].join("|")})\\b(?:"[^"]*"|'[^']*'|[^<>"'])*(?<!/)>`;
 
 /** The line break `pre` / `textarea` / `listing` drop: strip it from the first text. */
 function leadingLf(children: unknown[][]): boolean {
@@ -569,13 +570,13 @@ function whatwgClosing(source: string): boolean {
 
 /**
  * Ours in the shape of Angular's AST (DIVERGENCES.md "How Angular's AST holds a node"): it drops doctypes,
- * and the bogus comments `<!` opens, which it reads as doctypes;
- * and it reads a bogus comment `<?` opens, and CDATA, as text, and trims comments.
+ * the bogus comments `<!` opens, which it reads as doctypes, and the ones `<?` opens, processing instructions;
+ * it reads CDATA as text, and trims comments.
  */
 function angularShape(nodes: any[]): any[] {
   const out = nodes
-    .filter((n) => n[0] !== "d" && !(n[0] === "bc" && n[2] === "<!"))
-    .map((n) => (n[0] === "x" ? ["t", n[1].slice(9, -3)] : n[0] === "bc" && n[2] === "<?" ? ["t", `<${n[1]}>`] : n));
+    .filter((n) => n[0] !== "d" && !(n[0] === "bc" && (n[2] === "<!" || n[2] === "<?")))
+    .map((n) => (n[0] === "x" ? ["t", n[1].slice(9, -3)] : n));
   return bogusAsComment(mergeTexts(out)).map((n) => {
     if (n[0] === "c") return ["c", n[1].replace(/\r\n?/g, "\n").trim()];
     // Its lexer skips the whitespace at the start of a case

@@ -268,10 +268,13 @@ fn is_identifier_part(b: u8) -> bool {
     b.is_ascii_alphanumeric() || matches!(b, b'_' | b'$')
 }
 
-/// `<` followed by a letter, `/` or `!` at `at`: a tag, a comment or a declaration starts (Angular's `_isTagStart`).
+/// `<` followed by a letter, `/`, `!` or `?` at `at`: a tag, a comment, a declaration or a processing instruction starts
+/// (Angular's `_isTagStart`).
 fn is_tag_start(bytes: &[u8], at: usize) -> bool {
     bytes[at] == b'<'
-        && bytes.get(at + 1).is_some_and(|b| b.is_ascii_alphabetic() || matches!(b, b'/' | b'!'))
+        && bytes
+            .get(at + 1)
+            .is_some_and(|b| b.is_ascii_alphabetic() || matches!(b, b'/' | b'!' | b'?'))
 }
 
 /// Where the leading ASCII whitespace of `bytes` ends and the trailing one starts.
@@ -489,11 +492,11 @@ impl<'a> Builder<'a> {
         self.bytes[at..].get(..pat.len()).is_some_and(|b| b.eq_ignore_ascii_case(pat.as_bytes()))
     }
 
-    /// `<` followed by what can start markup (`<?` too); any other `<` is text.
+    /// `<` followed by what can start markup; any other `<` is text.
     /// In a Vue SFC, a void element's end tag (`</br>`) is text too: Vue drops it (DIVERGENCES.md#void-element-end-tags).
     #[inline]
     fn at_markup(&self, at: usize) -> bool {
-        (is_tag_start(self.bytes, at) || self.bytes[at..].starts_with(b"<?"))
+        is_tag_start(self.bytes, at)
             && !(self.rules.sfc && self.byte(at + 1) == Some(b'/') && self.at_void_end_tag(at))
             && !(self.rules.angular && self.at_prefix_without_name(at))
     }
