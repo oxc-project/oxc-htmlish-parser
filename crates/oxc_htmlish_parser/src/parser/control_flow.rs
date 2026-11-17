@@ -38,7 +38,22 @@ pub fn parameter<'a>(
             .map(|alias| BlockParameterKind::As { alias: at(alias) }),
         _ => None,
     };
-    BlockParameter { span: parameter, kind: kind.unwrap_or(BlockParameterKind::Plain) }
+    let kind = kind.unwrap_or(BlockParameterKind::Plain);
+    let expression = match (&kind, block, index) {
+        (
+            BlockParameterKind::Plain,
+            BlockKind::If | BlockKind::ElseIf | BlockKind::Switch | BlockKind::Case,
+            0,
+        ) => Some(parameter),
+        (
+            BlockParameterKind::ForOf { expression, .. } | BlockParameterKind::Track { expression },
+            ..,
+        ) => Some(*expression),
+        _ => None,
+    };
+    let angular =
+        expression.and_then(|e| super::angular_expression::expression(allocator, source, e));
+    BlockParameter { span: parameter, kind, angular }
 }
 
 /// `/^word\s+/` at the start of `s`: where the rest starts.

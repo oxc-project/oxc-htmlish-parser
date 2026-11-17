@@ -221,13 +221,15 @@ function angularCompilerSig(source: string): Sig {
       // Our parameters are trimmed (`Block::parameters`).
       case "Block": {
         // Its template compiler drops a `@for` or `@if` whose parameters it reports: no reading to compare
-        const read = ["for", "if", "else if"].includes(n.name);
+        const read = ["for", "if", "else if", "switch", "case"].includes(n.name);
         const reading = read ? ((readings ??= blockReadings(source)).get(n.startSourceSpan.start.offset) ?? UNKNOWN) : NO_READING;
         return ["b", n.name, n.parameters.map((p: any) => p.expression.replace(/^[ \t\n\f\r]+|[ \t\n\f\r]+$/g, "")), nodes(n.children), reading];
       }
       // Our value is trimmed (`LetDeclaration::value`).
-      case "LetDeclaration":
-        return ["l", n.name, n.value.replace(/[ \t\n\f\r]+$/, "")];
+      case "LetDeclaration": {
+        const value = n.value.replace(/[ \t\n\f\r]+$/, "");
+        return ["l", n.name, value, expressionReading(value.replace(/^[ \t\n\f\r]+/, ""))];
+      }
       // Ours are trimmed (`Icu`, `IcuCase`); Angular's lexer skips the whitespace at the start of a case.
       case "Expansion":
         return ["icu", n.switchValue.trim(), n.type.trim(), n.cases.map((c: any) => ["case", c.value, nodes(c.expression)])];
@@ -243,7 +245,7 @@ function angularCompilerSig(source: string): Sig {
 const BOUND_NAME = /^(?:\*|i18n(?:-|$)|bind-|let-|ref-|#|on-|bindon-|@|\[\(.+\)\]$|\[.+\]$|\(.+\)$)/;
 /** What an oracle could not tell: it matches any reading of ours (`withUnknownAsOurs`). */
 export const UNKNOWN = "?";
-const NO_READING = [null, null, null, [], null];
+const NO_READING = [null, null, null, [], null, [null, null]];
 
 /** `oracle` with each `UNKNOWN` in it replaced by what `ours` holds there. */
 export function withUnknownAsOurs(ours: unknown, oracle: unknown): unknown {
@@ -271,11 +273,15 @@ function blockReadings(source: string): Map<number, unknown> {
   const slice = (span: any) => sliceOf(source, span);
   const walk = (nodes: any[]) => {
     for (const n of nodes) {
+      // An expression's reading, from the source the compiler parsed (`null` for none)
+      const read = (e: any) => (e === null || e === undefined ? null : typeof e.source === "string" ? expressionReading(e.source.trim()) : UNKNOWN);
       if (n.constructor.name === "ForLoopBlock") {
         const lets = n.contextVariables.filter((v: any) => v.keySpan.start.offset !== v.keySpan.end.offset).map((v: any) => [slice(v.keySpan), slice(v.valueSpan)]);
-        set(n, [n.item.name, n.expression.source.trim(), n.trackBy.source.trim(), lets, null]);
+        set(n, [n.item.name, n.expression.source.trim(), n.trackBy.source.trim(), lets, null, [read(n.expression), read(n.trackBy)]]);
       } else if (n.constructor.name === "IfBlockBranch") {
-        set(n, [null, null, null, [], n.expressionAlias?.name ?? null]);
+        set(n, [null, null, null, [], n.expressionAlias?.name ?? null, [read(n.expression), null]]);
+      } else if (n.constructor.name === "SwitchBlock" || n.constructor.name === "SwitchBlockCase") {
+        set(n, [null, null, null, [], null, [read(n.expression), null]]);
       }
       for (const value of Object.values(n)) {
         if (Array.isArray(value)) walk(value.filter((x) => x?.sourceSpan !== undefined));

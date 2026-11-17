@@ -100,7 +100,12 @@ fn node(source: &str, root: &Root<'_>, id: NodeId) -> Value {
             let name = b.kind.name().unwrap_or_else(|| b.name.slice(source));
             json!(["b", name, parameters, children(source, root, id), block_reading(source, b)])
         }
-        NodeKind::LetDeclaration(n) => json!(["l", n.name.slice(source), n.value.slice(source)]),
+        NodeKind::LetDeclaration(n) => json!([
+            "l",
+            n.name.slice(source),
+            n.value.slice(source),
+            n.angular.as_deref().map(|e| expression(source, e))
+        ]),
         NodeKind::Icu(n) => json!([
             "icu",
             n.expression.slice(source),
@@ -128,7 +133,20 @@ fn block_reading(source: &str, block: &Block<'_>) -> Value {
             BlockParameterKind::As { alias: a } => alias = Some(a.slice(source)),
         }
     }
-    json!([item, expression, track, lets, alias])
+    // Angular's readings of the expressions: the block's own (`@if`'s, `@for`'s `of`, `@switch`'s, `@case`'s), and `track`'s
+    let reading = |kind: fn(&BlockParameterKind<'_>) -> bool| {
+        block
+            .parameters
+            .iter()
+            .find(|p| kind(&p.kind) && p.angular.is_some())
+            .and_then(|p| p.angular.as_deref())
+            .map(|e| self::expression(source, e))
+    };
+    let own = reading(|kind| {
+        matches!(kind, BlockParameterKind::Plain | BlockParameterKind::ForOf { .. })
+    });
+    let track_reading = reading(|kind| matches!(kind, BlockParameterKind::Track { .. }));
+    json!([item, expression, track, lets, alias, [own, track_reading]])
 }
 
 /// `[code, [[name, [argument, …]], …], comment]`, each piece of code `[text, conditional]`

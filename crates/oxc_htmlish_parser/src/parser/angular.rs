@@ -258,9 +258,11 @@ impl<'a> Builder<'a> {
                 _ => at += string_step(b, &mut quote, true).0,
             }
         };
+        let value = self.trimmed(value_start, semicolon);
         let declaration = LetDeclaration {
             name: span(name_start, name_end),
-            value: self.trimmed(value_start, semicolon),
+            value,
+            angular: angular_expression::expression(self.allocator, self.source, value),
         };
         self.pos = semicolon + 1;
         self.push(

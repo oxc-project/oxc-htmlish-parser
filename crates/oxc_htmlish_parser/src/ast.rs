@@ -95,7 +95,7 @@ pub enum NodeKind<'a> {
     /// An Angular control flow block (`@if (a) { … }`); its content is the node's children.
     Block(ArenaBox<'a, Block<'a>>),
     /// `@let name = value;` (Angular).
-    LetDeclaration(ArenaBox<'a, LetDeclaration>),
+    LetDeclaration(ArenaBox<'a, LetDeclaration<'a>>),
     /// An Angular ICU expression (`{n, plural, =0 {none} other {many}}`); its cases are the node's children.
     Icu(ArenaBox<'a, Icu>),
     /// A case of an [`NodeKind::Icu`] (`=0 {none}`); its content is the node's children.
@@ -500,6 +500,10 @@ pub struct BlockParameter<'a> {
     /// Trimmed.
     pub span: Span,
     pub kind: BlockParameterKind<'a>,
+    /// Angular's reading of its expression: all of it for the first of `@if`, `@else if`, `@switch` and `@case`,
+    /// the one of [`ForOf`](BlockParameterKind::ForOf) and [`Track`](BlockParameterKind::Track);
+    /// `None` for no expression, and where Angular reports an error its tokens show.
+    pub angular: Option<ArenaBox<'a, AngularExpression<'a>>>,
 }
 
 /// A parameter of `@for`, `@if` or `@else if`, split as Angular's compiler reads it
@@ -534,12 +538,14 @@ pub struct LetVariable {
     pub value: Span,
 }
 
-#[derive(Clone, Copy, Debug)]
-pub struct LetDeclaration {
+#[derive(Debug)]
+pub struct LetDeclaration<'a> {
     /// After `@let` and whitespace; empty when none is written (`@let = 1;`).
     pub name: Span,
     /// Between `=` and `;`, trimmed.
     pub value: Span,
+    /// Angular's reading of the value; `None` where it reports an error its tokens show.
+    pub angular: Option<ArenaBox<'a, AngularExpression<'a>>>,
 }
 
 /// The whitespace between the cases is no node, as in Angular's AST;

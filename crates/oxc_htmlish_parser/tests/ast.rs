@@ -181,15 +181,23 @@ impl Printer<'_, '_> {
             NodeKind::IcuCase(n) => {
                 format!("IcuCase value={} open={}", q(n.value), n.open)
             }
-            NodeKind::LetDeclaration(n) => {
-                format!("LetDeclaration name={} value={}", q(n.name), q(n.value))
-            }
+            NodeKind::LetDeclaration(n) => format!(
+                "LetDeclaration name={} value={}{}",
+                q(n.name),
+                q(n.value),
+                n.angular
+                    .as_deref()
+                    .map_or_else(String::new, |e| angular_expression(self.source, e))
+            ),
         };
         self.line(&head);
         if let NodeKind::Block(block) = &node.kind {
             self.depth += 1;
             for parameter in &block.parameters {
                 self.block_parameter(&parameter.kind);
+                if let Some(angular) = &parameter.angular {
+                    self.line(&format!("% expression{}", angular_expression(self.source, angular)));
+                }
             }
             self.depth -= 1;
         }
