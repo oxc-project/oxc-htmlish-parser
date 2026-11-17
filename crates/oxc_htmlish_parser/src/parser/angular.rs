@@ -108,29 +108,39 @@ impl<'a> Builder<'a> {
         } else if !(matches!(kind, BlockKind::Case | BlockKind::Default) && self.at_block(at)) {
             return error(DiagnosticKind::IncompleteBlock, span(start, open_end));
         }
-        let block = Block {
-            name: span(name_start, name_end),
-            kind,
-            parameters,
-            open: span(start, open_end),
-            close: None,
-        };
-        let id = self
-            .push(NodeKind::Block(ArenaBox::new_in(block, &self.allocator)), span(start, open_end));
         self.pos = open_end;
+        // Under `ngNonBindable` its markers are text, its content its parent's
+        let text = self.context().non_bindable;
+        let id = if text {
+            self.stack.last().map_or(self.base_parent, |open| open.id)
+        } else {
+            let block = Block {
+                name: span(name_start, name_end),
+                kind,
+                parameters,
+                open: span(start, open_end),
+                close: None,
+            };
+            self.push(
+                NodeKind::Block(ArenaBox::new_in(block, &self.allocator)),
+                span(start, open_end),
+            )
+        };
         if body {
-            self.open_container(id, false);
+            self.open_container(id, false, text);
         }
         Ok(())
     }
 
-    /// Opens a block, an ICU expression or a case at `id`; `icu`: its content is a case's.
-    fn open_container(&mut self, id: NodeId, icu: bool) {
+    /// Opens a block, an ICU expression or a case at `id`; `icu`: its content is a case's;
+    /// `text`: a block read as text, `id` its parent.
+    fn open_container(&mut self, id: NodeId, icu: bool, text: bool) {
         let context = Context { icu, ..self.context() };
         self.stack.push(Open {
             id,
             name: "",
             braced: true,
+            text,
             tag: Tag::default(),
             omittable: false,
             look: Some(self.stack.len()),
@@ -153,7 +163,7 @@ impl<'a> Builder<'a> {
         };
         let id = self
             .push(NodeKind::Icu(ArenaBox::new_in(icu, &self.allocator)), span(start, type_end + 1));
-        self.open_container(id, true);
+        self.open_container(id, true, false);
         self.pos = type_end + 1;
         self.icu_next_case()
     }
@@ -171,7 +181,7 @@ impl<'a> Builder<'a> {
         };
         let case = IcuCase { value: self.trimmed(at, open), open: span(open, open + 1).start };
         let id = self.push(NodeKind::IcuCase(case), span(at, open + 1));
-        self.open_container(id, true);
+        self.open_container(id, true, false);
         self.pos = open + 1;
         Ok(())
     }
@@ -179,12 +189,15 @@ impl<'a> Builder<'a> {
     /// Closes the container on top of the stack at the `}` at `at`.
     fn close_container(&mut self, at: usize) {
         let open = self.stack.pop().expect("a container is open");
+        self.pos = at + 1;
+        if open.text {
+            return;
+        }
         let node = &mut self.nodes[open.id.index()];
         node.span = span(node.span.start as usize, at + 1);
         if let NodeKind::Block(block) = &mut node.kind {
             block.close = Some(span(at, at + 1));
         }
-        self.pos = at + 1;
     }
 
     /// The parameters after `(`, up to the `)`, which the returned offset follows, of a `block`.
@@ -258,13 +271,17 @@ impl<'a> Builder<'a> {
                 _ => at += string_step(b, &mut quote, true).0,
             }
         };
+        self.pos = semicolon + 1;
+        // Text under `ngNonBindable`
+        if self.context().non_bindable {
+            return Ok(());
+        }
         let value = self.trimmed(value_start, semicolon);
         let declaration = LetDeclaration {
             name: span(name_start, name_end),
             value,
             angular: angular_expression::expression(self.allocator, self.source, value),
         };
-        self.pos = semicolon + 1;
         self.push(
             NodeKind::LetDeclaration(ArenaBox::new_in(declaration, &self.allocator)),
             span(start, self.pos),

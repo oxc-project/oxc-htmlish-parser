@@ -200,11 +200,19 @@ struct Context {
     /// Angular: in the HTML namespace under a prefix that names none (`<x:g>`, `<html:p>`),
     /// which its compiler gives the descendants too (`:x:p`): the tag table applies to no name.
     prefixed: bool,
+    /// Angular: under an element with `ngNonBindable`, which its compiler reads as its `NonBindableVisitor` does:
+    /// blocks, `@let` and `{{ }}` as text, attributes as plain ones.
+    non_bindable: bool,
 }
 
 impl Context {
-    const ROOT: Self =
-        Self { namespace: Namespace::Html, v_pre: false, icu: false, prefixed: false };
+    const ROOT: Self = Self {
+        namespace: Namespace::Html,
+        v_pre: false,
+        icu: false,
+        prefixed: false,
+        non_bindable: false,
+    };
 }
 
 enum Stop {
@@ -279,6 +287,8 @@ struct Open<'a> {
     name: &'a str,
     /// A block, an ICU expression or one of its cases: `}` closes it, and no end tag.
     braced: bool,
+    /// A block under `ngNonBindable`, read as text: no node of its own, `id` its parent's.
+    text: bool,
     tag: Tag,
     /// The element may go without an end tag when its parent's closes it
     /// (closed by its parent, or a `/>` HTML ignored: `<my-el />`, closed as in browsers).
@@ -495,6 +505,11 @@ impl<'a> Builder<'a> {
     }
 
     /// What the current element's next child inherits.
+    /// Whether the innermost open block is one read as text (under `ngNonBindable`).
+    fn innermost_block_is_text(&self) -> bool {
+        self.stack.iter().rev().find(|open| open.braced).is_some_and(|open| open.text)
+    }
+
     fn context(&self) -> Context {
         self.stack.last().map_or(self.base, |open| open.context)
     }

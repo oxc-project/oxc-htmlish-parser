@@ -201,6 +201,24 @@ impl<'a> Builder<'a> {
                     || namespace != Namespace::Html
                     || self.is_template_placeholder(name_str)));
 
+        // Read where the element is, past the elements its start tag closes
+        let non_bindable = self.rules.angular
+            && (inherited.non_bindable
+                || attributes.iter().any(|a| a.name.slice(self.source) == "ngNonBindable"));
+        if self.rules.angular && !inherited.non_bindable {
+            for attribute in &mut attributes {
+                if matches!(attribute.kind, AttributeKind::Plain)
+                    && let Some(kind) = angular::attribute(
+                        self.allocator,
+                        self.source,
+                        attribute.name,
+                        attribute.value.map(|v| v.span),
+                    )
+                {
+                    attribute.kind = AttributeKind::Angular(kind);
+                }
+            }
+        }
         let v_pre = self.rules.vue
             && (inherited.v_pre
                 || attributes.iter().any(|a| vue::is_v_pre(a.name.slice(self.source).as_bytes())));
@@ -255,6 +273,7 @@ impl<'a> Builder<'a> {
             id,
             name: name_str,
             braced: false,
+            text: false,
             tag,
             omittable,
             look,
@@ -262,6 +281,7 @@ impl<'a> Builder<'a> {
                 namespace: tags::children_namespace(local, namespace),
                 v_pre,
                 prefixed: in_prefix,
+                non_bindable,
                 ..inherited
             },
         };
@@ -301,15 +321,7 @@ impl<'a> Builder<'a> {
         }
         let name = span(start, name_end);
         let value = self.attribute_value(name_end)?;
-        let kind = if self.rules.angular
-            && let Some(kind) =
-                angular::attribute(self.allocator, self.source, name, value.map(|v| v.span))
-        {
-            AttributeKind::Angular(kind)
-        } else {
-            AttributeKind::Plain
-        };
-        Ok(Attribute { name, value, kind })
+        Ok(Attribute { name, value, kind: AttributeKind::Plain })
     }
 
     /// The value after the name ending at `name_end`, when a `=` follows.

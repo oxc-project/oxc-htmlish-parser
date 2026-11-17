@@ -80,7 +80,7 @@ const ANGULAR_TOKENS = [
   "{{ /a|b/.test(c) | p }}", "{{ a || b | p }}", "{{ a | p // c }}", "{{ a | }}", "{{ a | p q }}",
   "<p [a]=\"b | p: 1\">", "<p [a]=\"{b: c} | p\">", "<p [a]=\"a : b\">", "<p [a]=\"f(a | p)\">",
   "{{ (a ? b : c) | p }}", "{{ ((a ? b : c)) | p: (x ? y : z) : w ? v : u }}", "{{ (a ? b : c).d | p }}", "{{ (a) ? (b) : c }}", "{{ (x => a ? b : c) | p }}", "{{ f | p: x => a ? b : c }}",
-  "<p (a)=\"b(); c = d;\">", "<p (a)=\"b;; c ? d() : e // f\">", "<p (a)=\"b | c\">", "<p (a)=\"\">", "<p (a)=\"f(); // c\">", "{{ f(a,) }}", "<p (a)=\"f(a, b,)\">", "{{ [a,] }}", "{{ g({a: 1,}) }}", "<input [(a)]=\"b.c | d\">", "<input [(a)]=\"b // c\">", "<p bind-a=\"b | c: d\">", "<p on-a=\"b(); c\">", "<input bindon-a=\"b\">", "<p bind-=\"a\" on-=\"b\">",
+  "<p (a)=\"b(); c = d;\">", "<p (a)=\"b;; c ? d() : e // f\">", "<p (a)=\"b | c\">", "<p (a)=\"\">", "<p (a)=\"f(); // c\">", "{{ f(a,) }}", "<p (a)=\"f(a, b,)\">", "{{ [a,] }}", "{{ g({a: 1,}) }}", "<input [(a)]=\"b.c | d\">", "<input [(a)]=\"b // c\">", "<p bind-a=\"b | c: d\">", "<p on-a=\"b(); c\">", "<input bindon-a=\"b\">", "<p bind-=\"a\" on-=\"b\">", "<div ngNonBindable>", "<p ngNonBindable [a]=\"b\">@if (c) {<i [d]=\"e\">{{ f }}</i>} @let g = h; {{ i < j }}</p>",
 ];
 
 // ---
@@ -169,8 +169,22 @@ function angularCompilerSig(source: string): Sig {
   // Compiled only for a template with a block to compare
   let readings: Map<number, unknown> | undefined;
   const slice = (span: any) => sliceOf(source, span);
-  const nodes = (nodes: any[]): unknown[][] => nodes.flatMap((n) => (n.constructor.name === "Text" ? node(n) : [node(n)])) as unknown[][];
-  function node(n: any): any {
+  // Under `ngNonBindable` (`nonBindable`) as its template compiler reads it (`NonBindableVisitor`):
+  // a block's markers, `@let` and `{{ }}` are text, an attribute is a plain one
+  const asText = (n: any): unknown[][] | null => {
+    switch (n.constructor.name) {
+      case "Text":
+      case "LetDeclaration":
+        return [["t", slice(n.sourceSpan)]];
+      case "Block":
+        return [["t", slice(n.startSourceSpan)], ...nodes(n.children, true), ...(n.endSourceSpan ? [["t", slice(n.endSourceSpan)]] : [])];
+      default:
+        return null;
+    }
+  };
+  const nodes = (nodes: any[], nonBindable = false): unknown[][] =>
+    nodes.flatMap((n) => (nonBindable && asText(n)) || (n.constructor.name === "Text" ? node(n, nonBindable) : [node(n, nonBindable)])) as unknown[][];
+  function node(n: any, nonBindable: boolean): any {
     switch (n.constructor.name) {
       case "Element": {
         // As written: Angular's name carries the namespace (`:svg:rect`)
@@ -183,6 +197,7 @@ function angularCompilerSig(source: string): Sig {
         const attrs = [
           ...n.attrs.map((a: any) => {
             const attr: unknown[] = [slice(a.keySpan), a.valueSpan ? slice(a.valueSpan) : null];
+            if (nonBindable) return [a.sourceSpan.start.offset, attr];
             // Its compiler binds the `{{ }}` in a name it reads as no binding of another kind (`parseAttribute`)
             const interpolations = (a.valueTokens ?? []).filter((t: any) => t.type === ATTR_VALUE_INTERPOLATION && t.parts.length === 3).map((t: any) => t.parts[1]);
             if (interpolations.length > 0 && !BOUND_NAME.test(attr[0] as string)) {
@@ -205,7 +220,8 @@ function angularCompilerSig(source: string): Sig {
         ]
           .sort((a, b) => a[0] - b[0])
           .map((a) => a[1]);
-        return elementSig(source, n, name, ended, attrs, nodes(n.children));
+        const childrenNonBindable = nonBindable || n.attrs.some((a: any) => a.name === "ngNonBindable");
+        return elementSig(source, n, name, ended, attrs, nodes(n.children, childrenNonBindable));
       }
       // Its interpolations are tokens; one without its `}}` is text to us
       case "Text":
@@ -232,7 +248,7 @@ function angularCompilerSig(source: string): Sig {
       }
       // Ours are trimmed (`Icu`, `IcuCase`); Angular's lexer skips the whitespace at the start of a case.
       case "Expansion":
-        return ["icu", n.switchValue.trim(), n.type.trim(), n.cases.map((c: any) => ["case", c.value, nodes(c.expression)])];
+        return ["icu", n.switchValue.trim(), n.type.trim(), n.cases.map((c: any) => ["case", c.value, nodes(c.expression, nonBindable)])];
       default:
         throw new UnknownNode(`unexpected node ${n.constructor.name}`);
     }

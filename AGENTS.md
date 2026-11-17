@@ -102,7 +102,7 @@ Step 1 holds a printer to a norm's tree only where the input has no parse error.
 ## Scope
 
 - No cooked values: spans into the original source; entities are never decoded.
-- Facts that need no formatting option belong here (whitespace around text, how a tag was written, directive parts and Angular binding and block kinds, `v-for`'s, `@for`'s, `@if`'s and Angular's microsyntax's splits, an Angular expression's root pipes, comment, and which pieces' roots are conditionals, an action's statements, `{{ }}` in Angular's attribute values, `pre`'s ignored first line break);
+- Facts that need no formatting option belong here (whitespace around text, how a tag was written, directive parts and Angular binding and block kinds, `v-for`'s, `@for`'s, `@if`'s and Angular's microsyntax's splits, an Angular expression's root pipes, comment, and which pieces' roots are conditionals, an action's statements, `{{ }}` in Angular's attribute values, `ngNonBindable`'s content read as its compiler reads it (blocks, `@let` and `{{ }}` as text, attributes plain), `pre`'s ignored first line break);
   formatter policy (CSS display, whitespace sensitivity) does not.
 - No dependency on `oxc_parser`: expressions are spans.
   Dialects that need a JS parse to find an expression's end take a validator from the caller.

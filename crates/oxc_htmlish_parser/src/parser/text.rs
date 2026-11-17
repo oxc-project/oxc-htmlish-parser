@@ -37,23 +37,28 @@ impl Builder<'_> {
                     continue;
                 }
                 // Not in an ICU case (DIVERGENCES.md#inside-an-icu-case)
+                // Under `ngNonBindable` read as Angular reads them, but text, joining the text around (`Builder::push_text`)
                 b'@' if angular
                     && !self.context().icu
                     && (self.at_let(self.pos) || self.at_block(self.pos)) =>
                 {
                     self.push_text(start, self.pos);
+                    let at = self.pos;
                     if self.at_let(self.pos) {
                         self.let_declaration()?;
                     } else {
                         self.block_start()?;
                     }
-                    start = self.pos;
+                    start = if self.context().non_bindable { at } else { self.pos };
                     continue;
                 }
                 b'}' if angular => {
                     self.push_text(start, self.pos);
+                    let at = self.pos;
+                    // Of the block open at the `}`, which may be outside `ngNonBindable` (`@if (a) {<p ngNonBindable>}`)
+                    let text = self.innermost_block_is_text();
                     self.block_close()?;
-                    start = self.pos;
+                    start = if text { at } else { self.pos };
                     continue;
                 }
                 b'@' => {
@@ -88,6 +93,10 @@ impl Builder<'_> {
             } else {
                 self.vue_interpolation_end(open, limit)?
             };
+            if self.context().non_bindable {
+                self.pos = close + 2;
+                continue;
+            }
             self.push_text(start, open);
             self.push(
                 NodeKind::Interpolation(Interpolation {
@@ -153,6 +162,27 @@ impl Builder<'_> {
             return;
         }
 
+        // Under `ngNonBindable`, joined to the text it follows, read apart at a block's marker or `@let`
+        let parent = self.stack.last().map_or(self.base_parent, |open| open.id);
+        let prev = self.nodes[parent.index()].last_child;
+        if self.context().non_bindable
+            && let Some(prev) = prev
+            && matches!(self.nodes[prev.index()].kind, NodeKind::Text(_))
+            && self.nodes[prev.index()].span.end as usize == start
+        {
+            let joined = self.nodes[prev.index()].span.start as usize;
+            let text = self.text_of(joined, end);
+            let node = &mut self.nodes[prev.index()];
+            node.kind = NodeKind::Text(text);
+            node.span = span(joined, end);
+            return;
+        }
+        let text = self.text_of(start, end);
+        self.push(NodeKind::Text(text), span(start, end));
+    }
+
+    /// A text node's facts for the source in `[start, end)`.
+    fn text_of(&self, start: usize, end: usize) -> Text {
         let bytes = &self.bytes[start..end];
         let kind = |ws: &[u8]| {
             if ws.is_empty() {
@@ -164,11 +194,10 @@ impl Builder<'_> {
             }
         };
         let (lead, trail) = trim(bytes);
-        let text = Text {
+        Text {
             content: span(start + lead, start + lead.max(trail)),
             leading: kind(&bytes[..lead]),
             trailing: kind(&bytes[trail..]),
-        };
-        self.push(NodeKind::Text(text), span(start, end));
+        }
     }
 }
