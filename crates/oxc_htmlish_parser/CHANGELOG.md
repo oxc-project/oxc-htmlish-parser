@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.6](https://github.com/oxc-project/oxc-htmlish-parser/compare/oxc-htmlish-parser-v0.0.5...oxc-htmlish-parser-v0.0.6) - 2026-11-17
+
+### Added
+
+- *(parser)* parse Angular microsyntax and expressions ([#27](https://github.com/oxc-project/oxc-htmlish-parser/pull/27))
+
 ## [0.0.5](https://github.com/oxc-project/oxc-htmlish-parser/compare/oxc-htmlish-parser-v0.0.4...oxc-htmlish-parser-v0.0.5) - 2026-11-16
 
 ### Added
