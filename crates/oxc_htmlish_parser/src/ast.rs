@@ -82,7 +82,7 @@ pub enum NodeKind<'a> {
     /// Character data between markup, never empty. Whitespace-only text is kept.
     Text(Text),
     /// `{{ }}` (Vue, Angular).
-    Interpolation(Interpolation),
+    Interpolation(Interpolation<'a>),
     Comment(Comment),
     /// `<!--[if IE]> … <![endif]-->`; its content is the node's children.
     ConditionalComment(ArenaBox<'a, ConditionalComment>),
@@ -209,8 +209,8 @@ pub enum AttributeKind<'a> {
 /// and so do the delimiters around an empty name (`[]`) or that do not close (`[(x]`).
 #[derive(Debug)]
 pub enum AngularAttribute<'a> {
-    /// `[x]`.
-    Property,
+    /// `[x]`, its value read as an expression; `None` without a value, and where Angular reports an error its tokens show.
+    Property(Option<ArenaBox<'a, AngularExpression<'a>>>),
     /// `(x)`.
     Event,
     /// `[(x)]`.
@@ -230,7 +230,7 @@ impl AngularAttribute<'_> {
     /// The part of `name` (the attribute's) between the delimiters: `x` of `[(x)]`, `i18n-x` and `*x`; empty for `i18n`.
     pub fn target(&self, name: Span) -> Span {
         let (start, end) = match self {
-            Self::Property | Self::Event => (1, 1),
+            Self::Property(_) | Self::Event => (1, 1),
             Self::TwoWay => (2, 2),
             Self::Template(_) => (1, 0),
             Self::Interpolation(_) => (0, 0),
@@ -322,10 +322,39 @@ pub enum Whitespace {
     Newline,
 }
 
-#[derive(Clone, Copy, Debug)]
-pub struct Interpolation {
-    /// Between `{{` and `}}`.
-    pub expression: Span,
+#[derive(Debug)]
+pub struct Interpolation<'a> {
+    /// Angular's reading of the expression; `None` in Vue, and where Angular reports an error its tokens show.
+    pub angular: Option<ArenaBox<'a, AngularExpression<'a>>>,
+}
+
+impl Interpolation<'_> {
+    /// Between `{{` and `}}`, of an interpolation node's `span`.
+    pub fn expression(span: Span) -> Span {
+        Span::new(span.start + 2, span.end - 2)
+    }
+}
+
+/// An Angular expression (`{{ }}`, a property binding's value), as its compiler reads it (`parsePipe`).
+///
+/// The pipes at its root split off, and the comment it ends in; each span is from the first token to the last.
+/// Read as written: Angular reads it with its character references decoded, so `&quot;` is a `"` there, but not here.
+#[derive(Debug)]
+pub struct AngularExpression<'a> {
+    /// The code before the first pipe at the root, and before the comment.
+    /// A pipe not at the root stays in it: in brackets, a template literal's `${}`,
+    /// a conditional's branch (`a ? b : c | p` is `a ? b : (c | p)`).
+    pub code: Span,
+    pub pipes: ArenaVec<'a, Pipe<'a>>,
+    /// `//` to the end, its trailing whitespace left out: Angular reads no code past it, line breaks included.
+    pub comment: Option<Span>,
+}
+
+/// `| name: argument : argument` of an [`AngularExpression`].
+#[derive(Debug)]
+pub struct Pipe<'a> {
+    pub name: Span,
+    pub arguments: ArenaVec<'a, Span>,
 }
 
 #[derive(Clone, Copy, Debug)]

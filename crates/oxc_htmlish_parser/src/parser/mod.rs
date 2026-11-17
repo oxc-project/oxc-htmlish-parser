@@ -16,6 +16,7 @@ use crate::{
 use tags::Tag;
 
 mod angular;
+mod angular_expression;
 mod control_flow;
 mod element;
 mod markup;

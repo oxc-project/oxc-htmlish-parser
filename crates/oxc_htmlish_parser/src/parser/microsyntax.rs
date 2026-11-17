@@ -1,60 +1,14 @@
-//! Angular's microsyntax (`*ngFor="let item of items; trackBy: f"`), split as its compiler reads it (`parseTemplateBindings`):
-//! its lexer's tokens, and an expression ending where its parser stops (`parsePipe`), which takes no JS parse:
+//! Angular's microsyntax (`*ngFor="let item of items; trackBy: f"`), split as its compiler reads it (`parseTemplateBindings`),
+//! on its expression lexer's tokens (`angular_expression.rs`): an expression ends where its parser stops (`parsePipe`):
 //! after a value, only an operator, `(`, `[`, `.`, a template literal, or the `:` of a conditional or a pipe's argument continues it.
 
 use oxc_allocator::{Allocator, ArenaVec};
 
+use super::angular_expression::{Kind, Lexer, Token};
 use crate::{
     ast::TemplateBinding,
     span::{Span, span},
 };
-
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum Kind {
-    Identifier,
-    /// Angular's 14 (`let`, `as`, `in`, `typeof`, …).
-    Keyword,
-    /// A string, number, regular expression or template literal: a value.
-    Literal,
-    /// `(` `)` `[` `]` `{` `}` `,` `:` `;` `.`.
-    Character(u8),
-    Operator,
-}
-
-#[derive(Clone, Copy)]
-struct Token<'s> {
-    kind: Kind,
-    text: &'s str,
-    start: usize,
-    end: usize,
-}
-
-impl Token<'_> {
-    fn is(&self, kind: Kind, text: &str) -> bool {
-        self.kind == kind && self.text == text
-    }
-
-    fn is_char(&self, c: u8) -> bool {
-        self.kind == Kind::Character(c)
-    }
-}
-
-const KEYWORDS: [&str; 14] = [
-    "var",
-    "let",
-    "as",
-    "null",
-    "undefined",
-    "true",
-    "false",
-    "if",
-    "else",
-    "this",
-    "typeof",
-    "void",
-    "in",
-    "instanceof",
-];
 
 /// `value` (an attribute's value) split into its bindings, as written; `None` where Angular reports an error.
 pub fn template_bindings<'a>(
@@ -64,7 +18,7 @@ pub fn template_bindings<'a>(
 ) -> Option<ArenaVec<'a, TemplateBinding>> {
     let s = value.slice(source);
     let mut tokens = vec![];
-    Lexer { s, at: 0 }.scan(&mut tokens, false)?;
+    Lexer::new(s).scan(&mut tokens, false)?;
     let base = value.start as usize;
     let mut parser = Bindings { tokens: &tokens, at: 0, base, out: ArenaVec::new_in(&allocator) };
     parser.directive_bindings(None)?;
@@ -89,182 +43,6 @@ pub fn template_bindings<'a>(
         parser.terminator();
     }
     Some(parser.out)
-}
-
-struct Lexer<'s> {
-    s: &'s str,
-    at: usize,
-}
-
-impl<'s> Lexer<'s> {
-    fn byte(&self, at: usize) -> Option<u8> {
-        self.s.as_bytes().get(at).copied()
-    }
-
-    /// Tokens up to the end, or, `in_template`, up to the `}` closing a template literal's `${`, which it consumes.
-    fn scan(&mut self, tokens: &mut Vec<Token<'s>>, in_template: bool) -> Option<()> {
-        let first = tokens.len();
-        let mut braces = 0;
-        loop {
-            // Angular's whitespace: every control character, the space, and NBSP
-            while let Some(b) = self.byte(self.at) {
-                match b {
-                    ..=b' ' => self.at += 1,
-                    0xC2 if self.byte(self.at + 1) == Some(0xA0) => self.at += 2,
-                    _ => break,
-                }
-            }
-            let start = self.at;
-            let Some(b) = self.byte(start) else { return (!in_template).then_some(()) };
-            let kind = match b {
-                b'a'..=b'z' | b'A'..=b'Z' | b'_' | b'$' => {
-                    self.at =
-                        self.skip(start, |b| b.is_ascii_alphanumeric() || matches!(b, b'_' | b'$'));
-                    if KEYWORDS.contains(&&self.s[start..self.at]) {
-                        Kind::Keyword
-                    } else {
-                        Kind::Identifier
-                    }
-                }
-                b'0'..=b'9' => {
-                    self.number();
-                    Kind::Literal
-                }
-                b'.' if self.byte(start + 1).is_some_and(|b| b.is_ascii_digit()) => {
-                    self.number();
-                    Kind::Literal
-                }
-                b'.' if self.s[start..].starts_with("...") => {
-                    self.at += 3;
-                    Kind::Operator
-                }
-                b'\'' | b'"' => {
-                    self.string(b)?;
-                    Kind::Literal
-                }
-                b'`' => {
-                    self.at += 1;
-                    self.template(tokens)?;
-                    Kind::Literal
-                }
-                b'{' => {
-                    braces += 1;
-                    self.at += 1;
-                    Kind::Character(b)
-                }
-                b'}' if in_template && braces == 0 => {
-                    self.at += 1;
-                    return Some(());
-                }
-                b'}' => {
-                    braces -= 1;
-                    self.at += 1;
-                    Kind::Character(b)
-                }
-                b'(' | b')' | b'[' | b']' | b',' | b':' | b';' | b'.' => {
-                    self.at += 1;
-                    Kind::Character(b)
-                }
-                b'/' if starts_regex(&tokens[first..]) => {
-                    self.regex()?;
-                    Kind::Literal
-                }
-                _ => {
-                    self.at = start + operator_len(&self.s.as_bytes()[start..])?;
-                    Kind::Operator
-                }
-            };
-            tokens.push(Token { kind, text: &self.s[start..self.at], start, end: self.at });
-        }
-    }
-
-    fn skip(&self, from: usize, pred: impl Fn(u8) -> bool) -> usize {
-        from + self.s.as_bytes()[from..].iter().take_while(|&&b| pred(b)).count()
-    }
-
-    /// Digits with `_`, a fraction and an exponent; Angular's errors in them are not repeated.
-    fn number(&mut self) {
-        self.at = self.skip(self.at, |b| b.is_ascii_digit() || matches!(b, b'_' | b'.'));
-        if matches!(self.byte(self.at), Some(b'e' | b'E')) {
-            self.at += 1;
-            if matches!(self.byte(self.at), Some(b'+' | b'-')) {
-                self.at += 1;
-            }
-            self.at = self.skip(self.at, |b| b.is_ascii_digit());
-        }
-    }
-
-    fn string(&mut self, quote: u8) -> Option<()> {
-        self.at += 1;
-        loop {
-            match self.byte(self.at)? {
-                b'\\' => self.at += 2,
-                b if b == quote => break,
-                _ => self.at += 1,
-            }
-        }
-        self.at += 1;
-        Some(())
-    }
-
-    /// After a `` ` ``: through the closing one, its `${ }` scanned as tokens of their own (not kept).
-    fn template(&mut self, tokens: &mut Vec<Token<'s>>) -> Option<()> {
-        loop {
-            match self.byte(self.at)? {
-                b'\\' => self.at += 2,
-                b'`' => break,
-                b'$' if self.byte(self.at + 1) == Some(b'{') => {
-                    self.at += 2;
-                    let len = tokens.len();
-                    self.scan(tokens, true)?;
-                    tokens.truncate(len);
-                }
-                _ => self.at += 1,
-            }
-        }
-        self.at += 1;
-        Some(())
-    }
-
-    fn regex(&mut self) -> Option<()> {
-        self.at += 1;
-        let mut class = false;
-        loop {
-            match self.byte(self.at)? {
-                b'\\' => self.at += 1,
-                b'[' => class = true,
-                b']' => class = false,
-                b'/' if !class => break,
-                _ => {}
-            }
-            self.at += 1;
-        }
-        self.at = self.skip(self.at + 1, |b| b.is_ascii_alphabetic());
-        Some(())
-    }
-}
-
-/// Angular's `isStartOfRegex`: a `/` after nothing, an operator, `(`, `[`, `,` or `:`,
-/// and after a `!` that negates (no value before it).
-fn starts_regex(tokens: &[Token<'_>]) -> bool {
-    let Some((last, before)) = tokens.split_last() else { return true };
-    if last.is(Kind::Operator, "!") {
-        return before
-            .last()
-            .is_none_or(|t| t.kind != Kind::Identifier && !t.is_char(b')') && !t.is_char(b']'));
-    }
-    last.kind == Kind::Operator || b"([,:".iter().any(|&c| last.is_char(c))
-}
-
-/// The length of the operator Angular's lexer reads at the start of `s`; `None` for a character it reports.
-fn operator_len(s: &[u8]) -> Option<usize> {
-    // Longest first
-    const OPERATORS: [&[u8]; 36] = [
-        b"===", b"!==", b"**=", b"??=", b"&&=", b"||=", b"==", b"!=", b"<=", b">=", b"=>", b"&&",
-        b"||", b"??", b"?.", b"**", b"+=", b"-=", b"*=", b"/=", b"%=", b"&=", b"|=", b"+", b"-",
-        b"*", b"/", b"%", b"<", b">", b"=", b"!", b"?", b"&", b"|", b"^",
-    ];
-    OPERATORS.iter().find(|op| s.starts_with(op)).map(|op| op.len())
 }
 
 struct Bindings<'t, 's, 'a> {
