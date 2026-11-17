@@ -363,9 +363,11 @@ It keeps the whitespace at the start of an ICU case as text, and leaves the trai
 Angular's compiler drops doctypes, and reads `<!x>` as one, and processing instructions (`<?xml ?>`); it reads CDATA as text, trims a comment,
 names `@else   if` and `@default   never` with one space,
 skips the whitespace at the start of an ICU case, and keeps it at the end of a `//` start-tag comment.
+A microsyntax key's span is its source (`els- e`, `'trackBy'`);
+Angular's is its start and the length of its name, joined without whitespace and quotes (`els-`, `'trackB`).
 Printed as written, the output reads to Angular as the input did.
 `decided by: representation`
-`fixture: angular/compiler-readings.html`, `fixture: angular/blocks.html`, `fixture: angular/icu.html`, `fixture: angular/start-tag-comments.html`
+`fixture: angular/compiler-readings.html`, `fixture: angular/blocks.html`, `fixture: angular/icu.html`, `fixture: angular/start-tag-comments.html`, `fixture: angular/microsyntax.html`
 
 ### Block names read by prefix
 
