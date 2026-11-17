@@ -244,9 +244,9 @@ impl Printer<'_, '_> {
             AttributeKind::Comment(kind) => write!(line, " comment({kind:?})").unwrap(),
             AttributeKind::Angular(kind) => {
                 let name = match kind {
-                    AngularAttribute::Property(_) => "Property",
-                    AngularAttribute::Event(_) => "Event",
-                    AngularAttribute::TwoWay(_) => "TwoWay",
+                    AngularAttribute::Property(..) => "Property",
+                    AngularAttribute::Event(..) => "Event",
+                    AngularAttribute::TwoWay(..) => "TwoWay",
                     AngularAttribute::Template(_) => "Template",
                     AngularAttribute::I18n => "I18n",
                     AngularAttribute::Interpolation(_) => "Interpolation",
@@ -263,12 +263,12 @@ impl Printer<'_, '_> {
                         }
                     }
                 }
-                if let AngularAttribute::Property(Some(expression))
-                | AngularAttribute::TwoWay(Some(expression)) = kind
+                if let AngularAttribute::Property(Some(expression), _)
+                | AngularAttribute::TwoWay(Some(expression), _) = kind
                 {
                     line.push_str(&angular_expression(self.source, expression));
                 }
-                if let AngularAttribute::Event(Some(action)) = kind {
+                if let AngularAttribute::Event(Some(action), _) = kind {
                     let statements: Vec<_> = action
                         .statements
                         .iter()

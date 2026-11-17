@@ -304,9 +304,10 @@ pub(super) fn attribute<'a>(
     name: Span,
     value: Option<Span>,
 ) -> Option<AngularAttribute<'a>> {
-    /// The prefixes it reads before the delimiters (`BIND_NAME_REGEXP`), none of them a kind of ours.
+    /// The prefixes it reads before the delimiters (`BIND_NAME_REGEXP`), the bindings' ours.
     const KEYWORDS: [&str; 7] = ["bind-", "let-", "ref-", "#", "on-", "bindon-", "@"];
     let n = name.slice(source);
+    let prefixed = |prefix: &str| n.strip_prefix(prefix).is_some_and(|target| !target.is_empty());
     // An empty name (`<a =b>`) binds a value's `{{ }}` too
     let delimited = match n.as_bytes().first() {
         Some(b'*') => {
@@ -316,9 +317,19 @@ pub(super) fn attribute<'a>(
             ));
         }
         _ if n == "i18n" || n.starts_with("i18n-") => return Some(AngularAttribute::I18n),
-        Some(b'[') if n.starts_with("[(") => Some((AngularAttribute::TwoWay(None), ")]")),
-        Some(b'[') => Some((AngularAttribute::Property(None), "]")),
-        Some(b'(') => Some((AngularAttribute::Event(None), ")")),
+        _ if prefixed("bind-") => {
+            Some((AngularAttribute::Property(None, BindingForm::Prefixed), ""))
+        }
+        _ if prefixed("on-") => Some((AngularAttribute::Event(None, BindingForm::Prefixed), "")),
+        _ if prefixed("bindon-") => {
+            Some((AngularAttribute::TwoWay(None, BindingForm::Prefixed), ""))
+        }
+        _ if KEYWORDS.iter().any(|keyword| n.starts_with(keyword)) => return None,
+        Some(b'[') if n.starts_with("[(") => {
+            Some((AngularAttribute::TwoWay(None, BindingForm::Delimited), ")]"))
+        }
+        Some(b'[') => Some((AngularAttribute::Property(None, BindingForm::Delimited), "]")),
+        Some(b'(') => Some((AngularAttribute::Event(None, BindingForm::Delimited), ")")),
         _ => None,
     };
     if let Some((mut kind, close)) = delimited
@@ -326,19 +337,16 @@ pub(super) fn attribute<'a>(
         && n.len() > close.len() * 2
     {
         match &mut kind {
-            AngularAttribute::Property(expression) | AngularAttribute::TwoWay(expression) => {
+            AngularAttribute::Property(expression, _) | AngularAttribute::TwoWay(expression, _) => {
                 *expression =
                     value.and_then(|v| angular_expression::expression(allocator, source, v));
             }
-            AngularAttribute::Event(action) => {
+            AngularAttribute::Event(action, _) => {
                 *action = value.and_then(|v| angular_expression::action(allocator, source, v));
             }
             _ => {}
         }
         return Some(kind);
-    }
-    if KEYWORDS.iter().any(|keyword| n.starts_with(keyword)) {
-        return None;
     }
     let value = value?;
     let mut expressions =

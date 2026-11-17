@@ -213,16 +213,16 @@ pub enum StartTagComment {
 /// An Angular binding or i18n marker; the part of the name it binds is [`target`](Self::target).
 ///
 /// Read as the compiler's `parseAttribute` tells a binding from a plain attribute.
-/// Its other prefixes stay [`AttributeKind::Plain`] (`#ref`, `let-x`, `@animation`, and the old `bind-`, `on-`, `bindon-`, `ref-`),
-/// and so do the delimiters around an empty name (`[]`) or that do not close (`[(x]`).
+/// Its other prefixes stay [`AttributeKind::Plain`] (`#ref`, `let-x`, `@animation`, `ref-`),
+/// and so do the delimiters around an empty name (`[]`, `bind-`) or that do not close (`[(x]`).
 #[derive(Debug)]
 pub enum AngularAttribute<'a> {
-    /// `[x]`, its value read as an expression; `None` without a value, and where Angular reports an error its tokens show.
-    Property(Option<ArenaBox<'a, AngularExpression<'a>>>),
-    /// `(x)`, its value read as an action; `None` without a value, and where Angular reports an error its tokens show.
-    Event(Option<ArenaBox<'a, AngularAction<'a>>>),
-    /// `[(x)]`, its value read as an expression, as `[x]`'s.
-    TwoWay(Option<ArenaBox<'a, AngularExpression<'a>>>),
+    /// `[x]` or `bind-x`, its value read as an expression; `None` without a value, and where Angular reports an error its tokens show.
+    Property(Option<ArenaBox<'a, AngularExpression<'a>>>, BindingForm),
+    /// `(x)` or `on-x`, its value read as an action; `None` without a value, and where Angular reports an error its tokens show.
+    Event(Option<ArenaBox<'a, AngularAction<'a>>>, BindingForm),
+    /// `[(x)]` or `bindon-x`, its value read as an expression, as `[x]`'s.
+    TwoWay(Option<ArenaBox<'a, AngularExpression<'a>>>, BindingForm),
     /// `*x`: a structural directive, its value split as its microsyntax ([`TemplateBinding`]);
     /// `None` without a value, and where Angular reports one.
     /// Split as written: Angular splits the value with its entities decoded, so `&#59;` is a `;` there, but not here.
@@ -234,12 +234,24 @@ pub enum AngularAttribute<'a> {
     Interpolation(ArenaBox<'a, ArenaVec<'a, ValueInterpolation<'a>>>),
 }
 
+/// How a binding's name is written: in delimiters (`[x]`, `(x)`, `[(x)]`), or after a prefix (`bind-x`, `on-x`, `bindon-x`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BindingForm {
+    Delimited,
+    Prefixed,
+}
+
 impl AngularAttribute<'_> {
-    /// The part of `name` (the attribute's) between the delimiters: `x` of `[(x)]`, `i18n-x` and `*x`; empty for `i18n`.
+    /// The part of `name` (the attribute's) between the delimiters or after the prefix:
+    /// `x` of `[(x)]`, `bind-x`, `i18n-x` and `*x`; empty for `i18n`.
     pub fn target(&self, name: Span) -> Span {
+        use BindingForm::{Delimited, Prefixed};
         let (start, end) = match self {
-            Self::Property(_) | Self::Event(_) => (1, 1),
-            Self::TwoWay(_) => (2, 2),
+            Self::Property(_, Delimited) | Self::Event(_, Delimited) => (1, 1),
+            Self::TwoWay(_, Delimited) => (2, 2),
+            Self::Property(_, Prefixed) => (5, 0),
+            Self::Event(_, Prefixed) => (3, 0),
+            Self::TwoWay(_, Prefixed) => (7, 0),
             Self::Template(_) => (1, 0),
             Self::Interpolation(_) => (0, 0),
             Self::I18n => ((name.end - name.start).min(5), 0),

@@ -80,7 +80,7 @@ const ANGULAR_TOKENS = [
   "{{ /a|b/.test(c) | p }}", "{{ a || b | p }}", "{{ a | p // c }}", "{{ a | }}", "{{ a | p q }}",
   "<p [a]=\"b | p: 1\">", "<p [a]=\"{b: c} | p\">", "<p [a]=\"a : b\">", "<p [a]=\"f(a | p)\">",
   "{{ (a ? b : c) | p }}", "{{ ((a ? b : c)) | p: (x ? y : z) : w ? v : u }}", "{{ (a ? b : c).d | p }}", "{{ (a) ? (b) : c }}", "{{ (x => a ? b : c) | p }}", "{{ f | p: x => a ? b : c }}",
-  "<p (a)=\"b(); c = d;\">", "<p (a)=\"b;; c ? d() : e // f\">", "<p (a)=\"b | c\">", "<p (a)=\"\">", "<p (a)=\"f(); // c\">", "{{ f(a,) }}", "<p (a)=\"f(a, b,)\">", "{{ [a,] }}", "{{ g({a: 1,}) }}", "<input [(a)]=\"b.c | d\">", "<input [(a)]=\"b // c\">",
+  "<p (a)=\"b(); c = d;\">", "<p (a)=\"b;; c ? d() : e // f\">", "<p (a)=\"b | c\">", "<p (a)=\"\">", "<p (a)=\"f(); // c\">", "{{ f(a,) }}", "<p (a)=\"f(a, b,)\">", "{{ [a,] }}", "{{ g({a: 1,}) }}", "<input [(a)]=\"b.c | d\">", "<input [(a)]=\"b // c\">", "<p bind-a=\"b | c: d\">", "<p on-a=\"b(); c\">", "<input bindon-a=\"b\">", "<p bind-=\"a\" on-=\"b\">",
 ];
 
 // ---
@@ -297,12 +297,12 @@ const expressionParser = new ExpressionParser(new Lexer());
 /** The directive's own key is placed before the value, so that its spans tell it apart. */
 const KEY_OFFSET = -1e6;
 
-/** A property binding's name (`[x]`) or a two-way one's (`[(x)]`), both binding an expression,
+/** A property binding's name (`[x]`, `bind-x`) or a two-way one's (`[(x)]`, `bindon-x`), both binding an expression,
  * as `parseAttribute` reads it: the delimiters by the prefix alone, so `[(a)-]` binds nothing. */
-const PROPERTY_NAME = /^(?:\[\(.+\)\]|\[(?!\().+\])$/;
+const PROPERTY_NAME = /^(?:bind(?:on)?-.+|\[\(.+\)\]|\[(?!\().+\])$/;
 
-/** An event binding's name (`(x)`), as `parseAttribute` reads it. */
-const EVENT_NAME = /^\(.+\)$/;
+/** An event binding's name (`(x)`, `on-x`), as `parseAttribute` reads it. */
+const EVENT_NAME = /^(?:on-.+|\(.+\))$/;
 
 /** An action (an event binding's value) as Angular's compiler reads it, in `tasks/sig`'s shape (`["ac", …]`):
  * `[[statement, …], comment]`, each statement `[text, conditional]`; `null` for an empty one, `UNKNOWN` where it reports an error. */

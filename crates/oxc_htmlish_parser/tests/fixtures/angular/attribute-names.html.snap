@@ -24,12 +24,12 @@ Root sfc=false
     @[221..229] "let-item"
     @[230..236] "[ngIf]" =" [238..239] "i" Property target="ngIf" code="i"
     @[241..246] "@fade"
-    @[247..253] "bind-a" =" [255..256] "b"
-    @[258..262] "on-c" =" [264..265] "d"
-    @[267..275] "bindon-e" =" [277..278] "f"
+    @[247..253] "bind-a" =" [255..256] "b" Property target="a" code="b"
+    @[258..262] "on-c" =" [264..265] "d" Event target="c" statements=["d"]
+    @[267..275] "bindon-e" =" [277..278] "f" TwoWay target="e" code="f"
     @[280..285] "ref-g"
   Text [300..301] "\n" (nl|nl)
-  Element [302..303] "p" Html end_tag=[333..337] "</p>"
+  Element [302..303] "p" Html end_tag=[351..355] "</p>"
     @[304..306] "[]"
     @[307..309] "()"
     @[310..314] "[()]"
@@ -37,5 +37,8 @@ Root sfc=false
     @[320..323] "(a]"
     @[324..329] "i18n-" I18n target=""
     @[330..331] "*" Template target=""
-    Text [332..333] "q" (-|-) content=[332..333] "q"
-  Text [337..338] "\n" (nl|nl)
+    @[332..337] "bind-"
+    @[338..341] "on-"
+    @[342..349] "bindon-"
+    Text [350..351] "q" (-|-) content=[350..351] "q"
+  Text [355..356] "\n" (nl|nl)

@@ -220,7 +220,7 @@ fn element(source: &str, root: &Root<'_>, id: NodeId, el: &Element<'_>) -> Value
                         ["tb", bindings.as_ref().map(|b| template_bindings(source, b))]
                     ])
                 }
-                AttributeKind::Angular(AngularAttribute::Event(action)) if value.is_some() => {
+                AttributeKind::Angular(AngularAttribute::Event(action, _)) if value.is_some() => {
                     let action = action.as_deref().map(|action| {
                         let statements: Vec<Value> =
                             action.statements.iter().map(|s| code(source, s)).collect();
@@ -229,7 +229,7 @@ fn element(source: &str, root: &Root<'_>, id: NodeId, el: &Element<'_>) -> Value
                     json!([name, value, ["ac", action]])
                 }
                 AttributeKind::Angular(
-                    AngularAttribute::Property(e) | AngularAttribute::TwoWay(e),
+                    AngularAttribute::Property(e, _) | AngularAttribute::TwoWay(e, _),
                 ) if value.is_some() => {
                     json!([name, value, ["ex", e.as_deref().map(|e| expression(source, e))]])
                 }
