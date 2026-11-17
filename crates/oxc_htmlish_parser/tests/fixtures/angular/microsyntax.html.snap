@@ -54,3 +54,7 @@ Root sfc=false
     @[519..524] "*ngIf" =" [526..528] "(a" Template target="ngIf"
     Text [530..531] "m" (-|-) content=[530..531] "m"
   Text [535..536] "\n" (nl|nl)
+  Element [537..538] "p" Html end_tag=[602..606] "</p>"
+    @[539..545] "*ngFor" =" [547..599] "let x of xs; 'trackBy': f; els - e: g; 'index ' as i" Template target="ngFor" [None: None] [let Some("x") = None] [Some("of"): Some("xs") code="xs"] [Some("'trackBy'"): Some("f") code="f"] [Some("els - e"): Some("g") code="g"] [Some("'index '") as Some("i")]
+    Text [601..602] "n" (-|-) content=[601..602] "n"
+  Text [606..607] "\n" (nl|nl)

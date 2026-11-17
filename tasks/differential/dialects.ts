@@ -365,7 +365,16 @@ function templateBindings(key: string, value: string): unknown[] | string {
   const location = new ParseLocation(new ParseSourceFile(value, "t.html"), 0, 0, 0);
   const { templateBindings, errors } = expressionParser.parseTemplateBindings(key, value, new ParseSourceSpan(location, location), KEY_OFFSET, 0);
   if (errors.length > 0) return errors[0].msg;
-  const text = (k: any) => (k === null ? null : k.span.start < 0 ? null : value.slice(k.span.start, k.span.end));
+  // A key's span is its start and the length of its name, joined without whitespace and quotes (`expectTemplateBindingKey`):
+  // the source it is read from runs over the same tokens, by Angular's lexer (DIVERGENCES.md "How Angular's AST holds a node")
+  const tokens = new Lexer().tokenize(value);
+  const text = (k: any) => {
+    if (k === null || k.span.start < 0) return null;
+    let at = tokens.findIndex((t: any) => t.index === k.span.start);
+    if (at < 0) return value.slice(k.span.start, k.span.end);
+    while (tokens[at + 1]?.isOperator("-") && tokens[at + 2]) at += 2;
+    return value.slice(k.span.start, tokens[at].end);
+  };
   return templateBindings.map((b: any) => {
     if (b.constructor.name === "ExpressionBinding") {
       const source = b.value === null ? null : b.value.source;
