@@ -6,7 +6,7 @@ use oxc_allocator::{Allocator, ArenaBox, ArenaVec};
 
 use super::angular::string_step;
 use crate::{
-    ast::{AngularCode, AngularExpression, Pipe},
+    ast::{AngularAction, AngularCode, AngularExpression, Pipe},
     span::{Span, span},
 };
 
@@ -57,6 +57,84 @@ const KEYWORDS: [&str; 14] = [
     "instanceof",
 ];
 
+/// An expression's tokens, before the comment it ends in, which Angular strips first (`_stripComments`).
+struct Code<'s> {
+    tokens: Vec<Token<'s>>,
+    comment: Option<Span>,
+    /// Where the tokens' offsets start in the source.
+    base: usize,
+}
+
+impl<'s> Code<'s> {
+    /// `None` where Angular reports an error: a character it does not lex, `{{` and `}}` in the code (`_checkNoInterpolation`).
+    fn read(source: &'s str, at: Span) -> Option<Self> {
+        let s = at.slice(source);
+        let base = at.start as usize;
+        let comment_at = comment_start(s);
+        let comment = comment_at
+            .map(|start| span(base + start, base + s.trim_end_matches(is_whitespace).len()));
+        let code = &s[..comment_at.unwrap_or(s.len())];
+        let mut tokens = vec![];
+        Lexer::new(code).scan(&mut tokens, false)?;
+        if code.contains("{{") {
+            let adjacent = |c: u8| {
+                tokens
+                    .windows(2)
+                    .position(|w| w[0].is_char(c) && w[1].is_char(c) && w[0].end == w[1].start)
+            };
+            if let (Some(open), Some(close)) = (adjacent(b'{'), adjacent(b'}'))
+                && open < close
+            {
+                return None;
+            }
+        }
+        Some(Self { tokens, comment, base })
+    }
+
+    /// The tokens in `[first, end)` as a piece of code; `None` when there are none.
+    fn piece(&self, first: usize, end: usize) -> Option<AngularCode> {
+        (first < end).then(|| AngularCode {
+            span: span(self.base + self.tokens[first].start, self.base + self.tokens[end - 1].end),
+            conditional: self.tokens[first..end].iter().any(|t| t.is(Kind::Operator, "?"))
+                && is_conditional(&self.tokens[first..end]),
+        })
+    }
+}
+
+/// The action at `at` (an event binding's value) as Angular reads it (`parseAction`): its statements, between the root's `;`;
+/// `None` where it reports an error the tokens show (no statement and no comment, a pipe, a bracket left open, `{{` and `}}` in it).
+pub fn action<'a>(
+    allocator: &'a Allocator,
+    source: &str,
+    at: Span,
+) -> Option<ArenaBox<'a, AngularAction<'a>>> {
+    let code = Code::read(source, at)?;
+    let mut statements = ArenaVec::new_in(&allocator);
+    let mut depth = 0usize;
+    let mut first = 0;
+    for (i, t) in code.tokens.iter().enumerate() {
+        match t.kind {
+            Kind::Character(b'(' | b'[' | b'{') => depth += 1,
+            Kind::Character(b')' | b']' | b'}') => depth = depth.checked_sub(1)?,
+            // `Cannot have a pipe in an action expression`, anywhere in it
+            Kind::Operator if t.text == "|" => return None,
+            Kind::Character(b';') if depth == 0 => {
+                statements.extend(code.piece(first, i));
+                first = i + 1;
+            }
+            _ => {}
+        }
+    }
+    if depth > 0 {
+        return None;
+    }
+    statements.extend(code.piece(first, code.tokens.len()));
+    if statements.is_empty() && code.comment.is_none() {
+        return None;
+    }
+    Some(ArenaBox::new_in(AngularAction { statements, comment: code.comment }, &allocator))
+}
+
 /// The expression at `at` (`{{ }}`'s, a property binding's value) as Angular reads it;
 /// `None` where it reports an error the tokens show (no code, a `;`, a `:` no `?` or pipe takes, a pipe's name missing,
 /// a bracket left open, `{{` and `}}` in it).
@@ -65,27 +143,10 @@ pub fn expression<'a>(
     source: &str,
     at: Span,
 ) -> Option<ArenaBox<'a, AngularExpression<'a>>> {
-    let s = at.slice(source);
-    let base = at.start as usize;
-    let comment_at = comment_start(s);
-    let comment =
-        comment_at.map(|start| span(base + start, base + s.trim_end_matches(is_whitespace).len()));
-    let code = &s[..comment_at.unwrap_or(s.len())];
-    let mut tokens = vec![];
-    Lexer::new(code).scan(&mut tokens, false)?;
-    // `_checkNoInterpolation`
-    if code.contains("{{") {
-        let adjacent = |c: u8| {
-            tokens
-                .windows(2)
-                .position(|w| w[0].is_char(c) && w[1].is_char(c) && w[0].end == w[1].start)
-        };
-        if let (Some(open), Some(close)) = (adjacent(b'{'), adjacent(b'}'))
-            && open < close
-        {
-            return None;
-        }
-    }
+    let read = Code::read(source, at)?;
+    let tokens = &read.tokens;
+    let comment = read.comment;
+    let base = read.base;
 
     // The root's `|` and the `:` after one, which end a segment: the code, a pipe's name or one of its arguments.
     // Angular has no bitwise or: any other `|` is a pipe too, which JS does not read so
@@ -116,12 +177,7 @@ pub fn expression<'a>(
     let segment = |first: usize, end: usize| {
         (first < end).then(|| span(base + tokens[first].start, base + tokens[end - 1].end))
     };
-    // A conditional needs a `?`: most expressions have none, and skip the walk
-    let has_question = tokens.iter().any(|t| t.is(Kind::Operator, "?"));
-    let code_of = |first: usize, end: usize| {
-        let span = segment(first, end)?;
-        Some(AngularCode { span, conditional: has_question && is_conditional(&tokens[first..end]) })
-    };
+    let code_of = |first: usize, end: usize| read.piece(first, end);
     let mut ends = breaks.iter().copied().chain([tokens.len()]);
     let code_end = ends.next()?;
     let code = code_of(0, code_end)?;

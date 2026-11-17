@@ -80,6 +80,7 @@ const ANGULAR_TOKENS = [
   "{{ /a|b/.test(c) | p }}", "{{ a || b | p }}", "{{ a | p // c }}", "{{ a | }}", "{{ a | p q }}",
   "<p [a]=\"b | p: 1\">", "<p [a]=\"{b: c} | p\">", "<p [a]=\"a : b\">", "<p [a]=\"f(a | p)\">",
   "{{ (a ? b : c) | p }}", "{{ ((a ? b : c)) | p: (x ? y : z) : w ? v : u }}", "{{ (a ? b : c).d | p }}", "{{ (a) ? (b) : c }}", "{{ (x => a ? b : c) | p }}", "{{ f | p: x => a ? b : c }}",
+  "<p (a)=\"b(); c = d;\">", "<p (a)=\"b;; c ? d() : e // f\">", "<p (a)=\"b | c\">", "<p (a)=\"\">", "<p (a)=\"f(); // c\">",
 ];
 
 // ---
@@ -188,6 +189,9 @@ function angularCompilerSig(source: string): Sig {
             if (PROPERTY_NAME.test(attr[0] as string) && a.valueSpan) {
               attr.push(["ex", expressionReading(attr[1] as string)]);
             }
+            if (EVENT_NAME.test(attr[0] as string) && a.valueSpan) {
+              attr.push(["ac", actionReading(attr[1] as string)]);
+            }
             if (attr[0].startsWith("*") && a.valueSpan) {
               const bindings = templateBindings(attr[0].slice(1), attr[1]);
               if (typeof bindings === "string") bindingError ??= bindings;
@@ -288,6 +292,29 @@ const KEY_OFFSET = -1e6;
 /** A property binding's name (`[x]`, not `[(x)]`), as `parseAttribute` reads it. */
 const PROPERTY_NAME = /^\[(?!\().+\]$/;
 
+/** An event binding's name (`(x)`), as `parseAttribute` reads it. */
+const EVENT_NAME = /^\(.+\)$/;
+
+/** An action (an event binding's value) as Angular's compiler reads it, in `tasks/sig`'s shape (`["ac", …]`):
+ * `[[statement, …], comment]`, each statement `[text, conditional]`; `null` for an empty one, `UNKNOWN` where it reports an error. */
+function actionReading(code: string): unknown {
+  const location = new ParseLocation(new ParseSourceFile(code, "t.html"), 0, 0, 0);
+  const { ast, errors } = expressionParser.parseAction(code, new ParseSourceSpan(location, location), 0);
+  if (errors.length > 0) return UNKNOWN;
+  const comment = (expressionParser as any)._commentStart(code);
+  const commentText = comment === null ? null : code.slice(comment).replace(/[\x00-\x20\xa0]+$/, "");
+  if (ast.constructor.name === "EmptyExpr") return commentText === null ? null : [[], commentText];
+  const statements = ast.constructor.name === "Chain" ? ast.expressions : [ast];
+  return [statements.map((n: any) => pieceOf(code, n)), commentText];
+}
+
+/** A piece of code: its text, and whether its root, parens around it aside, is a conditional. */
+function pieceOf(code: string, n: any): unknown[] {
+  let inner = n;
+  while (inner.constructor.name === "ParenthesizedExpression") inner = inner.expression;
+  return [code.slice(n.span.start, n.span.end), inner.constructor.name === "Conditional"];
+}
+
 /** An expression (`{{ }}`'s, a property binding's) as Angular's compiler reads it, in `tasks/sig`'s shape (`expression`);
  * `null` for an empty one, `UNKNOWN` where it reports an error: ours finds some of them only (`None`, the formatter keeps it as written). */
 function expressionReading(code: string): unknown {
@@ -295,12 +322,7 @@ function expressionReading(code: string): unknown {
   const { ast, errors } = expressionParser.parseBinding(code, new ParseSourceSpan(location, location), 0);
   if (errors.length > 0) return UNKNOWN;
   if (ast.constructor.name === "EmptyExpr") return null;
-  // A piece of code: its text, and whether its root, parens around it aside, is a conditional
-  const piece = (n: any) => {
-    let inner = n;
-    while (inner.constructor.name === "ParenthesizedExpression") inner = inner.expression;
-    return [code.slice(n.span.start, n.span.end), inner.constructor.name === "Conditional"];
-  };
+  const piece = (n: any) => pieceOf(code, n);
   const pipes: unknown[] = [];
   let root = ast;
   while (root.constructor.name === "BindingPipe") {

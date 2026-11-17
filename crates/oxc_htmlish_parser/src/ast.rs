@@ -211,8 +211,8 @@ pub enum AttributeKind<'a> {
 pub enum AngularAttribute<'a> {
     /// `[x]`, its value read as an expression; `None` without a value, and where Angular reports an error its tokens show.
     Property(Option<ArenaBox<'a, AngularExpression<'a>>>),
-    /// `(x)`.
-    Event,
+    /// `(x)`, its value read as an action; `None` without a value, and where Angular reports an error its tokens show.
+    Event(Option<ArenaBox<'a, AngularAction<'a>>>),
     /// `[(x)]`.
     TwoWay,
     /// `*x`: a structural directive, its value split as its microsyntax ([`TemplateBinding`]);
@@ -230,7 +230,7 @@ impl AngularAttribute<'_> {
     /// The part of `name` (the attribute's) between the delimiters: `x` of `[(x)]`, `i18n-x` and `*x`; empty for `i18n`.
     pub fn target(&self, name: Span) -> Span {
         let (start, end) = match self {
-            Self::Property(_) | Self::Event => (1, 1),
+            Self::Property(_) | Self::Event(_) => (1, 1),
             Self::TwoWay => (2, 2),
             Self::Template(_) => (1, 0),
             Self::Interpolation(_) => (0, 0),
@@ -346,6 +346,16 @@ pub struct AngularExpression<'a> {
     pub code: AngularCode,
     pub pipes: ArenaVec<'a, Pipe<'a>>,
     /// `//` to the end, its trailing whitespace left out: Angular reads no code past it, line breaks included.
+    pub comment: Option<Span>,
+}
+
+/// An Angular action (an event binding's value), as its compiler reads it (`parseAction`):
+/// its statements, between the `;` at the root, and the comment it ends in. Read as written, as [`AngularExpression`].
+#[derive(Debug)]
+pub struct AngularAction<'a> {
+    /// Empty ones left out (`a;;b`, a trailing `;`), which Angular reads as none.
+    pub statements: ArenaVec<'a, AngularCode>,
+    /// `//` to the end, its trailing whitespace left out.
     pub comment: Option<Span>,
 }
 

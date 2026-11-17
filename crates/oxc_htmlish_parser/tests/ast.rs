@@ -237,7 +237,7 @@ impl Printer<'_, '_> {
             AttributeKind::Angular(kind) => {
                 let name = match kind {
                     AngularAttribute::Property(_) => "Property",
-                    AngularAttribute::Event => "Event",
+                    AngularAttribute::Event(_) => "Event",
                     AngularAttribute::TwoWay => "TwoWay",
                     AngularAttribute::Template(_) => "Template",
                     AngularAttribute::I18n => "I18n",
@@ -252,6 +252,23 @@ impl Printer<'_, '_> {
                 }
                 if let AngularAttribute::Property(Some(expression)) = kind {
                     line.push_str(&angular_expression(self.source, expression));
+                }
+                if let AngularAttribute::Event(Some(action)) = kind {
+                    let statements: Vec<_> = action
+                        .statements
+                        .iter()
+                        .map(|s| {
+                            format!(
+                                "{}{:?}",
+                                if s.conditional { "?" } else { "" },
+                                s.span.slice(self.source)
+                            )
+                        })
+                        .collect();
+                    write!(line, " statements=[{}]", statements.join(", ")).unwrap();
+                    if let Some(comment) = action.comment {
+                        write!(line, " comment={:?}", comment.slice(self.source)).unwrap();
+                    }
                 }
                 if let AngularAttribute::Template(Some(bindings)) = kind {
                     let s = |span: Option<Span>| span.map(|span| span.slice(self.source));

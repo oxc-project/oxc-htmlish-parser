@@ -316,15 +316,22 @@ pub(super) fn attribute<'a>(
         _ if n == "i18n" || n.starts_with("i18n-") => return Some(AngularAttribute::I18n),
         Some(b'[') if n.starts_with("[(") => Some((AngularAttribute::TwoWay, ")]")),
         Some(b'[') => Some((AngularAttribute::Property(None), "]")),
-        Some(b'(') => Some((AngularAttribute::Event, ")")),
+        Some(b'(') => Some((AngularAttribute::Event(None), ")")),
         _ => None,
     };
     if let Some((mut kind, close)) = delimited
         && n.ends_with(close)
         && n.len() > close.len() * 2
     {
-        if let AngularAttribute::Property(expression) = &mut kind {
-            *expression = value.and_then(|v| angular_expression::expression(allocator, source, v));
+        match &mut kind {
+            AngularAttribute::Property(expression) => {
+                *expression =
+                    value.and_then(|v| angular_expression::expression(allocator, source, v));
+            }
+            AngularAttribute::Event(action) => {
+                *action = value.and_then(|v| angular_expression::action(allocator, source, v));
+            }
+            _ => {}
         }
         return Some(kind);
     }
