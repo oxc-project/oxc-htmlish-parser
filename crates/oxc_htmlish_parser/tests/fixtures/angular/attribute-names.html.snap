@@ -6,7 +6,7 @@ Root sfc=false
     @[7..14] "[value]" =" [16..17] "a" Property target="value" code="a"
     @[19..26] "(input)" =" [28..37] "b($event)" Event target="input" statements=["b($event)"]
     @[39..50] "[(ngModel)]" =" [52..53] "c" TwoWay target="ngModel" code="c"
-    @[55..60] "*ngIf" =" [62..71] "d; else e" Template target="ngIf" [None: Some("d")] [Some("else"): Some("e")]
+    @[55..60] "*ngIf" =" [62..71] "d; else e" Template target="ngIf" [None: Some("d") code="d"] [Some("else"): Some("e") code="e"]
     @[73..77] "i18n" I18n target=""
     @[78..88] "i18n-title" I18n target="title"
     @[89..94] "title" =" [96..97] "t"

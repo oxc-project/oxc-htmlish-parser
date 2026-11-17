@@ -280,15 +280,22 @@ impl Printer<'_, '_> {
                 if let AngularAttribute::Template(Some(bindings)) = kind {
                     let s = |span: Option<Span>| span.map(|span| span.slice(self.source));
                     for binding in bindings.iter() {
-                        match *binding {
-                            TemplateBinding::Expression { key, expression } => {
-                                write!(line, " [{:?}: {:?}]", s(key), s(expression))
-                            }
+                        match binding {
+                            TemplateBinding::Expression { key, expression, angular } => write!(
+                                line,
+                                " [{:?}: {:?}{}]",
+                                s(*key),
+                                s(*expression),
+                                angular.as_deref().map_or_else(
+                                    String::new,
+                                    |e| angular_expression(self.source, e)
+                                )
+                            ),
                             TemplateBinding::Let { name, value } => {
-                                write!(line, " [let {:?} = {:?}]", s(Some(name)), s(value))
+                                write!(line, " [let {:?} = {:?}]", s(Some(*name)), s(*value))
                             }
                             TemplateBinding::As { key, alias } => {
-                                write!(line, " [{:?} as {:?}]", s(key), s(Some(alias)))
+                                write!(line, " [{:?} as {:?}]", s(*key), s(Some(*alias)))
                             }
                         }
                         .unwrap();

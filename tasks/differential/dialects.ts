@@ -343,7 +343,10 @@ function templateBindings(key: string, value: string): unknown[] | string {
   if (errors.length > 0) return errors[0].msg;
   const text = (k: any) => (k === null ? null : k.span.start < 0 ? null : value.slice(k.span.start, k.span.end));
   return templateBindings.map((b: any) => {
-    if (b.constructor.name === "ExpressionBinding") return ["e", text(b.key), b.value === null ? null : b.value.source];
+    if (b.constructor.name === "ExpressionBinding") {
+      const source = b.value === null ? null : b.value.source;
+      return ["e", text(b.key), source, source === null ? null : expressionReading(source)];
+    }
     const start = b.sourceSpan.start;
     return start >= 0 && /^let(?![\w$])/.test(value.slice(start)) ? ["l", text(b.key), text(b.value)] : ["a", text(b.value), text(b.key)];
   });

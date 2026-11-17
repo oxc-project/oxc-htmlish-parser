@@ -218,7 +218,7 @@ pub enum AngularAttribute<'a> {
     /// `*x`: a structural directive, its value split as its microsyntax ([`TemplateBinding`]);
     /// `None` without a value, and where Angular reports one.
     /// Split as written: Angular splits the value with its entities decoded, so `&#59;` is a `;` there, but not here.
-    Template(Option<ArenaBox<'a, ArenaVec<'a, TemplateBinding>>>),
+    Template(Option<ArenaBox<'a, ArenaVec<'a, TemplateBinding<'a>>>>),
     /// `i18n`, or `i18n-x`, which marks the attribute `x` for translation.
     I18n,
     /// Another name with `{{ }}` in its value (`title="Hi {{ name }}"`), which Angular binds:
@@ -244,11 +244,15 @@ impl AngularAttribute<'_> {
 ///
 /// Read as Angular's compiler reads it (`parseTemplateBindings`); each span inside [`Attribute::value`].
 /// A key is identifiers, keywords or strings joined by `-`, as written; the `:` and the `;` or `,` after a binding are optional.
-#[derive(Clone, Copy, Debug)]
-pub enum TemplateBinding {
+#[derive(Debug)]
+pub enum TemplateBinding<'a> {
     /// `key: expression`, or the directive's own first (`key` `None`: `items` of `*ngIf="items"`);
-    /// `expression` `None` when none follows (`*ngIf="as x"`).
-    Expression { key: Option<Span>, expression: Option<Span> },
+    /// `expression` `None` when none follows (`*ngIf="as x"`), and `angular` its reading (`None` where Angular reports an error its tokens show).
+    Expression {
+        key: Option<Span>,
+        expression: Option<Span>,
+        angular: Option<ArenaBox<'a, AngularExpression<'a>>>,
+    },
     /// `let name` / `let name = value`.
     Let { name: Span, value: Option<Span> },
     /// `as alias`, right after the [`Expression`](Self::Expression) whose key it names (`items | async as list`),
