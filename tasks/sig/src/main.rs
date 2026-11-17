@@ -22,8 +22,8 @@ mod check;
 use oxc_htmlish_parser::{
     Allocator, Dialect, Parser,
     ast::{
-        AngularAttribute, AngularExpression, AttributeKind, Block, BlockParameterKind, Element,
-        NodeId, NodeKind, Root, TemplateBinding,
+        AngularAttribute, AngularCode, AngularExpression, AttributeKind, Block, BlockParameterKind,
+        Element, NodeId, NodeKind, Root, TemplateBinding,
     },
 };
 use serde_json::{Value, json};
@@ -131,17 +131,22 @@ fn block_reading(source: &str, block: &Block<'_>) -> Value {
     json!([item, expression, track, lets, alias])
 }
 
-/// `[code, [[name, [argument, …]], …], comment]`
+/// `[code, [[name, [argument, …]], …], comment]`, each piece of code `[text, conditional]`
 fn expression(source: &str, e: &AngularExpression<'_>) -> Value {
     let pipes: Vec<Value> = e
         .pipes
         .iter()
         .map(|p| {
-            let arguments: Vec<&str> = p.arguments.iter().map(|a| a.slice(source)).collect();
+            let arguments: Vec<Value> = p.arguments.iter().map(|a| code(source, a)).collect();
             json!([p.name.slice(source), arguments])
         })
         .collect();
-    json!([e.code.slice(source), pipes, e.comment.map(|c| c.slice(source))])
+    json!([code(source, &e.code), pipes, e.comment.map(|c| c.slice(source))])
+}
+
+/// `[text, conditional]`
+fn code(source: &str, code: &AngularCode) -> Value {
+    json!([code.span.slice(source), code.conditional])
 }
 
 fn template_bindings(source: &str, bindings: &[TemplateBinding]) -> Value {

@@ -79,6 +79,7 @@ const ANGULAR_TOKENS = [
   "{{ a | p: x : y | q }}", "{{ (a | p) }}", "{{ a ? b : c | p }}", "{{ a | p: b ? c : d }}", "{{ `${a | p}` }}",
   "{{ /a|b/.test(c) | p }}", "{{ a || b | p }}", "{{ a | p // c }}", "{{ a | }}", "{{ a | p q }}",
   "<p [a]=\"b | p: 1\">", "<p [a]=\"{b: c} | p\">", "<p [a]=\"a : b\">", "<p [a]=\"f(a | p)\">",
+  "{{ (a ? b : c) | p }}", "{{ ((a ? b : c)) | p: (x ? y : z) : w ? v : u }}", "{{ (a ? b : c).d | p }}", "{{ (a) ? (b) : c }}", "{{ (x => a ? b : c) | p }}", "{{ f | p: x => a ? b : c }}",
 ];
 
 // ---
@@ -294,15 +295,20 @@ function expressionReading(code: string): unknown {
   const { ast, errors } = expressionParser.parseBinding(code, new ParseSourceSpan(location, location), 0);
   if (errors.length > 0) return UNKNOWN;
   if (ast.constructor.name === "EmptyExpr") return null;
-  const text = (span: any) => code.slice(span.start, span.end);
+  // A piece of code: its text, and whether its root, parens around it aside, is a conditional
+  const piece = (n: any) => {
+    let inner = n;
+    while (inner.constructor.name === "ParenthesizedExpression") inner = inner.expression;
+    return [code.slice(n.span.start, n.span.end), inner.constructor.name === "Conditional"];
+  };
   const pipes: unknown[] = [];
   let root = ast;
   while (root.constructor.name === "BindingPipe") {
-    pipes.unshift([root.name, root.args.map((a: any) => text(a.span))]);
+    pipes.unshift([root.name, root.args.map(piece)]);
     root = root.exp;
   }
   const comment = (expressionParser as any)._commentStart(code);
-  return [text(root.span), pipes, comment === null ? null : code.slice(comment).replace(/[\x00-\x20\xa0]+$/, "")];
+  return [piece(root), pipes, comment === null ? null : code.slice(comment).replace(/[\x00-\x20\xa0]+$/, "")];
 }
 
 /** A `*x` value's microsyntax as Angular's compiler reads it, in `tasks/sig`'s shape; the error it reports. */

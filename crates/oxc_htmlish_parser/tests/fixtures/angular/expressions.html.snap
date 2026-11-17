@@ -18,9 +18,9 @@ Root sfc=false
     Text [94..95] " " (sp|sp)
     Interpolation expression=[97..109] " `${a | p}` " code="`${a | p}`"
     Text [111..112] " " (sp|sp)
-    Interpolation expression=[114..129] " a ? b : c | p " code="a ? b : c | p"
+    Interpolation expression=[114..129] " a ? b : c | p " code=?"a ? b : c | p"
     Text [131..132] " " (sp|sp)
-    Interpolation expression=[134..152] " a | p: b ? c : d " code="a" | p["b ? c : d"]
+    Interpolation expression=[134..152] " a | p: b ? c : d " code="a" | p[?"b ? c : d"]
   Text [158..159] "\n" (nl|nl)
   Element [160..161] "p" Html end_tag=[227..231] "</p>"
     Interpolation expression=[164..172] " a || b " code="a || b"
@@ -47,7 +47,23 @@ Root sfc=false
   Element [307..308] "p" Html end_tag=[369..373] "</p>"
     @[309..312] "[x]" =" [314..322] "a | p: 1" Property target="x" code="a" | p["1"]
     @[324..327] "[y]" =" [329..335] "{a: 1}" Property target="y" code="{a: 1}"
-    @[337..340] "[z]" =" [342..351] "a ? b : c" Property target="z" code="a ? b : c"
+    @[337..340] "[z]" =" [342..351] "a ? b : c" Property target="z" code=?"a ? b : c"
     @[353..356] "[w]" =" [358..363] "a : b" Property target="w"
     @[365..368] "[v]" Property target="v"
   Text [373..374] "\n" (nl|nl)
+  Element [375..376] "p" Html end_tag=[511..515] "</p>"
+    Interpolation expression=[379..396] " (a ? b : c) | p " code=?"(a ? b : c)" | p[]
+    Text [398..399] " " (sp|sp)
+    Interpolation expression=[401..445] " ((a ? b : c)) | p: (x ? y : z) : w ? v : u " code=?"((a ? b : c))" | p[?"(x ? y : z)", ?"w ? v : u"]
+    Text [447..448] " " (sp|sp)
+    Interpolation expression=[450..469] " (a ? b : c).d | p " code="(a ? b : c).d" | p[]
+    Text [471..472] " " (sp|sp)
+    Interpolation expression=[474..489] " (a) + (b) | p " code="(a) + (b)" | p[]
+    Text [491..492] " " (sp|sp)
+    Interpolation expression=[494..509] " a?.b ?? c | p " code="a?.b ?? c" | p[]
+  Text [515..516] "\n" (nl|nl)
+  Element [517..518] "p" Html end_tag=[573..577] "</p>"
+    Interpolation expression=[521..543] " (x => a ? b : c) | p " code="(x => a ? b : c)" | p[]
+    Text [545..546] " " (sp|sp)
+    Interpolation expression=[548..571] " f | p: x => a ? b : c " code="f" | p["x => a ? b : c"]
+  Text [577..578] "\n" (nl|nl)

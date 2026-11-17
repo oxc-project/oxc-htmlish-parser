@@ -6,7 +6,7 @@ use oxc_allocator::{Allocator, ArenaBox, ArenaVec};
 
 use super::angular::string_step;
 use crate::{
-    ast::{AngularExpression, Pipe},
+    ast::{AngularCode, AngularExpression, Pipe},
     span::{Span, span},
 };
 
@@ -116,25 +116,79 @@ pub fn expression<'a>(
     let segment = |first: usize, end: usize| {
         (first < end).then(|| span(base + tokens[first].start, base + tokens[end - 1].end))
     };
+    // A conditional needs a `?`: most expressions have none, and skip the walk
+    let has_question = tokens.iter().any(|t| t.is(Kind::Operator, "?"));
+    let code_of = |first: usize, end: usize| {
+        let span = segment(first, end)?;
+        Some(AngularCode { span, conditional: has_question && is_conditional(&tokens[first..end]) })
+    };
     let mut ends = breaks.iter().copied().chain([tokens.len()]);
     let code_end = ends.next()?;
-    let code = segment(0, code_end)?;
+    let code = code_of(0, code_end)?;
     let mut pipes: ArenaVec<'a, Pipe<'a>> = ArenaVec::new_in(&allocator);
     let mut first = code_end + 1;
     for end in ends {
-        let part = segment(first, end)?;
         if tokens[first - 1].is(Kind::Operator, "|") {
             // A name is one token
             if end - first != 1 || !matches!(tokens[first].kind, Kind::Identifier | Kind::Keyword) {
                 return None;
             }
-            pipes.push(Pipe { name: part, arguments: ArenaVec::new_in(&allocator) });
+            pipes
+                .push(Pipe { name: segment(first, end)?, arguments: ArenaVec::new_in(&allocator) });
         } else {
-            pipes.last_mut()?.arguments.push(part);
+            pipes.last_mut()?.arguments.push(code_of(first, end)?);
         }
         first = end + 1;
     }
     Some(ArenaBox::new_in(AngularExpression { code, pipes, comment }, &allocator))
+}
+
+/// Whether the root of `tokens` (a piece's), past parens around all of them, is a conditional:
+/// a `?` at the root, but after an arrow's `=>` or an assignment's operator, which take it (`x => a ? b : c`).
+fn is_conditional(mut tokens: &[Token<'_>]) -> bool {
+    while let [first, inner @ .., last] = tokens
+        && first.is_char(b'(')
+        && last.is_char(b')')
+        && encloses(tokens)
+    {
+        tokens = inner;
+    }
+    let mut depth = 0usize;
+    for t in tokens {
+        match t.kind {
+            Kind::Character(b'(' | b'[' | b'{') => depth += 1,
+            Kind::Character(b')' | b']' | b'}') => depth = depth.saturating_sub(1),
+            Kind::Operator if depth == 0 && t.text == "?" => return true,
+            Kind::Operator if depth == 0 && takes_conditional(t.text) => return false,
+            _ => {}
+        }
+    }
+    false
+}
+
+/// An operator whose right side is an expression a conditional at the root is in (`=>`, `=`, `+=`, …).
+fn takes_conditional(operator: &str) -> bool {
+    operator == "=>"
+        || (operator.ends_with('=')
+            && !matches!(operator, "==" | "===" | "!=" | "!==" | "<=" | ">="))
+}
+
+/// The bracket `tokens` open with closes at their last token (`(a) + (b)` is two).
+fn encloses(tokens: &[Token<'_>]) -> bool {
+    let mut depth = 0usize;
+    for (i, t) in tokens.iter().enumerate() {
+        match t.kind {
+            Kind::Character(b'(' | b'[' | b'{') => depth += 1,
+            Kind::Character(b')' | b']' | b'}') => {
+                depth -= 1;
+                if depth == 0 {
+                    return i + 1 == tokens.len();
+                }
+            }
+            _ => {}
+        }
+    }
+    false
 }
 
 /// Where a comment starts in `s` (Angular's `_commentStart`): the first `//` outside quotes, `` ` `` one too.

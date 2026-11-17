@@ -11,8 +11,9 @@ use insta::{Settings, assert_snapshot, glob};
 use oxc_htmlish_parser::{
     Allocator, Dialect, Parser, Span,
     ast::{
-        AngularAttribute, AngularExpression, Attribute, AttributeKind, BlockParameterKind, Content,
-        Interpolation, NodeId, NodeKind, Quote, Root, TemplateBinding, Whitespace,
+        AngularAttribute, AngularCode, AngularExpression, Attribute, AttributeKind,
+        BlockParameterKind, Content, Interpolation, NodeId, NodeKind, Quote, Root, TemplateBinding,
+        Whitespace,
     },
 };
 
@@ -308,10 +309,14 @@ fn quoted(source: &str, span: Span) -> String {
 
 /// ` code="a" | p["x", "y"] comment="// c"`
 fn angular_expression(source: &str, e: &AngularExpression<'_>) -> String {
-    let mut out = format!(" code={:?}", e.code.slice(source));
+    let piece = |code: &AngularCode| {
+        let conditional = if code.conditional { "?" } else { "" };
+        format!("{conditional}{:?}", code.span.slice(source))
+    };
+    let mut out = format!(" code={}", piece(&e.code));
     for pipe in &e.pipes {
-        let arguments: Vec<_> = pipe.arguments.iter().map(|a| a.slice(source)).collect();
-        write!(out, " | {}{arguments:?}", pipe.name.slice(source)).unwrap();
+        let arguments: Vec<_> = pipe.arguments.iter().map(piece).collect();
+        write!(out, " | {}[{}]", pipe.name.slice(source), arguments.join(", ")).unwrap();
     }
     if let Some(comment) = e.comment {
         write!(out, " comment={:?}", comment.slice(source)).unwrap();

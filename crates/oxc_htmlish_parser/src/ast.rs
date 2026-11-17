@@ -342,9 +342,8 @@ impl Interpolation<'_> {
 #[derive(Debug)]
 pub struct AngularExpression<'a> {
     /// The code before the first pipe at the root, and before the comment.
-    /// A pipe not at the root stays in it: in brackets, a template literal's `${}`,
-    /// a conditional's branch (`a ? b : c | p` is `a ? b : (c | p)`).
-    pub code: Span,
+    /// A pipe not at the root stays in it: in brackets, a template literal's `${}`, a conditional's branch ([`AngularCode::conditional`]).
+    pub code: AngularCode,
     pub pipes: ArenaVec<'a, Pipe<'a>>,
     /// `//` to the end, its trailing whitespace left out: Angular reads no code past it, line breaks included.
     pub comment: Option<Span>,
@@ -354,7 +353,16 @@ pub struct AngularExpression<'a> {
 #[derive(Debug)]
 pub struct Pipe<'a> {
     pub name: Span,
-    pub arguments: ArenaVec<'a, Span>,
+    pub arguments: ArenaVec<'a, AngularCode>,
+}
+
+/// A piece of code of an [`AngularExpression`]: its code, or a pipe's argument.
+#[derive(Clone, Copy, Debug)]
+pub struct AngularCode {
+    pub span: Span,
+    /// Its root is a conditional, parens around all of it aside (`a ? b : c`, `(a ? b : c)`):
+    /// a pipe after it is its branch's unless it is in parens (`a ? b : c | p` is `a ? b : (c | p)`).
+    pub conditional: bool,
 }
 
 #[derive(Clone, Copy, Debug)]
