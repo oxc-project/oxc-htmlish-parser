@@ -241,7 +241,7 @@ impl Printer<'_, '_> {
         }
         match &attribute.kind {
             AttributeKind::Plain => {}
-            AttributeKind::Comment => line.push_str(" comment"),
+            AttributeKind::Comment(kind) => write!(line, " comment({kind:?})").unwrap(),
             AttributeKind::Angular(kind) => {
                 let name = match kind {
                     AngularAttribute::Property(_) => "Property",

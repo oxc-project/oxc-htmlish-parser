@@ -234,7 +234,7 @@ fn element(source: &str, root: &Root<'_>, id: NodeId, el: &Element<'_>) -> Value
                     json!([name, value, ["ex", e.as_deref().map(|e| expression(source, e))]])
                 }
                 AttributeKind::Plain | AttributeKind::Angular(_) => json!([name, value]),
-                AttributeKind::Comment => json!(["comment", name]),
+                AttributeKind::Comment(_) => json!(["comment", name]),
                 AttributeKind::Vue(d) => {
                     let shorthand = d.name.slice(source);
                     let dir = match shorthand {

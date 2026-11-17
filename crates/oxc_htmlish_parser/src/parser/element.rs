@@ -353,7 +353,8 @@ impl<'a> Builder<'a> {
     /// `//` up to the line break, which it may run past the `>` to (`<div a // c>`), its trailing whitespace left out;
     /// `/*` through `*/`.
     fn start_tag_comment(&self, tag_start: usize, at: usize) -> PResult<Attribute<'a>> {
-        let end = if self.bytes[at + 1] == b'/' {
+        let line = self.bytes[at + 1] == b'/';
+        let end = if line {
             let rest = &self.bytes[at + 2..];
             let line_end = at + 2 + memchr2(b'\n', b'\r', rest).unwrap_or(rest.len());
             self.trimmed(at, line_end).end as usize
@@ -366,7 +367,8 @@ impl<'a> Builder<'a> {
             };
             close + 2
         };
-        Ok(Attribute { name: span(at, end), value: None, kind: AttributeKind::Comment })
+        let kind = if line { StartTagComment::Line } else { StartTagComment::Block };
+        Ok(Attribute { name: span(at, end), value: None, kind: AttributeKind::Comment(kind) })
     }
 
     /// Content up to `</name>` (case-insensitive) as one text, `{{ }}` split when `escapable`;

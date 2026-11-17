@@ -31,7 +31,7 @@ pub fn check(root: &Root<'_>, id: NodeId) -> Result<(), String> {
                 }
                 // A new kind lists its own parts here
                 let parts: Vec<Span> = match &attribute.kind {
-                    AttributeKind::Plain | AttributeKind::Comment => Vec::new(),
+                    AttributeKind::Plain | AttributeKind::Comment(_) => Vec::new(),
                     AttributeKind::Angular(kind) => {
                         if let AngularAttribute::Template(Some(bindings)) = kind {
                             let parts = bindings.iter().flat_map(|binding| match binding {

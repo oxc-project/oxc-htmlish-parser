@@ -197,9 +197,17 @@ pub enum AttributeKind<'a> {
     Plain,
     Vue(ArenaBox<'a, VueDirective<'a>>),
     /// An Angular start-tag comment, among the attributes as written: [`Attribute::name`] is all of it, and there is no value.
-    /// `//` up to the line break, its trailing whitespace left out (the `>` it runs past is in it: `<div // c>`), or `/*` through `*/`.
-    Comment,
+    Comment(StartTagComment),
     Angular(AngularAttribute<'a>),
+}
+
+/// The kind of an Angular start-tag comment ([`AttributeKind::Comment`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum StartTagComment {
+    /// `//` up to the line break, its trailing whitespace left out (the `>` it runs past is in it: `<div // c>`).
+    Line,
+    /// `/*` through `*/`.
+    Block,
 }
 
 /// An Angular binding or i18n marker; the part of the name it binds is [`target`](Self::target).
