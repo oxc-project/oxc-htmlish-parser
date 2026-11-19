@@ -78,7 +78,7 @@ const ANGULAR_TOKENS = [
   // Expressions: root pipes, pipes not at the root, comments, a regular expression
   "{{ a | p: x : y | q }}", "{{ (a | p) }}", "{{ a ? b : c | p }}", "{{ a | p: b ? c : d }}", "{{ `${a | p}` }}",
   "{{ /a|b/.test(c) | p }}", "{{ a || b | p }}", "{{ a | p // c }}", "{{ a | }}", "{{ a | p q }}",
-  "<p [a]=\"b | p: 1\">", "<p [a]=\"{b: c} | p\">", "<p [a]=\"a : b\">", "<p [a]=\"f(a | p)\">",
+  "<p [a]=\"b | p: 1\">", "<p [a]=\"{b: c} | p\">", "<p [a]=\"a : b\">", "<p [a]=\"f(a | p)\">", "{{ [...a | p, ...(b | q)] }}", "{{ f(...(a | p), ...b | q) }}", "{{ {...a | p, k: b, ...(c | q)} }}",
   "{{ (a ? b : c) | p }}", "{{ ((a ? b : c)) | p: (x ? y : z) : w ? v : u }}", "{{ (a ? b : c).d | p }}", "{{ (a) ? (b) : c }}", "{{ (x => a ? b : c) | p }}", "{{ f | p: x => a ? b : c }}",
   "<p (a)=\"b(); c = d;\">", "<p (a)=\"b;; c ? d() : e // f\">", "<p (a)=\"b | c\">", "<p (a)=\"\">", "<p (a)=\"f(); // c\">", "{{ f(a,) }}", "<p (a)=\"f(a, b,)\">", "{{ [a,] }}", "{{ g({a: 1,}) }}", "<input [(a)]=\"b.c | d\">", "<input [(a)]=\"b // c\">", "<p bind-a=\"b | c: d\">", "<p on-a=\"b(); c\">", "<input bindon-a=\"b\">", "<p bind-=\"a\" on-=\"b\">", "<div ngNonBindable>", "<p ngNonBindable [a]=\"b\">@if (c) {<i [d]=\"e\">{{ f }}</i>} @let g = h; {{ i < j }}</p>",
 ];
@@ -331,15 +331,81 @@ function actionReading(code: string): unknown {
   const commentText = comment === null ? null : code.slice(comment).replace(/[\x00-\x20\xa0]+$/, "");
   if (ast.constructor.name === "EmptyExpr") return commentText === null ? null : [[], commentText];
   const statements = ast.constructor.name === "Chain" ? ast.expressions : [ast];
-  // A statement's conditional is no fact: no pipe follows one
-  return [statements.map((n: any) => [pieceOf(code, n)[0], false]), commentText];
+  // A statement's conditional is no fact: no pipe follows one, nor holds one
+  return [statements.map((n: any) => [pieceOf(code, n)[0], false, []]), commentText];
 }
 
-/** A piece of code: its text, and whether its root, parens around it aside, is a conditional. */
+/** A piece of code: its text, whether its root, parens around it aside, is a conditional, and its nested pipes. */
 function pieceOf(code: string, n: any): unknown[] {
   let inner = n;
   while (inner.constructor.name === "ParenthesizedExpression") inner = inner.expression;
-  return [code.slice(n.span.start, n.span.end), inner.constructor.name === "Conditional"];
+  const nested: unknown[] = [];
+  collectNested(code, n, false, nested);
+  return [code.slice(n.span.start, n.span.end), inner.constructor.name === "Conditional", nested];
+}
+
+/** Where Angular reads an expression with pipes of its own below a piece's root (`parsePipe`):
+ * the arguments of a call, an index, an array's elements, an object's values, and parens. */
+const ELEMENTS: Record<string, string[]> = {
+  Call: ["args"],
+  SafeCall: ["args"],
+  KeyedRead: ["key"],
+  SafeKeyedRead: ["key"],
+  LiteralArray: ["expressions"],
+  LiteralMap: ["values"],
+  ParenthesizedExpression: ["expression"],
+};
+
+/** The outermost pipes below `n` taking an element's place, in `tasks/sig`'s shape (`[text, in_parens, last_value, expression]`);
+ * one in a conditional's branch is no element, and a template literal's are not read. */
+function collectNested(code: string, n: any, element: boolean, out: unknown[], inValue = false, lastValue = false): void {
+  if (n === null || typeof n !== "object") return;
+  if (Array.isArray(n)) {
+    n.forEach((child, i) => collectNested(code, child, element, out, inValue, inValue && i === n.length - 1));
+    return;
+  }
+  if (!("span" in n)) return;
+  const kind = n.constructor.name;
+  if (kind === "TemplateLiteral") return;
+  if (kind === "ParenthesizedExpression" && n.expression.constructor.name === "BindingPipe") {
+    // Parens all of an element are no part of it: Angular reads the pipe there without them too (but an object's value's)
+    const pipe = n.expression;
+    out.push(
+      element && !inValue
+        ? [code.slice(pipe.span.start, pipe.span.end), false, false, nestedReading(code, pipe)]
+        : [code.slice(n.span.start, n.span.end), true, lastValue, nestedReading(code, pipe)],
+    );
+    return;
+  }
+  // A spread's expression is the element, whose parens stay, as an object's value's
+  if (kind === "SpreadElement" && element) return collectNested(code, n.expression, true, out, true, lastValue);
+  if (kind === "BindingPipe" && element) {
+    out.push([code.slice(n.span.start, n.span.end), false, lastValue, nestedReading(code, n)]);
+    return;
+  }
+  const elements = ELEMENTS[kind] ?? [];
+  for (const [key, child] of Object.entries(n)) {
+    if (key === "span" || key === "sourceSpan" || key === "nameSpan" || key === "argumentSpan") continue;
+    const isElement = elements.includes(key) && kind !== "ParenthesizedExpression";
+    collectNested(code, child, isElement, out, isElement && kind === "LiteralMap");
+  }
+}
+
+/** A nested pipe's expression, in `expressionReading`'s shape (no comment). */
+function nestedReading(code: string, n: any): unknown[] {
+  const [root, pipes] = pipesOf(code, n);
+  return [pieceOf(code, root), pipes, null];
+}
+
+/** The code below the pipes at `n`, and the pipes, first one first. */
+function pipesOf(code: string, n: any): [any, unknown[]] {
+  const pipes: unknown[] = [];
+  let root = n;
+  while (root.constructor.name === "BindingPipe") {
+    pipes.unshift([root.name, root.args.map((a: any) => pieceOf(code, a))]);
+    root = root.exp;
+  }
+  return [root, pipes];
 }
 
 /** An expression (`{{ }}`'s, a property binding's) as Angular's compiler reads it, in `tasks/sig`'s shape (`expression`);
@@ -350,12 +416,7 @@ function expressionReading(code: string): unknown {
   if (errors.length > 0) return UNKNOWN;
   if (ast.constructor.name === "EmptyExpr") return null;
   const piece = (n: any) => pieceOf(code, n);
-  const pipes: unknown[] = [];
-  let root = ast;
-  while (root.constructor.name === "BindingPipe") {
-    pipes.unshift([root.name, root.args.map(piece)]);
-    root = root.exp;
-  }
+  const [root, pipes] = pipesOf(code, ast);
   const comment = (expressionParser as any)._commentStart(code);
   return [piece(root), pipes, comment === null ? null : code.slice(comment).replace(/[\x00-\x20\xa0]+$/, "")];
 }

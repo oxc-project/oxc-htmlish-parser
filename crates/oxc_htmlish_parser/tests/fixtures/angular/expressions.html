@@ -9,3 +9,4 @@
 <p (a)="f(a,)" [b]="[c,]" [d]="g({e: 1,})">{{ h(i,) }}</p>
 <input [(a)]="b.c" [(d)]="e | f" [(g)]="h // i">
 <p title="Hi {{ name | uppercase }}, {{ a // c }} {{ (b ? c : d) | p: x }} {{ f(g,) }}"></p>
+<p>{{ [a | p, b] }} {{ {k: a | p: x, j: b} }} {{ x[a | p] }} {{ (f(a | p) | q).r }} {{ (a ? b : c | p) }} {{ a?.(b | p) }} {{ this[a | p] }} {{ !(a | p) }} {{ ((a | p)) }} {{ f(a | ) }}</p>

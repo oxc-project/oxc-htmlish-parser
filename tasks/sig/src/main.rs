@@ -156,9 +156,21 @@ fn expression(source: &str, e: &AngularExpression<'_>) -> Value {
     json!([code(source, &e.code), pipes, e.comment.map(|c| c.slice(source))])
 }
 
-/// `[text, conditional]`
+/// `[text, conditional, [[text, in_parens, last_value, expression], …]]`, the last its nested pipes
 fn code(source: &str, code: &AngularCode) -> Value {
-    json!([code.span.slice(source), code.conditional])
+    let nested: Vec<Value> = code
+        .nested
+        .iter()
+        .map(|n| {
+            json!([
+                n.span.slice(source),
+                n.in_parens,
+                n.last_value,
+                expression(source, &n.expression)
+            ])
+        })
+        .collect();
+    json!([code.span.slice(source), code.conditional, nested])
 }
 
 fn template_bindings(source: &str, bindings: &[TemplateBinding]) -> Value {

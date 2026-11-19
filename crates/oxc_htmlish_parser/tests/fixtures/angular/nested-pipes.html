@@ -1,0 +1,14 @@
+<!-- bitwarden/clients: vault-cipher-row.component.html -->
+@if (accessActions != null && (accessActions.cancelableRequest$(cipher) | async)) {
+  @let cancelableRequest = (accessActions?.cancelableRequest$(cipher) | async) ?? false;
+}
+<!-- Prettier's tests: attributes.component.html, interpolation.component.html, real-world.component.html -->
+<div [ngClass]="{'btn-success': (dialog$ | async).level === dialogLevelEnum.SUCCESS, 'btn-warning': (dialog$ | async).level === dialogLevelEnum.WARNING}"></div>
+<p>{{ 'delete' | translate: {what: ('entities' | translate: {count: array.length})} }}</p>
+<div>Birthdate: {{(currentHero?.birthdate | date:'longDate') | uppercase}}</div>
+<!-- The last value of an object, a trailing comma aside -->
+<p>{{ {k: a | p: {x: 1} } }} {{ {j: b | q,} }} {{ {i: c | r, h: d} }}</p>
+<!-- A conditional after the pipe is its argument; before it, the pipe is its branch -->
+<p>{{ {k: a | p: c ? d : {x: 1} } }} {{ (a ? b : c | p) }}</p>
+<!-- A spread's expression, its parens kept -->
+<p>{{ [...a | p, ...(b | q)] }} {{ f(...(a | p), ...b | q) }} {{ {...a | p, k: b, ...(c | q)} }} {{ {...a | p} }}</p>

@@ -367,8 +367,8 @@ impl Interpolation<'_> {
 #[derive(Debug)]
 pub struct AngularExpression<'a> {
     /// The code before the first pipe at the root, and before the comment.
-    /// A pipe not at the root stays in it: in brackets, a template literal's `${}`, a conditional's branch ([`AngularCode::conditional`]).
-    pub code: AngularCode,
+    /// A pipe not at the root stays in it: in brackets ([`AngularCode::nested`]), a template literal's `${}`, a conditional's branch ([`AngularCode::conditional`]).
+    pub code: AngularCode<'a>,
     pub pipes: ArenaVec<'a, Pipe<'a>>,
     /// `//` to the end, its trailing whitespace left out: Angular reads no code past it, line breaks included.
     pub comment: Option<Span>,
@@ -388,7 +388,7 @@ pub struct ValueInterpolation<'a> {
 #[derive(Debug)]
 pub struct AngularAction<'a> {
     /// Empty ones left out (`a;;b`, a trailing `;`), which Angular reads as none.
-    pub statements: ArenaVec<'a, AngularCode>,
+    pub statements: ArenaVec<'a, AngularCode<'a>>,
     /// `//` to the end, its trailing whitespace left out.
     pub comment: Option<Span>,
 }
@@ -397,17 +397,36 @@ pub struct AngularAction<'a> {
 #[derive(Debug)]
 pub struct Pipe<'a> {
     pub name: Span,
-    pub arguments: ArenaVec<'a, AngularCode>,
+    pub arguments: ArenaVec<'a, AngularCode<'a>>,
 }
 
 /// A piece of code: an [`AngularExpression`]'s code or a pipe's argument, or an [`AngularAction`]'s statement.
-#[derive(Clone, Copy, Debug)]
-pub struct AngularCode {
+#[derive(Debug)]
+pub struct AngularCode<'a> {
     pub span: Span,
     /// Its root is a conditional, parens around all of it aside (`a ? b : c`, `(a ? b : c)`):
     /// a pipe after it is its branch's unless it is in parens (`a ? b : c | p` is `a ? b : (c | p)`).
     /// `false` for a statement, which no pipe follows.
     pub conditional: bool,
+    /// The expressions with pipes below its root, outermost ones, in order:
+    /// in parens (`(a | p).b`), an argument (`f(a | p)`), an array's element, an object's value, an index (`a[b | p]`),
+    /// a spread's (`[...a | p]`).
+    /// Empty for a statement, which holds no pipe, and where a conditional's branch holds one (`(a ? b : c | p)`).
+    pub nested: ArenaVec<'a, NestedPipe<'a>>,
+}
+
+/// An expression with pipes below the root of an [`AngularCode`], which Angular reads as a whole (`parsePipe`).
+#[derive(Debug)]
+pub struct NestedPipe<'a> {
+    /// What it takes the place of: its parens too where Angular needs them (`(a | p).b`), the element otherwise (`a | p` of `f(a | p)`).
+    /// Parens that are all of an argument, an index or an array's element (`f((a | p))`, `[(a | p)]`) are not part of it:
+    /// Angular reads the pipe there without them too (an object's value and a spread's keep them, as Prettier does: `{a: (b | p)}`, `[...(a | p)]`).
+    pub span: Span,
+    /// Its parens are part of `span`.
+    pub in_parens: bool,
+    /// It is the last value of an object, or in parens all of it, a trailing `,` aside: right before its `}` (`{a: b | p: {c: 1}}`).
+    pub last_value: bool,
+    pub expression: ArenaBox<'a, AngularExpression<'a>>,
 }
 
 #[derive(Clone, Copy, Debug)]

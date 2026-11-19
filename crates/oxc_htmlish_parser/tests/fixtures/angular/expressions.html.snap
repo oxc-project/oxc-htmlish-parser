@@ -12,9 +12,9 @@ Root sfc=false
     Interpolation expression=[48..56] " a // c " code="a" comment="// c"
   Text [62..63] "\n" (nl|nl)
   Element [64..65] "p" Html end_tag=[154..158] "</p>"
-    Interpolation expression=[68..77] " (a | p) " code="(a | p)"
+    Interpolation expression=[68..77] " (a | p) " code="(a | p)" {"(a | p)": code="a" | p[]}
     Text [79..80] " " (sp|sp)
-    Interpolation expression=[82..92] " f(a | p) " code="f(a | p)"
+    Interpolation expression=[82..92] " f(a | p) " code="f(a | p)" {"a | p": code="a" | p[]}
     Text [94..95] " " (sp|sp)
     Interpolation expression=[97..109] " `${a | p}` " code="`${a | p}`"
     Text [111..112] " " (sp|sp)
@@ -89,3 +89,24 @@ Root sfc=false
   Element [785..786] "p" Html end_tag=[872..876] "</p>"
     @[787..792] "title" =" [794..870] "Hi {{ name | uppercase }}, {{ a // c }} {{ (b ? c : d) | p: x }} {{ f(g,) }}" Interpolation target="title" [" name | uppercase ", " a // c ", " (b ? c : d) | p: x ", " f(g,) "] code="name" | uppercase[] code="a" comment="// c" code=?"(b ? c : d)" | p["x"]
   Text [876..877] "\n" (nl|nl)
+  Element [878..879] "p" Html end_tag=[1062..1066] "</p>"
+    Interpolation expression=[882..894] " [a | p, b] " code="[a | p, b]" {"a | p": code="a" | p[]}
+    Text [896..897] " " (sp|sp)
+    Interpolation expression=[899..920] " {k: a | p: x, j: b} " code="{k: a | p: x, j: b}" {"a | p: x": code="a" | p["x"]}
+    Text [922..923] " " (sp|sp)
+    Interpolation expression=[925..935] " x[a | p] " code="x[a | p]" {"a | p": code="a" | p[]}
+    Text [937..938] " " (sp|sp)
+    Interpolation expression=[940..958] " (f(a | p) | q).r " code="(f(a | p) | q).r" {"(f(a | p) | q)": code="f(a | p)" {"a | p": code="a" | p[]} | q[]}
+    Text [960..961] " " (sp|sp)
+    Interpolation expression=[963..980] " (a ? b : c | p) " code=?"(a ? b : c | p)"
+    Text [982..983] " " (sp|sp)
+    Interpolation expression=[985..997] " a?.(b | p) " code="a?.(b | p)" {"b | p": code="b" | p[]}
+    Text [999..1000] " " (sp|sp)
+    Interpolation expression=[1002..1015] " this[a | p] " code="this[a | p]" {"a | p": code="a" | p[]}
+    Text [1017..1018] " " (sp|sp)
+    Interpolation expression=[1020..1030] " !(a | p) " code="!(a | p)" {"(a | p)": code="a" | p[]}
+    Text [1032..1033] " " (sp|sp)
+    Interpolation expression=[1035..1046] " ((a | p)) " code="((a | p))" {"(a | p)": code="a" | p[]}
+    Text [1048..1049] " " (sp|sp)
+    Interpolation expression=[1051..1060] " f(a | ) "
+  Text [1066..1067] "\n" (nl|nl)
