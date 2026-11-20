@@ -176,6 +176,10 @@ impl<'a> Builder<'a> {
             return Ok(());
         }
         let Some(open) = self.find(at, self.bytes.len(), b"{") else {
+            // At the end, it is left open: an unclosed ICU, reported at its `{` (`run`)
+            if at == self.bytes.len() {
+                return Ok(());
+            }
             return error(DiagnosticKind::InvalidIcu, span(at, at + 1));
         };
         let case = IcuCase { value: self.trimmed(at, open), open: span(open, open + 1).start };

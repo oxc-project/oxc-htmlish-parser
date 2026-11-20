@@ -645,6 +645,8 @@ mod tests {
             ("</div", Dialect::Html, UnterminatedEndTag, 0),
             // Angular reads the `{{` as text, then the `}` closes no block
             ("{{ '<b>' }}", Dialect::Angular, UnexpectedBlockClose, 9),
+            // No `}` after an ICU's last case: an unclosed ICU
+            ("{messages.length, plural, =0 {one}", Dialect::Angular, InvalidIcu, 0),
             ("a @letter", Dialect::Angular, IncompleteLet, 2),
             ("@let 1 = 2;", Dialect::Angular, IncompleteLet, 0),
             ("@let a-b = 1;", Dialect::Angular, IncompleteLet, 0),
@@ -681,6 +683,7 @@ mod tests {
             let allocator = Allocator::default();
             let diagnostic = Parser::new(&allocator, source, dialect).parse().unwrap_err();
             assert_eq!((diagnostic.kind, diagnostic.span.start), (kind, at), "{source:?}");
+            assert!(diagnostic.span.end as usize <= source.len(), "{source:?}");
         }
     }
 
