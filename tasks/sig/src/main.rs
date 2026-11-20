@@ -156,7 +156,7 @@ fn expression(source: &str, e: &AngularExpression<'_>) -> Value {
     json!([code(source, &e.code), pipes, e.comment.map(|c| c.slice(source))])
 }
 
-/// `[text, conditional, [[text, in_parens, last_value, expression], …]]`, the last its nested pipes
+/// `[text, conditional, [[text, in_parens, last_value, spread, expression], …]]`, the last its nested pipes
 fn code(source: &str, code: &AngularCode) -> Value {
     let nested: Vec<Value> = code
         .nested
@@ -166,6 +166,7 @@ fn code(source: &str, code: &AngularCode) -> Value {
                 n.span.slice(source),
                 n.in_parens,
                 n.last_value,
+                n.spread,
                 expression(source, &n.expression)
             ])
         })

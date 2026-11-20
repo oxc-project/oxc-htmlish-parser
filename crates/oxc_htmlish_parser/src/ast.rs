@@ -420,12 +420,14 @@ pub struct AngularCode<'a> {
 pub struct NestedPipe<'a> {
     /// What it takes the place of: its parens too where Angular needs them (`(a | p).b`), the element otherwise (`a | p` of `f(a | p)`).
     /// Parens that are all of an argument, an index or an array's element (`f((a | p))`, `[(a | p)]`) are not part of it:
-    /// Angular reads the pipe there without them too (an object's value and a spread's keep them, as Prettier does: `{a: (b | p)}`, `[...(a | p)]`).
+    /// Angular reads the pipe there without them too (an object's value keeps them, as Prettier does: `{a: (b | p)}`, and a spread's, as written: `[...(a | p)]`).
     pub span: Span,
     /// Its parens are part of `span`.
     pub in_parens: bool,
     /// It is the last value of an object, or in parens all of it, a trailing `,` aside: right before its `}` (`{a: b | p: {c: 1}}`).
     pub last_value: bool,
+    /// It is a spread's expression, in parens or not (`[...a | p]`, `{...(a | p)}`).
+    pub spread: bool,
     pub expression: ArenaBox<'a, AngularExpression<'a>>,
 }
 

@@ -345,23 +345,22 @@ function pieceOf(code: string, n: any): unknown[] {
 }
 
 /** Where Angular reads an expression with pipes of its own below a piece's root (`parsePipe`):
- * the arguments of a call, an index, an array's elements, an object's values, and parens. */
+ * the arguments of a call, an index, an array's elements, and parens; objects are handled in `collectNested`. */
 const ELEMENTS: Record<string, string[]> = {
   Call: ["args"],
   SafeCall: ["args"],
   KeyedRead: ["key"],
   SafeKeyedRead: ["key"],
   LiteralArray: ["expressions"],
-  LiteralMap: ["values"],
   ParenthesizedExpression: ["expression"],
 };
 
-/** The outermost pipes below `n` taking an element's place, in `tasks/sig`'s shape (`[text, in_parens, last_value, expression]`);
+/** The outermost pipes below `n` taking an element's place, in `tasks/sig`'s shape (`[text, in_parens, last_value, spread, expression]`);
  * one in a conditional's branch is no element, and a template literal's are not read. */
-function collectNested(code: string, n: any, element: boolean, out: unknown[], inValue = false, lastValue = false): void {
+function collectNested(code: string, n: any, element: boolean, out: unknown[], inValue = false, lastValue = false, spread = false): void {
   if (n === null || typeof n !== "object") return;
   if (Array.isArray(n)) {
-    n.forEach((child, i) => collectNested(code, child, element, out, inValue, inValue && i === n.length - 1));
+    n.forEach((child) => collectNested(code, child, element, out));
     return;
   }
   if (!("span" in n)) return;
@@ -372,22 +371,29 @@ function collectNested(code: string, n: any, element: boolean, out: unknown[], i
     const pipe = n.expression;
     out.push(
       element && !inValue
-        ? [code.slice(pipe.span.start, pipe.span.end), false, false, nestedReading(code, pipe)]
-        : [code.slice(n.span.start, n.span.end), true, lastValue, nestedReading(code, pipe)],
+        ? [code.slice(pipe.span.start, pipe.span.end), false, false, false, nestedReading(code, pipe)]
+        : [code.slice(n.span.start, n.span.end), true, lastValue, spread, nestedReading(code, pipe)],
     );
     return;
   }
   // A spread's expression is the element, whose parens stay, as an object's value's
-  if (kind === "SpreadElement" && element) return collectNested(code, n.expression, true, out, true, lastValue);
+  if (kind === "SpreadElement" && element) return collectNested(code, n.expression, true, out, true, lastValue, true);
+  // An object's values, a spread's among them (`{...a}`, a key of kind `spread`)
+  if (kind === "LiteralMap") {
+    n.values.forEach((value: any, i: number) =>
+      collectNested(code, value, true, out, true, i === n.values.length - 1, n.keys[i].kind === "spread"),
+    );
+    return;
+  }
   if (kind === "BindingPipe" && element) {
-    out.push([code.slice(n.span.start, n.span.end), false, lastValue, nestedReading(code, n)]);
+    out.push([code.slice(n.span.start, n.span.end), false, lastValue, spread, nestedReading(code, n)]);
     return;
   }
   const elements = ELEMENTS[kind] ?? [];
   for (const [key, child] of Object.entries(n)) {
     if (key === "span" || key === "sourceSpan" || key === "nameSpan" || key === "argumentSpan") continue;
     const isElement = elements.includes(key) && kind !== "ParenthesizedExpression";
-    collectNested(code, child, isElement, out, isElement && kind === "LiteralMap");
+    collectNested(code, child, isElement, out);
   }
 }
 

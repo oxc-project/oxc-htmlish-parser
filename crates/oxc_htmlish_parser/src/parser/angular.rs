@@ -453,7 +453,7 @@ pub(super) fn interpolations(
     let mut at = from;
     std::iter::from_fn(move || {
         while let Some(open) = memchr::memchr(b'{', &bytes[at..limit]).map(|i| at + i) {
-            if open + 1 == limit || bytes[open + 1] != b'{' {
+            if bytes[..limit].get(open + 1) != Some(&b'{') {
                 at = open + 1;
                 continue;
             }
@@ -462,7 +462,8 @@ pub(super) fn interpolations(
                     at = close + 2;
                     return Some(span(open + 2, close));
                 }
-                Err(stop) => at = stop.max(open + 2),
+                // `stop` is past the `{{`, where the search starts
+                Err(stop) => at = stop,
             }
         }
         None
