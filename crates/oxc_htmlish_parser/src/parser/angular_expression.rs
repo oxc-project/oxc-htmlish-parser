@@ -173,7 +173,7 @@ impl<'s> Code<'s> {
                 Kind::Character(b')' | b']' | b'}') => {
                     let element = stack.pop()?;
                     // The element its parens are all of: of a call's arguments, an index or an array, which Angular reads the pipe without them,
-                    // or an object's value or a spread's (`...` before them), whose parens Prettier prints
+                    // or an object's value (whose parens Prettier prints) or a spread's (`...` before them), whose stay as written
                     let all_of = stack.last().filter(|outer| {
                         element.group
                             && !outer.group
@@ -184,9 +184,8 @@ impl<'s> Code<'s> {
                                 Kind::Character(b',' | b')' | b']' | b'}')
                             )
                     });
-                    let kept = all_of.is_some_and(|outer| {
-                        outer.object || tokens[element.open - 1].is(Kind::Operator, "...")
-                    });
+                    let kept =
+                        all_of.is_some_and(|outer| outer.object || self.after_spread(element.open));
                     // An object's last value (its `}` checked, as brackets may not match: `{a: b)`), or parens all of one
                     let last_value = (element.object && tokens[i].is_char(b'}'))
                         || (kept && self.ends_object(i + 1));
@@ -233,11 +232,16 @@ impl<'s> Code<'s> {
                 _ => {}
             }
         }
-        for Found { span, in_parens, last_value, inner } in found {
+        for Found { span, in_parens, last_value, spread, inner } in found {
             let expression = expression(allocator, self.source, inner)?;
-            nested.push(NestedPipe { span, in_parens, last_value, expression });
+            nested.push(NestedPipe { span, in_parens, last_value, spread, expression });
         }
         Some(nested)
+    }
+
+    /// The token `at` follows a spread's `...`: it starts the spread's expression.
+    fn after_spread(&self, at: usize) -> bool {
+        at > 0 && self.tokens[at - 1].is(Kind::Operator, "...")
     }
 
     /// The token `at` ends an object's last value: its `}`, or a trailing `,` before it, which a flat object drops.
@@ -265,10 +269,11 @@ impl<'s> Code<'s> {
         // Parens Angular reads it without too stay in the code, which JS drops around a name
         let in_parens = element.group && !alone;
         let span = if in_parens { self.span(element.open, end + 1)? } else { inner };
+        let spread = self.after_spread(if in_parens { element.open } else { start });
         while found.last().is_some_and(|f| f.span.start >= span.start) {
             found.pop();
         }
-        found.push(Found { span, in_parens, last_value, inner });
+        found.push(Found { span, in_parens, last_value, spread, inner });
         Some(())
     }
 }
@@ -278,6 +283,7 @@ struct Found {
     span: Span,
     in_parens: bool,
     last_value: bool,
+    spread: bool,
     /// The expression's
     inner: Span,
 }
