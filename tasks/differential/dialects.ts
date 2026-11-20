@@ -70,7 +70,7 @@ const ANGULAR_TOKENS = [
   "@let a = b;", "@let x = '}';",
   "{n, plural, =0 {none} other {{{ n }} items}}", "{a, select, x {<b>X} y {<i>Y</i>}}", "{a, select, x {{b, plural, =1 {one}}}}",
   "{n, plural, =0 {", "} other {", "}}",
-  "<div ngNonBindable>", "<p title=\"a {{ b }} {{ '}}' }}\">", "<p title='{{ a // \"c }}'>", "<a href={{x}}>",
+  "<div ngNonBindable>", "<p title=\"a {{ b }} {{ '}}' }}\">", "<p title='{{ a // \"c }}'>", "<p title=\"{{ 'a\\\"b' }}\">", "<a href={{x}}>",
   "<p [a]=\"{{ b\" c=\"{{ <b> }}\">",
   "<li *ngFor=\"let x of xs | p: 1 : n; index as i trackBy f\">", "<p *ngIf=\"a ? b : c | async as d; else e\">",
   "<p *ngIf=\"f('; ,', [a, b]) && !c?.d in {e: `${ g }`}\">", "<p *x=\"a /b/ c\">",
