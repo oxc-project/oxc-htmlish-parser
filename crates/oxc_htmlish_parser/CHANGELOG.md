@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.9](https://github.com/oxc-project/oxc-htmlish-parser/compare/oxc-htmlish-parser-v0.0.8...oxc-htmlish-parser-v0.0.9) - 2026-11-20
+
+### Added
+
+- *(parser/angular)* mark spread in nested pipe ([#39](https://github.com/oxc-project/oxc-htmlish-parser/pull/39))
+
+### Fixed
+
+- *(parser/angular)* read character references in an expression as its compiler does ([#40](https://github.com/oxc-project/oxc-htmlish-parser/pull/40))
+
 ## [0.0.8](https://github.com/oxc-project/oxc-htmlish-parser/compare/oxc-htmlish-parser-v0.0.7...oxc-htmlish-parser-v0.0.8) - 2026-11-20
 
 ### Added
