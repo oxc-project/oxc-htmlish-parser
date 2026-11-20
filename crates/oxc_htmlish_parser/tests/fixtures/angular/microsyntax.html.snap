@@ -47,7 +47,7 @@ Root sfc=false
     Text [478..479] "k" (-|-) content=[478..479] "k"
   Text [483..484] "\n" (nl|nl)
   Element [485..486] "p" Html end_tag=[511..515] "</p>"
-    @[487..492] "*ngIf" =" [494..508] "a &amp;&amp; b" Template target="ngIf"
+    @[487..492] "*ngIf" =" [494..508] "a &amp;&amp; b" Template target="ngIf" [None: Some("a &amp;&amp; b") code="a &amp;&amp; b"]
     Text [510..511] "l" (-|-) content=[510..511] "l"
   Text [515..516] "\n" (nl|nl)
   Element [517..518] "p" Html end_tag=[531..535] "</p>"

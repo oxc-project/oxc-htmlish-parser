@@ -20,8 +20,9 @@ pub fn parameter<'a>(
     let s = parameter.slice(source);
     let base = parameter.start as usize;
     let at = |(start, end): (usize, usize)| span(base + start, base + end);
-    let read =
-        |expression: Span| super::angular_expression::expression(allocator, source, expression);
+    let read = |expression: Span| {
+        super::angular_expression::expression(allocator, source, expression, false)
+    };
     let kind = match (block, index) {
         (BlockKind::For, 0) => for_of(s).map(|(item, expression)| BlockParameterKind::ForOf {
             item: at(item),

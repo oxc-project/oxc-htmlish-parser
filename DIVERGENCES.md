@@ -87,6 +87,7 @@ Ours: end tags match case-insensitively, as in browsers and Vue.
 ### Character references
 
 Ours: not validated; text and values are never decoded here, so they are plain text, as browsers read them (with a parse error).
+An Angular expression in a value or a text is read with its references decoded, as its compiler reads it, its spans as written.
 `&unknown;` and malformed numeric references are errors in `angular-html-parser` and Angular's compiler.
 `decided by: 4`
 `fixture: html/basic.html`
@@ -336,6 +337,19 @@ so a fallthrough `@case` takes the whitespace up to the next `@case` into its sp
 `decided by: representation`
 `fixture: angular/blocks.html`
 `runner: fallthrough case`
+
+### `{{ }}` in a value split as written
+
+Ours: a value's `{{ }}` end at the first `}}` outside quotes as written, where Angular's compiler splits the decoded value (`splitInterpolation`):
+a `}}` in a quote a reference spells ends ours, and references spelling `{{ }}` are text to ours.
+
+```html
+<p title="{{ &quot;}}&quot; }}"></p>
+<!-- Angular: an interpolation of "}}"; ours: one of ` &quot;` it reports, so the value prints as written -->
+```
+
+`decided by: 3, cost`
+`fixture: angular/compiler-readings.html`
 
 ### Inside an ICU case
 

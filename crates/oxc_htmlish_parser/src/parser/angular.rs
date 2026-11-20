@@ -287,7 +287,7 @@ impl<'a> Builder<'a> {
         let declaration = LetDeclaration {
             name: span(name_start, name_end),
             value,
-            angular: angular_expression::expression(self.allocator, self.source, value),
+            angular: angular_expression::expression(self.allocator, self.source, value, false),
         };
         self.push(
             NodeKind::LetDeclaration(ArenaBox::new_in(declaration, &self.allocator)),
@@ -362,7 +362,7 @@ pub(super) fn attribute<'a>(
         match &mut kind {
             AngularAttribute::Property(expression, _) | AngularAttribute::TwoWay(expression, _) => {
                 *expression =
-                    value.and_then(|v| angular_expression::expression(allocator, source, v));
+                    value.and_then(|v| angular_expression::expression(allocator, source, v, true));
             }
             AngularAttribute::Event(action, _) => {
                 *action = value.and_then(|v| angular_expression::action(allocator, source, v));
@@ -381,7 +381,7 @@ pub(super) fn attribute<'a>(
     let expressions = ArenaVec::from_iter_in(
         expressions.map(|expression| ValueInterpolation {
             expression,
-            angular: angular_expression::expression(allocator, source, expression),
+            angular: angular_expression::expression(allocator, source, expression, true),
         }),
         &allocator,
     );

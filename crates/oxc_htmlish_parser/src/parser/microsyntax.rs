@@ -18,7 +18,7 @@ pub fn template_bindings<'a>(
 ) -> Option<ArenaVec<'a, TemplateBinding<'a>>> {
     let s = value.slice(source);
     let mut tokens = vec![];
-    Lexer::new(s).scan(&mut tokens, false)?;
+    Lexer::new(s, true).scan(&mut tokens, false)?;
     let base = value.start as usize;
     let mut parser = Bindings {
         allocator,
@@ -89,9 +89,7 @@ impl Bindings<'_, '_, '_> {
         let first = self.at;
         loop {
             let t = self.peek()?;
-            if !(matches!(t.kind, Kind::Identifier | Kind::Keyword)
-                || (t.kind == Kind::Literal && matches!(t.text.as_bytes()[0], b'\'' | b'"')))
-            {
+            if !(matches!(t.kind, Kind::Identifier | Kind::Keyword) || t.is_string()) {
                 return None;
             }
             self.at += 1;
@@ -125,8 +123,9 @@ impl Bindings<'_, '_, '_> {
             self.at = expression_end(self.tokens, first)?;
             Some(self.span(first, self.at - 1))
         };
-        let angular = expression
-            .and_then(|e| super::angular_expression::expression(self.allocator, self.source, e));
+        let angular = expression.and_then(|e| {
+            super::angular_expression::expression(self.allocator, self.source, e, true)
+        });
         let alias = if self.peek_keyword("as") {
             Some(self.alias()?)
         } else {

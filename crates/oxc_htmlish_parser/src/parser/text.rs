@@ -118,6 +118,7 @@ impl Builder<'_> {
                             self.allocator,
                             self.source,
                             span(open + 2, close),
+                            true,
                         )
                     } else {
                         None

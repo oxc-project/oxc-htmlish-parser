@@ -39,6 +39,12 @@ impl Token<'_> {
     pub(super) fn is_char(&self, c: u8) -> bool {
         self.kind == Kind::Character(c)
     }
+
+    /// A string literal, its quote a reference's or not (`&quot;x&quot;`).
+    pub(super) fn is_string(&self) -> bool {
+        self.kind == Kind::Literal
+            && unit(self.text.as_bytes(), 0, true).is_some_and(|(b, _)| matches!(b, b'\'' | b'"'))
+    }
 }
 
 const KEYWORDS: [&str; 14] = [
@@ -61,6 +67,8 @@ const KEYWORDS: [&str; 14] = [
 /// An expression's tokens, before the comment it ends in, which Angular strips first (`_stripComments`).
 struct Code<'s> {
     source: &'s str,
+    /// Its characters are read decoded ([`Lexer::decoded`]).
+    decoded: bool,
     tokens: Vec<Token<'s>>,
     comment: Option<Span>,
     /// Where the tokens' offsets start in the source.
@@ -70,15 +78,17 @@ struct Code<'s> {
 impl<'s> Code<'s> {
     /// `None` where Angular reports an error: a character it does not lex, `{{` and `}}` in the code (`_checkNoInterpolation`),
     /// a `,` before a `)`, which a call's arguments and an arrow's params do not end in (`f(a,)`; `[a,]` and `{a: 1,}` do).
-    fn read(source: &'s str, at: Span) -> Option<Self> {
+    fn read(source: &'s str, at: Span, decoded: bool) -> Option<Self> {
         let s = at.slice(source);
         let base = at.start as usize;
-        let comment_at = comment_start(s);
+        // Most code holds no reference: its characters are its bytes
+        let decoded = decoded && memchr::memchr(b'&', s.as_bytes()).is_some();
+        let comment_at = comment_start(s, decoded);
         let comment = comment_at
             .map(|start| span(base + start, base + s.trim_end_matches(is_whitespace).len()));
         let code = &s[..comment_at.unwrap_or(s.len())];
         let mut tokens = vec![];
-        Lexer::new(code).scan(&mut tokens, false)?;
+        Lexer::new(code, decoded).scan(&mut tokens, false)?;
         if tokens.windows(2).any(|w| w[0].is_char(b',') && w[1].is_char(b')')) {
             return None;
         }
@@ -94,7 +104,7 @@ impl<'s> Code<'s> {
                 return None;
             }
         }
-        Some(Self { source, tokens, comment, base })
+        Some(Self { source, decoded, tokens, comment, base })
     }
 
     /// Where the tokens in `[first, end)` are; `None` when there are none.
@@ -233,7 +243,7 @@ impl<'s> Code<'s> {
             }
         }
         for Found { span, in_parens, last_value, spread, inner } in found {
-            let expression = expression(allocator, self.source, inner)?;
+            let expression = expression(allocator, self.source, inner, self.decoded)?;
             nested.push(NestedPipe { span, in_parens, last_value, spread, expression });
         }
         Some(nested)
@@ -326,7 +336,7 @@ pub fn action<'a>(
     source: &str,
     at: Span,
 ) -> Option<ArenaBox<'a, AngularAction<'a>>> {
-    let code = Code::read(source, at)?;
+    let code = Code::read(source, at, true)?;
     let mut statements = ArenaVec::new_in(&allocator);
     let mut depth = 0usize;
     let mut first = 0;
@@ -355,14 +365,16 @@ pub fn action<'a>(
 
 /// The expression at `at` (`{{ }}`'s, a property binding's value, a microsyntax's, a block parameter's, `@let`'s)
 /// as Angular reads it (`parseBinding`): its code, the pipes at its root and its comment;
+/// `decoded`: in an attribute's value or a text, whose character references Angular decodes first (not in a block's parameters nor `@let`'s value);
 /// `None` where it reports an error the tokens show (no code, a `;`, a `:` no `?` or pipe takes, a pipe's name missing,
 /// a bracket left open, `{{` and `}}` in it).
 pub fn expression<'a>(
     allocator: &'a Allocator,
     source: &str,
     at: Span,
+    decoded: bool,
 ) -> Option<ArenaBox<'a, AngularExpression<'a>>> {
-    let read = Code::read(source, at)?;
+    let read = Code::read(source, at, decoded)?;
     let tokens = &read.tokens;
 
     // The root's `|` and the `:` after one, which end a segment: the code, a pipe's name or one of its arguments.
@@ -463,16 +475,27 @@ fn encloses(tokens: &[Token<'_>]) -> bool {
     false
 }
 
-/// Where a comment starts in `s` (Angular's `_commentStart`): the first `//` outside quotes, `` ` `` one too.
-fn comment_start(s: &str) -> Option<usize> {
-    let b = s.as_bytes();
+/// Where a comment starts in `s` (Angular's `_commentStart`): the first `//` outside quotes, `` ` `` one too,
+/// in the characters it reads ([`unit()`]).
+fn comment_start(s: &str, decoded: bool) -> Option<usize> {
+    let bytes = s.as_bytes();
+    // Most code holds no `/`, which a reference may spell only (`&sol;`)
+    if !decoded && memchr::memchr(b'/', bytes).is_none() {
+        return None;
+    }
     let mut quote = None;
-    let mut i = 0;
-    while i + 1 < b.len() {
-        if b[i] == b'/' && b[i + 1] == b'/' && quote.is_none() {
-            return Some(i);
+    let mut at = 0;
+    while let Some((char, len)) = unit(bytes, at, decoded) {
+        let next = unit(bytes, at + len, decoded);
+        if char == b'/' && quote.is_none() && next.is_some_and(|(next, _)| next == b'/') {
+            return Some(at);
         }
-        i += string_step(b[i], &mut quote, true).0;
+        let (step, _) = string_step(char, &mut quote, true);
+        at += len;
+        // A `\` takes the next character
+        if step == 2 {
+            at += next.map_or(0, |(_, len)| len);
+        }
     }
     None
 }
@@ -485,11 +508,14 @@ fn is_whitespace(c: char) -> bool {
 pub(super) struct Lexer<'s> {
     s: &'s str,
     at: usize,
+    /// It reads a character reference as its character ([`unit()`]): in an attribute's value or a text, which Angular decodes first.
+    decoded: bool,
 }
 
 impl<'s> Lexer<'s> {
-    pub(super) fn new(s: &'s str) -> Self {
-        Self { s, at: 0 }
+    pub(super) fn new(s: &'s str, decoded: bool) -> Self {
+        // Most code holds no reference: its characters are its bytes
+        Self { s, at: 0, decoded: decoded && memchr::memchr(b'&', s.as_bytes()).is_some() }
     }
 
     fn byte(&self, at: usize) -> Option<u8> {
@@ -502,15 +528,17 @@ impl<'s> Lexer<'s> {
         let mut braces = 0;
         loop {
             // Angular's whitespace: every control character, the space, and NBSP
-            while let Some(b) = self.byte(self.at) {
+            while let Some((b, len)) = self.unit(self.at) {
                 match b {
-                    ..=b' ' => self.at += 1,
+                    ..=b' ' => self.at += len,
                     0xC2 if self.byte(self.at + 1) == Some(0xA0) => self.at += 2,
                     _ => break,
                 }
             }
             let start = self.at;
-            let Some(b) = self.byte(start) else { return (!in_template).then_some(()) };
+            let Some((b, len)) = self.unit(start) else { return (!in_template).then_some(()) };
+            // An operator's text is the operator, which references may spell (`&amp;&amp;` is `&&`)
+            let mut operator = None;
             let kind = match b {
                 b'a'..=b'z' | b'A'..=b'Z' | b'_' | b'$' => {
                     self.at =
@@ -525,39 +553,41 @@ impl<'s> Lexer<'s> {
                     self.number();
                     Kind::Literal
                 }
-                b'.' if self.byte(start + 1).is_some_and(|b| b.is_ascii_digit()) => {
+                b'.' if self.unit(start + len).is_some_and(|(b, _)| b.is_ascii_digit()) => {
                     self.number();
                     Kind::Literal
                 }
-                b'.' if self.s[start..].starts_with("...") => {
-                    self.at += 3;
+                b'.' if let Some(end) = self.spells(start, "...") => {
+                    self.at = end;
+                    operator = Some("...");
                     Kind::Operator
                 }
                 b'\'' | b'"' => {
+                    self.at += len;
                     self.string(b)?;
                     Kind::Literal
                 }
                 b'`' => {
-                    self.at += 1;
+                    self.at += len;
                     self.template(tokens)?;
                     Kind::Literal
                 }
                 b'{' => {
                     braces += 1;
-                    self.at += 1;
+                    self.at += len;
                     Kind::Character(b)
                 }
                 b'}' if in_template && braces == 0 => {
-                    self.at += 1;
+                    self.at += len;
                     return Some(());
                 }
                 b'}' => {
                     braces -= 1;
-                    self.at += 1;
+                    self.at += len;
                     Kind::Character(b)
                 }
                 b'(' | b')' | b'[' | b']' | b',' | b':' | b';' | b'.' => {
-                    self.at += 1;
+                    self.at += len;
                     Kind::Character(b)
                 }
                 b'/' if starts_regex(&tokens[first..]) => {
@@ -565,76 +595,108 @@ impl<'s> Lexer<'s> {
                     Kind::Literal
                 }
                 _ => {
-                    self.at = start + operator_len(&self.s.as_bytes()[start..])?;
+                    let (text, end) = if self.decoded {
+                        OPERATORS.into_iter().find_map(|op| Some((op, self.spells(start, op)?)))?
+                    } else {
+                        let rest = &self.s.as_bytes()[start..];
+                        let op =
+                            OPERATORS.into_iter().find(|op| rest.starts_with(op.as_bytes()))?;
+                        (op, start + op.len())
+                    };
+                    self.at = end;
+                    operator = Some(text);
                     Kind::Operator
                 }
             };
-            tokens.push(Token { kind, text: &self.s[start..self.at], start, end: self.at });
+            let text = operator.unwrap_or(&self.s[start..self.at]);
+            tokens.push(Token { kind, text, start, end: self.at });
         }
     }
 
-    fn skip(&self, from: usize, pred: impl Fn(u8) -> bool) -> usize {
-        from + self.s.as_bytes()[from..].iter().take_while(|&&b| pred(b)).count()
+    #[inline]
+    fn unit(&self, at: usize) -> Option<(u8, usize)> {
+        unit(self.s.as_bytes(), at, self.decoded)
+    }
+
+    /// Past the characters from `from` that `pred` takes.
+    fn skip(&self, mut at: usize, pred: impl Fn(u8) -> bool) -> usize {
+        if !self.decoded {
+            return at + self.s.as_bytes()[at..].iter().take_while(|&&b| pred(b)).count();
+        }
+        while let Some((b, len)) = self.unit(at)
+            && pred(b)
+        {
+            at += len;
+        }
+        at
+    }
+
+    /// Past `text`, when the characters from `from` spell it.
+    fn spells(&self, from: usize, text: &str) -> Option<usize> {
+        text.bytes().try_fold(from, |at, expected| {
+            self.unit(at).filter(|&(b, _)| b == expected).map(|(_, len)| at + len)
+        })
     }
 
     /// Digits with `_`, a fraction and an exponent; Angular's errors in them are not repeated.
     fn number(&mut self) {
         self.at = self.skip(self.at, |b| b.is_ascii_digit() || matches!(b, b'_' | b'.'));
-        if matches!(self.byte(self.at), Some(b'e' | b'E')) {
-            self.at += 1;
-            if matches!(self.byte(self.at), Some(b'+' | b'-')) {
-                self.at += 1;
+        if let Some((b'e' | b'E', len)) = self.unit(self.at) {
+            self.at += len;
+            if let Some((b'+' | b'-', len)) = self.unit(self.at) {
+                self.at += len;
             }
             self.at = self.skip(self.at, |b| b.is_ascii_digit());
         }
     }
 
+    /// After its opening quote: through the closing one.
     fn string(&mut self, quote: u8) -> Option<()> {
-        self.at += 1;
         loop {
-            match self.byte(self.at)? {
-                b'\\' => self.at += 2,
-                b if b == quote => break,
-                _ => self.at += 1,
+            let (b, len) = self.unit(self.at)?;
+            self.at += len;
+            match b {
+                b'\\' => self.at += self.unit(self.at)?.1,
+                b if b == quote => return Some(()),
+                _ => {}
             }
         }
-        self.at += 1;
-        Some(())
     }
 
     /// After a `` ` ``: through the closing one, its `${ }` scanned as tokens of their own (not kept).
     fn template(&mut self, tokens: &mut Vec<Token<'s>>) -> Option<()> {
         loop {
-            match self.byte(self.at)? {
-                b'\\' => self.at += 2,
-                b'`' => break,
-                b'$' if self.byte(self.at + 1) == Some(b'{') => {
-                    self.at += 2;
+            let (b, len) = self.unit(self.at)?;
+            self.at += len;
+            match b {
+                b'\\' => self.at += self.unit(self.at)?.1,
+                b'`' => return Some(()),
+                b'$' if let Some((b'{', len)) = self.unit(self.at) => {
+                    self.at += len;
                     let len = tokens.len();
                     self.scan(tokens, true)?;
                     tokens.truncate(len);
                 }
-                _ => self.at += 1,
+                _ => {}
             }
         }
-        self.at += 1;
-        Some(())
     }
 
     fn regex(&mut self) -> Option<()> {
-        self.at += 1;
+        self.at += self.unit(self.at)?.1;
         let mut class = false;
         loop {
-            match self.byte(self.at)? {
-                b'\\' => self.at += 1,
+            let (b, len) = self.unit(self.at)?;
+            self.at += len;
+            match b {
+                b'\\' => self.at += self.unit(self.at)?.1,
                 b'[' => class = true,
                 b']' => class = false,
                 b'/' if !class => break,
                 _ => {}
             }
-            self.at += 1;
         }
-        self.at = self.skip(self.at + 1, |b| b.is_ascii_alphabetic());
+        self.at = self.skip(self.at, |b| b.is_ascii_alphabetic());
         Some(())
     }
 }
@@ -651,13 +713,92 @@ fn starts_regex(tokens: &[Token<'_>]) -> bool {
     last.kind == Kind::Operator || b"([,:".iter().any(|&c| last.is_char(c))
 }
 
-/// The length of the operator Angular's lexer reads at the start of `s`; `None` for a character it reports.
-fn operator_len(s: &[u8]) -> Option<usize> {
-    // Longest first
-    const OPERATORS: [&[u8]; 36] = [
-        b"===", b"!==", b"**=", b"??=", b"&&=", b"||=", b"==", b"!=", b"<=", b">=", b"=>", b"&&",
-        b"||", b"??", b"?.", b"**", b"+=", b"-=", b"*=", b"/=", b"%=", b"&=", b"|=", b"+", b"-",
-        b"*", b"/", b"%", b"<", b">", b"=", b"!", b"?", b"&", b"|", b"^",
-    ];
-    OPERATORS.iter().find(|op| s.starts_with(op)).map(|op| op.len())
+/// The operators Angular's lexer reads, longest first: any other character it reports.
+const OPERATORS: [&str; 36] = [
+    "===", "!==", "**=", "??=", "&&=", "||=", "==", "!=", "<=", ">=", "=>", "&&", "||", "??", "?.",
+    "**", "+=", "-=", "*=", "/=", "%=", "&=", "|=", "+", "-", "*", "/", "%", "<", ">", "=", "!",
+    "?", "&", "|", "^",
+];
+
+/// The character at `at` of an expression's text and its length, as Angular reads it:
+/// - `decoded` (an attribute's value, a text), a character reference as its character (`&quot;` is `"`):
+///   an ASCII one, a space for NBSP, `0x80` for any other, which only a string holds (Angular reports one elsewhere)
+/// - else, and any other byte, as written
+#[inline]
+fn unit(bytes: &[u8], at: usize, decoded: bool) -> Option<(u8, usize)> {
+    let b = *bytes.get(at)?;
+    if decoded
+        && b == b'&'
+        && let Some(reference) = character_reference(&bytes[at..])
+    {
+        return Some(reference);
+    }
+    Some((b, 1))
+}
+
+/// The character reference `bytes` starts with, a name or a number ended by `;` as Angular reads one: its character ([`unit()`]) and its length.
+// Rare: kept out of the lexer's loops
+#[cold]
+#[inline(never)]
+fn character_reference(bytes: &[u8]) -> Option<(u8, usize)> {
+    let len = bytes[1..].iter().take_while(|&&b| b.is_ascii_alphanumeric() || b == b'#').count();
+    if len == 0 || bytes.get(1 + len) != Some(&b';') {
+        return None;
+    }
+    // ASCII, by the bytes it takes
+    let name = std::str::from_utf8(&bytes[1..=len]).ok()?;
+    let char = if let Some(number) = name.strip_prefix('#') {
+        let (digits, radix) = match number.strip_prefix(['x', 'X']) {
+            Some(hex) => (hex, 16),
+            None => (number, 10),
+        };
+        match u32::from_str_radix(digits, radix).ok()? {
+            code @ 0..=0x7F => u8::try_from(code).ok()?,
+            0xA0 => b' ',
+            _ => 0x80,
+        }
+    } else {
+        named_reference(name).unwrap_or(0x80)
+    };
+    Some((char, len + 2))
+}
+
+/// The ASCII character of a named reference, or a space for NBSP.
+fn named_reference(name: &str) -> Option<u8> {
+    Some(match name {
+        "Tab" => b'\t',
+        "NewLine" => b'\n',
+        "nbsp" | "NonBreakingSpace" => b' ',
+        "excl" => b'!',
+        "quot" | "QUOT" => b'"',
+        "num" => b'#',
+        "dollar" => b'$',
+        "percnt" => b'%',
+        "amp" | "AMP" => b'&',
+        "apos" => b'\'',
+        "lpar" => b'(',
+        "rpar" => b')',
+        "ast" | "midast" => b'*',
+        "plus" => b'+',
+        "comma" => b',',
+        "period" => b'.',
+        "sol" => b'/',
+        "colon" => b':',
+        "semi" => b';',
+        "lt" | "LT" => b'<',
+        "equals" => b'=',
+        "gt" | "GT" => b'>',
+        "quest" => b'?',
+        "commat" => b'@',
+        "lsqb" | "lbrack" => b'[',
+        "bsol" => b'\\',
+        "rsqb" | "rbrack" => b']',
+        "Hat" => b'^',
+        "lowbar" | "UnderBar" => b'_',
+        "grave" | "DiacriticalGrave" => b'`',
+        "lcub" | "lbrace" => b'{',
+        "verbar" | "vert" | "VerticalLine" => b'|',
+        "rcub" | "rbrace" => b'}',
+        _ => return None,
+    })
 }
