@@ -70,7 +70,7 @@ const ANGULAR_TOKENS = [
   "@let a = b;", "@let x = '}';",
   "{n, plural, =0 {none} other {{{ n }} items}}", "{a, select, x {<b>X} y {<i>Y</i>}}", "{a, select, x {{b, plural, =1 {one}}}}",
   "{n, plural, =0 {", "} other {", "}}",
-  "<div ngNonBindable>", "<p title=\"a {{ b }} {{ '}}' }}\">", "<p title='{{ a // \"c }}'>", "<p title=\"{{ 'a\\\"b' }}\">", "<a href={{x}}>",
+  "<div ngNonBindable>", "<p title=\"a {{ b }} {{ '}}' }}\">", "<p title='{{ a // \"c }}'>", "<p title=\"{{ 'a\\\"b' }}\">", "<p [a]=\"b?&quot;c&quot;:d | p\">", "{{ &apos;a//b&apos; }}", "<p (a)=\"f(&quot;;&quot;)\">", "<a href={{x}}>",
   "<p [a]=\"{{ b\" c=\"{{ <b> }}\">",
   "<li *ngFor=\"let x of xs | p: 1 : n; index as i trackBy f\">", "<p *ngIf=\"a ? b : c | async as d; else e\">",
   "<p *ngIf=\"f('; ,', [a, b]) && !c?.d in {e: `${ g }`}\">", "<p *x=\"a /b/ c\">",
@@ -202,16 +202,16 @@ function angularCompilerSig(source: string): Sig {
             // Its compiler binds the `{{ }}` in a name it reads as no binding of another kind (`parseAttribute`)
             const interpolations = (a.valueTokens ?? []).filter((t: any) => t.type === ATTR_VALUE_INTERPOLATION && t.parts.length === 3).map((t: any) => t.parts[1]);
             if (interpolations.length > 0 && !BOUND_NAME.test(attr[0] as string)) {
-              attr.push(interpolations, interpolations.map(expressionReading));
+              attr.push(interpolations, interpolations.map((e: string) => expressionReading(decodeReferences(e))));
             }
             if (PROPERTY_NAME.test(attr[0] as string) && a.valueSpan) {
-              attr.push(["ex", expressionReading(attr[1] as string)]);
+              attr.push(["ex", expressionReading(decodeReferences(attr[1] as string))]);
             }
             if (EVENT_NAME.test(attr[0] as string) && a.valueSpan) {
-              attr.push(["ac", actionReading(attr[1] as string)]);
+              attr.push(["ac", actionReading(decodeReferences(attr[1] as string))]);
             }
             if (attr[0].startsWith("*") && a.valueSpan) {
-              const bindings = templateBindings(attr[0].slice(1), attr[1]);
+              const bindings = templateBindings(attr[0].slice(1), decodeReferences(attr[1] as string));
               if (typeof bindings === "string") bindingError ??= bindings;
               attr.push(["tb", bindings]);
             }
@@ -229,7 +229,7 @@ function angularCompilerSig(source: string): Sig {
         return n.tokens
           .map((t: any) => {
             if (t.type !== INTERPOLATION || t.parts.length !== 3) return ["t", slice(t.sourceSpan)];
-            return ["i", slice(t.sourceSpan), expressionReading(t.parts[1])];
+            return ["i", slice(t.sourceSpan), expressionReading(decodeReferences(t.parts[1]))];
           })
           .filter((t: any) => t[1] !== "");
       // Trimmed, as Angular keeps it
@@ -644,6 +644,39 @@ function whatwgClosing(source: string): boolean {
 }
 
 
+/** The character references ours reads decoded (`unit` in `parser/angular_expression.rs`), a number's aside: the names of an ASCII character or NBSP.
+ * Any other one it reads as no character of the grammar, as Angular does (it reports one outside a string). */
+const READ_REFERENCES: Record<string, string> = {
+  Tab: "\t", NewLine: "\n", nbsp: "\u00a0", NonBreakingSpace: "\u00a0", excl: "!", quot: '"', QUOT: '"', num: "#", dollar: "$",
+  percnt: "%", amp: "&", AMP: "&", apos: "'", lpar: "(", rpar: ")", ast: "*", midast: "*", plus: "+", comma: ",", period: ".",
+  sol: "/", colon: ":", semi: ";", lt: "<", LT: "<", equals: "=", gt: ">", GT: ">", quest: "?", commat: "@", lsqb: "[",
+  lbrack: "[", bsol: "\\", rsqb: "]", rbrack: "]", Hat: "^", lowbar: "_", UnderBar: "_", grave: "`", DiacriticalGrave: "`",
+  lcub: "{", lbrace: "{", verbar: "|", vert: "|", VerticalLine: "|", rcub: "}", rbrace: "}",
+};
+
+/** `code` (an attribute's value, a text's) as Angular's expression parser reads it, its character references decoded:
+ * a number's, one of `READ_REFERENCES`, any other as a character no grammar reads (U+FFFD). */
+function decodeReferences(code: string): string {
+  return code.replace(/&([A-Za-z0-9#]+);/g, (reference, name: string) => {
+    if (name[0] !== "#") return READ_REFERENCES[name] ?? "\ufffd";
+    const hex = name[1] === "x" || name[1] === "X";
+    const point = parseInt(name.slice(hex ? 2 : 1), hex ? 16 : 10);
+    return Number.isNaN(point) ? reference : point <= 0x10ffff ? String.fromCodePoint(point) : "\ufffd";
+  });
+}
+
+/** Ours reads an attribute's or a text's expression decoded, its texts as written: decoded too, they are the oracle's ([`decodeReferences`]).
+ * A reading is the last of a node's or an attribute's slots. */
+function decodedReadings(nodes: any[]): any[] {
+  const deep = (x: any): any => (typeof x === "string" ? decodeReferences(x) : Array.isArray(x) ? x.map(deep) : x);
+  const last = (x: any[]) => [...x.slice(0, -1), deep(x.at(-1))];
+  return nodes.map((n) => {
+    if (n[0] === "i") return last(n);
+    if (n[0] !== "el") return n;
+    return [n[0], n[1], n[2], n[3].map((a: any) => (a.length > 2 ? last(a) : a)), n[4]];
+  });
+}
+
 /**
  * Ours in the shape of Angular's AST (DIVERGENCES.md "How Angular's AST holds a node"): it drops doctypes,
  * the bogus comments `<!` opens, which it reads as doctypes, and the ones `<?` opens, processing instructions;
@@ -710,7 +743,7 @@ export const DIALECTS: Record<string, DialectSpec> = {
     tokens: ANGULAR_TOKENS,
     wrap: (body) => body,
     oracle: angularCompilerSig,
-    normalize: (sig) => mapNodes(sig, angularShape),
+    normalize: (sig) => mapNodes(mapNodes(sig, angularShape), decodedReadings),
     quirks: {
       "implicit close after void": IMPLICIT_CLOSE_AFTER_VOID,
       // ... and an ICU expression right after it becomes its child.
