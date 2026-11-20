@@ -7,7 +7,7 @@ use oxc_allocator::{Allocator, ArenaBox, ArenaVec};
 
 use super::angular::string_step;
 use crate::{
-    ast::{AngularAction, AngularCode, AngularExpression, Pipe},
+    ast::{AngularAction, AngularCode, AngularExpression, NestedPipe, Pipe},
     span::{Span, span},
 };
 
@@ -60,6 +60,7 @@ const KEYWORDS: [&str; 14] = [
 
 /// An expression's tokens, before the comment it ends in, which Angular strips first (`_stripComments`).
 struct Code<'s> {
+    source: &'s str,
     tokens: Vec<Token<'s>>,
     comment: Option<Span>,
     /// Where the tokens' offsets start in the source.
@@ -93,7 +94,7 @@ impl<'s> Code<'s> {
                 return None;
             }
         }
-        Some(Self { tokens, comment, base })
+        Some(Self { source, tokens, comment, base })
     }
 
     /// Where the tokens in `[first, end)` are; `None` when there are none.
@@ -104,17 +105,211 @@ impl<'s> Code<'s> {
     }
 
     /// The tokens in `[first, end)` as an action's statement, which no pipe follows; `None` when there are none.
-    fn statement(&self, first: usize, end: usize) -> Option<AngularCode> {
-        Some(AngularCode { span: self.span(first, end)?, conditional: false })
+    fn statement<'a>(
+        &self,
+        allocator: &'a Allocator,
+        first: usize,
+        end: usize,
+    ) -> Option<AngularCode<'a>> {
+        Some(AngularCode {
+            span: self.span(first, end)?,
+            conditional: false,
+            nested: ArenaVec::new_in(&allocator),
+        })
     }
 
-    /// The tokens in `[first, end)` as a piece of code; `None` when there are none.
-    fn piece(&self, first: usize, end: usize) -> Option<AngularCode> {
+    /// The tokens in `[first, end)` as a piece of code; `None` when there are none, or where Angular reports an error in a nested pipe.
+    fn piece<'a>(
+        &self,
+        allocator: &'a Allocator,
+        first: usize,
+        end: usize,
+    ) -> Option<AngularCode<'a>> {
         let tokens = &self.tokens[first..end];
         Some(AngularCode {
             span: self.span(first, end)?,
             conditional: tokens.iter().any(|t| t.is(Kind::Operator, "?")) && is_conditional(tokens),
+            nested: self.nested(allocator, first, end)?,
         })
+    }
+
+    /// The outermost expressions with pipes in the tokens in `[first, end)` ([`AngularCode::nested`]):
+    /// an element of a bracket with a `|` at its own level and no `?`, read as an expression of its own (`parsePipe`), the pipes in it its own;
+    /// `None` where Angular reports an error in one.
+    fn nested<'a>(
+        &self,
+        allocator: &'a Allocator,
+        first: usize,
+        end: usize,
+    ) -> Option<ArenaVec<'a, NestedPipe<'a>>> {
+        let mut nested = ArenaVec::new_in(&allocator);
+        let tokens = &self.tokens;
+        // No pipe below the root: nothing to read, as in most code
+        if !tokens[first..end].iter().any(|t| t.is(Kind::Operator, "|")) {
+            return Some(nested);
+        }
+        // The outermost ones found so far, read once the scan ends: an inner one is read with the outer
+        let mut found: Vec<Found> = vec![];
+        let mut stack: Vec<Element> = vec![];
+        for i in first..end {
+            let t = tokens[i];
+            match t.kind {
+                Kind::Character(c @ (b'(' | b'[' | b'{')) => {
+                    // A call's arguments and an index follow a value; an array and parens around an expression do not
+                    let after_value = i > first && {
+                        let p = tokens[i - 1];
+                        matches!(p.kind, Kind::Identifier | Kind::Literal)
+                            || p.is_char(b')')
+                            || p.is_char(b']')
+                            || p.is(Kind::Operator, "?.")
+                            || (p.kind == Kind::Keyword
+                                && matches!(
+                                    p.text,
+                                    "this" | "null" | "undefined" | "true" | "false"
+                                ))
+                    };
+                    stack.push(Element::new(i, i, c == b'(' && !after_value, c == b'{'));
+                }
+                Kind::Character(b')' | b']' | b'}') => {
+                    let element = stack.pop()?;
+                    // The element its parens are all of: of a call's arguments, an index or an array, which Angular reads the pipe without them,
+                    // or an object's value or a spread's (`...` before them), whose parens Prettier prints
+                    let all_of = stack.last().filter(|outer| {
+                        element.group
+                            && !outer.group
+                            && outer.start == Some(element.open)
+                            && i + 1 < end
+                            && matches!(
+                                tokens[i + 1].kind,
+                                Kind::Character(b',' | b')' | b']' | b'}')
+                            )
+                    });
+                    let kept = all_of.is_some_and(|outer| {
+                        outer.object || tokens[element.open - 1].is(Kind::Operator, "...")
+                    });
+                    // An object's last value (its `}` checked, as brackets may not match: `{a: b)`), or parens all of one
+                    let last_value = (element.object && tokens[i].is_char(b'}'))
+                        || (kept && self.ends_object(i + 1));
+                    self.close(&element, i, all_of.is_some() && !kept, last_value, &mut found)?;
+                }
+                Kind::Character(b',') => {
+                    if let Some(element) = stack.last_mut() {
+                        let last_value = element.object && self.ends_object(i);
+                        self.close(element, i, false, last_value, &mut found)?;
+                        element.next(i);
+                    }
+                }
+                Kind::Character(b':') => {
+                    if let Some(element) = stack.last_mut()
+                        && element.object
+                        && element.start.is_none()
+                    {
+                        element.start = Some(i + 1);
+                    }
+                }
+                Kind::Operator if t.text == "|" => {
+                    if let Some(element) = stack.last_mut() {
+                        element.pipe = true;
+                    }
+                }
+                // A spread's expression is the element (`parseSpreadElement`), an object's too, which has no `:`
+                Kind::Operator if t.text == "..." => {
+                    if let Some(element) = stack.last_mut()
+                        && !element.group
+                        && matches!(tokens[i - 1].kind, Kind::Character(b'(' | b'[' | b'{' | b','))
+                    {
+                        element.start = Some(i + 1);
+                    }
+                }
+                // Before a pipe, a conditional takes it in a branch (`a ? b : c | p`);
+                // after one, it is the pipe's argument, as at the root (`expression`)
+                Kind::Operator if t.text == "?" => {
+                    if let Some(element) = stack.last_mut()
+                        && !element.pipe
+                    {
+                        element.conditional = true;
+                    }
+                }
+                _ => {}
+            }
+        }
+        for Found { span, in_parens, last_value, inner } in found {
+            let expression = expression(allocator, self.source, inner)?;
+            nested.push(NestedPipe { span, in_parens, last_value, expression });
+        }
+        Some(nested)
+    }
+
+    /// The token `at` ends an object's last value: its `}`, or a trailing `,` before it, which a flat object drops.
+    fn ends_object(&self, at: usize) -> bool {
+        let t = |at: usize| self.tokens.get(at);
+        t(at).is_some_and(|t| t.is_char(b'}'))
+            || (t(at).is_some_and(|t| t.is_char(b','))
+                && t(at + 1).is_some_and(|t| t.is_char(b'}')))
+    }
+
+    /// Ends `element` at the token `end` (its `,` or closing bracket): one with a pipe goes in `found`, the ones inside it out.
+    /// `alone`: its parens are all of the element they are in, which Angular reads the pipe without too.
+    fn close(
+        &self,
+        element: &Element,
+        end: usize,
+        alone: bool,
+        last_value: bool,
+        found: &mut Vec<Found>,
+    ) -> Option<()> {
+        let Some(start) = element.start.filter(|_| element.pipe && !element.conditional) else {
+            return Some(());
+        };
+        let inner = self.span(start, end)?;
+        // Parens Angular reads it without too stay in the code, which JS drops around a name
+        let in_parens = element.group && !alone;
+        let span = if in_parens { self.span(element.open, end + 1)? } else { inner };
+        while found.last().is_some_and(|f| f.span.start >= span.start) {
+            found.pop();
+        }
+        found.push(Found { span, in_parens, last_value, inner });
+        Some(())
+    }
+}
+
+/// An outermost nested pipe found, read after the scan ([`Code::nested`]).
+struct Found {
+    span: Span,
+    in_parens: bool,
+    last_value: bool,
+    /// The expression's
+    inner: Span,
+}
+
+/// A bracket's current element, from `start` ([`Code::nested`]).
+struct Element {
+    open: usize,
+    /// Parens around an expression (not a call's arguments): its one element is replaced with them
+    group: bool,
+    /// `{`: an element starts at a key's `:`, its value
+    object: bool,
+    start: Option<usize>,
+    pipe: bool,
+    conditional: bool,
+}
+
+impl Element {
+    /// From the bracket `open`, its first element past `from` (an object's starts at a key's `:`).
+    fn new(open: usize, from: usize, group: bool, object: bool) -> Self {
+        Self {
+            open,
+            group,
+            object,
+            start: (!object).then_some(from + 1),
+            pipe: false,
+            conditional: false,
+        }
+    }
+
+    /// The next one, after the `,` at `at`.
+    fn next(&mut self, at: usize) {
+        *self = Self::new(self.open, at, self.group, self.object);
     }
 }
 
@@ -136,7 +331,7 @@ pub fn action<'a>(
             // `Cannot have a pipe in an action expression`, anywhere in it
             Kind::Operator if t.text == "|" => return None,
             Kind::Character(b';') if depth == 0 => {
-                statements.extend(code.statement(first, i));
+                statements.extend(code.statement(allocator, first, i));
                 first = i + 1;
             }
             _ => {}
@@ -145,7 +340,7 @@ pub fn action<'a>(
     if depth > 0 {
         return None;
     }
-    statements.extend(code.statement(first, code.tokens.len()));
+    statements.extend(code.statement(allocator, first, code.tokens.len()));
     if statements.is_empty() && code.comment.is_none() {
         return None;
     }
@@ -176,6 +371,7 @@ pub fn expression<'a>(
             Kind::Character(b')' | b']' | b'}') => depth = depth.checked_sub(1)?,
             _ if depth > 0 => {}
             Kind::Character(b';') => return None,
+            // Its branch takes the pipes after it (as in an element, `Code::nested`)
             Kind::Operator if t.text == "?" => {
                 conditionals += 1;
                 conditional = true;
@@ -192,7 +388,7 @@ pub fn expression<'a>(
     }
     let mut ends = breaks.iter().copied().chain([tokens.len()]);
     let code_end = ends.next()?;
-    let code = read.piece(0, code_end)?;
+    let code = read.piece(allocator, 0, code_end)?;
     let mut pipes: ArenaVec<'a, Pipe<'a>> = ArenaVec::new_in(&allocator);
     let mut first = code_end + 1;
     for end in ends {
@@ -206,7 +402,7 @@ pub fn expression<'a>(
                 arguments: ArenaVec::new_in(&allocator),
             });
         } else {
-            pipes.last_mut()?.arguments.push(read.piece(first, end)?);
+            pipes.last_mut()?.arguments.push(read.piece(allocator, first, end)?);
         }
         first = end + 1;
     }

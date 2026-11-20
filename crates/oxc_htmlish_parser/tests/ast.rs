@@ -354,11 +354,17 @@ fn quoted(source: &str, span: Span) -> String {
     format!("[{}..{}] {:?}", span.start, span.end, span.slice(source))
 }
 
-/// ` code="a" | p["x", "y"] comment="// c"`
+/// ` code="a" | p["x", "y"] comment="// c"`; a nested pipe after its piece, ` {"(b | q)": code="b" | q[]}`
 fn angular_expression(source: &str, e: &AngularExpression<'_>) -> String {
     let piece = |code: &AngularCode| {
         let conditional = if code.conditional { "?" } else { "" };
-        format!("{conditional}{:?}", code.span.slice(source))
+        let mut out = format!("{conditional}{:?}", code.span.slice(source));
+        for n in &code.nested {
+            let brace = if n.last_value { " before}" } else { "" };
+            let expression = angular_expression(source, &n.expression);
+            write!(out, " {{{:?}{brace}:{expression}}}", n.span.slice(source)).unwrap();
+        }
+        out
     };
     let mut out = format!(" code={}", piece(&e.code));
     for pipe in &e.pipes {

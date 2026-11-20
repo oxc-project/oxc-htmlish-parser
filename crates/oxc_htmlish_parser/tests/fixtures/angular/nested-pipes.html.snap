@@ -1,0 +1,51 @@
+---
+source: crates/oxc_htmlish_parser/tests/ast.rs
+---
+Root sfc=false
+  Comment content=[4..56] " bitwarden/clients: vault-cipher-row.component.html "
+  Text [59..60] "\n" (nl|nl)
+  Block If name=[61..63] "if" parameters=["[65..140] \"accessActions != null && (accessActions.cancelableRequest$(cipher) | async)\""] open=[60..143] "@if (accessActions != null && (accessActions.cancelableRequest$(cipher) | async)) {" close=[233..234] "}"
+    % expression code="accessActions != null && (accessActions.cancelableRequest$(cipher) | async)" {"(accessActions.cancelableRequest$(cipher) | async)": code="accessActions.cancelableRequest$(cipher)" | async[]}
+    Text [143..146] "\n  " (nl|nl)
+    LetDeclaration name=[151..168] "cancelableRequest" value=[171..231] "(accessActions?.cancelableRequest$(cipher) | async) ?? false" code="(accessActions?.cancelableRequest$(cipher) | async) ?? false" {"(accessActions?.cancelableRequest$(cipher) | async)": code="accessActions?.cancelableRequest$(cipher)" | async[]}
+    Text [232..233] "\n" (nl|nl)
+  Text [234..235] "\n" (nl|nl)
+  Comment content=[239..341] " Prettier's tests: attributes.component.html, interpolation.component.html, real-world.component.html "
+  Text [344..345] "\n" (nl|nl)
+  Element [346..349] "div" Html end_tag=[499..505] "</div>"
+    @[350..359] "[ngClass]" =" [361..497] "{'btn-success': (dialog$ | async).level === dialogLevelEnum.SUCCESS, 'btn-warning': (dialog$ | async).level === dialogLevelEnum.WARNING}" Property target="ngClass" code="{'btn-success': (dialog$ | async).level === dialogLevelEnum.SUCCESS, 'btn-warning': (dialog$ | async).level === dialogLevelEnum.WARNING}" {"(dialog$ | async)": code="dialog$" | async[]} {"(dialog$ | async)": code="dialog$" | async[]}
+  Text [505..506] "\n" (nl|nl)
+  Element [507..508] "p" Html end_tag=[592..596] "</p>"
+    Interpolation expression=[511..590] " 'delete' | translate: {what: ('entities' | translate: {count: array.length})} " code="'delete'" | translate["{what: ('entities' | translate: {count: array.length})}" {"('entities' | translate: {count: array.length})" before}: code="'entities'" | translate["{count: array.length}"]}]
+  Text [596..597] "\n" (nl|nl)
+  Element [598..601] "div" Html end_tag=[671..677] "</div>"
+    Text [602..613] "Birthdate: " (-|sp) content=[602..612] "Birthdate:"
+    Interpolation expression=[615..669] "(currentHero?.birthdate | date:'longDate') | uppercase" code="(currentHero?.birthdate | date:'longDate')" {"(currentHero?.birthdate | date:'longDate')": code="currentHero?.birthdate" | date["'longDate'"]} | uppercase[]
+  Text [677..678] "\n" (nl|nl)
+  Comment content=[682..735] " The last value of an object, a trailing comma aside "
+  Text [738..739] "\n" (nl|nl)
+  Element [740..741] "p" Html end_tag=[808..812] "</p>"
+    Interpolation expression=[744..765] " {k: a | p: {x: 1} } " code="{k: a | p: {x: 1} }" {"a | p: {x: 1}" before}: code="a" | p["{x: 1}"]}
+    Text [767..768] " " (sp|sp)
+    Interpolation expression=[770..783] " {j: b | q,} " code="{j: b | q,}" {"b | q" before}: code="b" | q[]}
+    Text [785..786] " " (sp|sp)
+    Interpolation expression=[788..806] " {i: c | r, h: d} " code="{i: c | r, h: d}" {"c | r": code="c" | r[]}
+  Text [812..813] "\n" (nl|nl)
+  Comment content=[817..898] " A conditional after the pipe is its argument; before it, the pipe is its branch "
+  Text [901..902] "\n" (nl|nl)
+  Element [903..904] "p" Html end_tag=[960..964] "</p>"
+    Interpolation expression=[907..936] " {k: a | p: c ? d : {x: 1} } " code="{k: a | p: c ? d : {x: 1} }" {"a | p: c ? d : {x: 1}" before}: code="a" | p[?"c ? d : {x: 1}"]}
+    Text [938..939] " " (sp|sp)
+    Interpolation expression=[941..958] " (a ? b : c | p) " code=?"(a ? b : c | p)"
+  Text [964..965] "\n" (nl|nl)
+  Comment content=[969..1009] " A spread's expression, its parens kept "
+  Text [1012..1013] "\n" (nl|nl)
+  Element [1014..1015] "p" Html end_tag=[1126..1130] "</p>"
+    Interpolation expression=[1018..1042] " [...a | p, ...(b | q)] " code="[...a | p, ...(b | q)]" {"a | p": code="a" | p[]} {"(b | q)": code="b" | q[]}
+    Text [1044..1045] " " (sp|sp)
+    Interpolation expression=[1047..1072] " f(...(a | p), ...b | q) " code="f(...(a | p), ...b | q)" {"(a | p)": code="a" | p[]} {"b | q": code="b" | q[]}
+    Text [1074..1075] " " (sp|sp)
+    Interpolation expression=[1077..1107] " {...a | p, k: b, ...(c | q)} " code="{...a | p, k: b, ...(c | q)}" {"a | p": code="a" | p[]} {"(c | q)" before}: code="c" | q[]}
+    Text [1109..1110] " " (sp|sp)
+    Interpolation expression=[1112..1124] " {...a | p} " code="{...a | p}" {"a | p" before}: code="a" | p[]}
+  Text [1130..1131] "\n" (nl|nl)
