@@ -334,7 +334,12 @@ impl<'a> Builder<'a> {
 
         let value_start = self.skip_ws(eq + 1);
         let value = if let Some(q @ (b'"' | b'\'')) = self.byte(value_start) {
-            let Some(close) = self.find(value_start + 1, self.bytes.len(), &[q]) else {
+            let close = if self.rules.angular {
+                angular::value_end(self.bytes, value_start + 1, q)
+            } else {
+                self.find(value_start + 1, self.bytes.len(), &[q])
+            };
+            let Some(close) = close else {
                 return error(
                     DiagnosticKind::UnterminatedAttributeValue,
                     span(value_start, self.bytes.len()),

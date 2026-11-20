@@ -95,7 +95,7 @@ impl Builder<'_> {
             }
             let open = self.pos;
             let close = if self.rules.angular {
-                match angular::interpolation_end(self.bytes, open + 2, limit) {
+                match angular::interpolation_end(self.bytes, open + 2, limit, None) {
                     Ok(close) => close,
                     Err(stop) => {
                         // Angular reads an unterminated `{{` as text, up to where the search stopped

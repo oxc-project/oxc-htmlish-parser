@@ -393,11 +393,18 @@ pub(super) fn attribute<'a>(
 /// `Err` with where the search stopped when a tag starts first, even in a string, or `limit` comes:
 /// Angular reads what it searched as text.
 /// As in Angular's lexer, the character right after `//` is read without looking for a tag (`{{ a //<b }}` holds no tag).
-pub(super) fn interpolation_end(bytes: &[u8], from: usize, limit: usize) -> Result<usize, usize> {
+/// `value_quote`: the quote of the attribute value it is in, which stops it first, even in a string literal
+/// (but right after `//`, as Angular reads that character without looking: `lang="{{ a //" b"`).
+pub(super) fn interpolation_end(
+    bytes: &[u8],
+    from: usize,
+    limit: usize,
+    value_quote: Option<u8>,
+) -> Result<usize, usize> {
     let (mut quote, mut comment) = (None, false);
     let mut at = from;
     while at < limit {
-        if is_tag_start(bytes, at) {
+        if Some(bytes[at]) == value_quote || is_tag_start(bytes, at) {
             return Err(at);
         }
         if quote.is_none() {
@@ -416,6 +423,27 @@ pub(super) fn interpolation_end(bytes: &[u8], from: usize, limit: usize) -> Resu
     Err(at.min(limit))
 }
 
+/// The quote `quote` closing an attribute value from `from`, as Angular's lexer reads it:
+/// in a `{{`, a `\` escapes the next byte (`title="{{ 'a\"b' }}"`), and the quote closes it even in a string literal.
+pub(super) fn value_end(bytes: &[u8], from: usize, quote: u8) -> Option<usize> {
+    let mut at = from;
+    loop {
+        let found = at + memchr::memchr2(quote, b'{', &bytes[at..])?;
+        if bytes[found] == quote {
+            return Some(found);
+        }
+        at = if bytes.get(found + 1) == Some(&b'{') {
+            // Past its `}}`, or where it stopped: the quote, a tag (text again), or the end
+            match interpolation_end(bytes, found + 2, bytes.len(), Some(quote)) {
+                Ok(close) => close + 2,
+                Err(stop) => stop,
+            }
+        } else {
+            found + 1
+        };
+    }
+}
+
 /// The expressions of the `{{ }}` in `[from, limit)`, as Angular reads them in text and attribute values.
 pub(super) fn interpolations(
     bytes: &[u8],
@@ -429,7 +457,7 @@ pub(super) fn interpolations(
                 at = open + 1;
                 continue;
             }
-            match interpolation_end(bytes, open + 2, limit) {
+            match interpolation_end(bytes, open + 2, limit, None) {
                 Ok(close) => {
                     at = close + 2;
                     return Some(span(open + 2, close));
@@ -442,7 +470,7 @@ pub(super) fn interpolations(
 }
 
 /// One step through Angular expression text: string literals open at `'`, `"` and `` ` `` (when `opens`),
-/// and a `\\` escapes the next byte.
+/// and a `\` escapes the next byte.
 /// Returns the bytes the step takes, and whether `b` lies outside any string (and is no escape).
 pub(super) fn string_step(b: u8, quote: &mut Option<u8>, opens: bool) -> (usize, bool) {
     match (b, *quote) {

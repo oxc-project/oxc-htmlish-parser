@@ -36,3 +36,12 @@ Root sfc=false
   Comment bogus content=[297..298] "x"
   Cdata [299..312] "<![CDATA[c]]>"
   Text [312..313] "\n" (nl|nl)
+  Element [314..315] "t" Html end_tag=[333..337] "</t>"
+    @[316..317] "a" =" [319..331] "{{ a \\\" ' b "
+  Element [338..339] "t" Html end_tag=[357..361] "</t>"
+    @[340..341] "a" =' [343..355] "{{ a \" \\' b "
+  Text [361..362] "\n" (nl|nl)
+  Element [363..364] "p" Html end_tag=[404..408] "</p>"
+    @[365..370] "title" =" [372..384] "{{ 'a\\\"b' }}" Interpolation target="title" [" 'a\\\"b' "] code="'a\\\"b'"
+    @[386..390] "lang" =" [392..402] "{{ a //\" b"
+  Text [408..409] "\n" (nl|nl)
