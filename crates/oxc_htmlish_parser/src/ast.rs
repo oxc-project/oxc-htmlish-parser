@@ -422,13 +422,31 @@ pub struct NestedPipe<'a> {
     /// Parens that are all of an argument, an index or an array's element (`f((a | p))`, `[(a | p)]`) are not part of it:
     /// Angular reads the pipe there without them too (an object's value keeps them, as Prettier does: `{a: (b | p)}`, and a spread's, as written: `[...(a | p)]`).
     pub span: Span,
-    /// Its parens are part of `span`.
-    pub in_parens: bool,
+    /// Its parens, part of `span`, by what they are part of as Angular reads them; `None` without parens.
+    pub parens: Option<NestedPipeParent>,
     /// It is the last value of an object, or in parens all of it, a trailing `,` aside: right before its `}` (`{a: b | p: {c: 1}}`).
     pub last_value: bool,
     /// It is a spread's expression, in parens or not (`[...a | p]`, `{...(a | p)}`).
     pub spread: bool,
     pub expression: ArenaBox<'a, AngularExpression<'a>>,
+}
+
+/// What a [`NestedPipe`]'s parens are part of: what follows them first (`!(a | p).b` is a member's object), then what precedes them.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum NestedPipeParent {
+    /// A call's callee: `(a | p)()`, `(a | p)?.()`.
+    Callee,
+    /// A member's object: `(a | p).b`, `(a | p)?.b`; an index's (`computed`): `(a | p)[0]`, `(a | p)?.[0]`.
+    MemberObject { computed: bool },
+    /// A prefix operator's argument: `!(a | p)`, `-(a | p)`, `typeof (a | p)`.
+    UnaryArgument,
+    /// A conditional's test or branch: `c ? (a | p) : d`.
+    /// `call_argument`, of the conditional: it is a call's argument (`f(c ? (a | p) : d)`).
+    Conditional { call_argument: bool },
+    /// All of an object's value: `{k: (a | p)}`.
+    ObjectValue,
+    /// Anything else: a binary's operand, a spread's argument, a pipe's argument, a non-null assertion's (`(a | p)!`).
+    Other,
 }
 
 #[derive(Clone, Copy, Debug)]

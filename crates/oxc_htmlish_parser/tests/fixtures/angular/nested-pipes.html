@@ -12,3 +12,8 @@
 <p>{{ {k: a | p: c ? d : {x: 1} } }} {{ (a ? b : c | p) }}</p>
 <!-- A spread's expression, its parens kept -->
 <p>{{ [...a | p, ...(b | q)] }} {{ f(...(a | p), ...b | q) }} {{ {...a | p, k: b, ...(c | q)} }} {{ {...a | p} }}</p>
+<!-- Parens bound to what is around them: a call's callee, a member's object, a unary's argument; the others are not -->
+<p>{{ (a | p).b }} {{ (a | p)?.b }} {{ (a | p)() }} {{ (a | p)?.() }} {{ !(a | p) }} {{ -(a | p) }} {{ typeof (a | p) }} {{ void (a | p) }}</p>
+<p>{{ (a | p)[0] }} {{ (a | p)?.[0] }} {{ (a | p)!.b }} {{ x - (a | p) }} {{ x!(a | p) }} {{ c ? (a | p) : d }} {{ f(x, (a | p) + 1) }}</p>
+<p>{{ f(c ? (a | p) : d) }} {{ (a | p) ? b : c }} {{ {k: (a | p)} }} {{ {...(a | p)} }} {{ !(a | p).b }} {{ c ? (a | p).b : d }} {{ {k: c ? d : (a | p)} }}</p>
+<p>{{ c ? (a | p) + 1 : d }} {{ x + (a | p) ? b : c }} {{ c ? d : (a | p) | q }}</p>

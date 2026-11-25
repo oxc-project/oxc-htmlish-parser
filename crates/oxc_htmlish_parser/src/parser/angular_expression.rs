@@ -7,7 +7,7 @@ use oxc_allocator::{Allocator, ArenaBox, ArenaVec};
 
 use super::angular::string_step;
 use crate::{
-    ast::{AngularAction, AngularCode, AngularExpression, NestedPipe, Pipe},
+    ast::{AngularAction, AngularCode, AngularExpression, NestedPipe, NestedPipeParent, Pipe},
     span::{Span, span},
 };
 
@@ -38,6 +38,13 @@ impl Token<'_> {
 
     pub(super) fn is_char(&self, c: u8) -> bool {
         self.kind == Kind::Character(c)
+    }
+
+    /// A prefix operator, where an operand is expected (`!a`, `-a`, `typeof a`).
+    pub(super) fn is_prefix(&self) -> bool {
+        matches!(self.kind, Kind::Operator if matches!(self.text, "!" | "-" | "+"))
+            || self.is(Kind::Keyword, "typeof")
+            || self.is(Kind::Keyword, "void")
     }
 
     /// A string literal, its quote a reference's or not (`&quot;x&quot;`).
@@ -161,24 +168,25 @@ impl<'s> Code<'s> {
         // The outermost ones found so far, read once the scan ends: an inner one is read with the outer
         let mut found: Vec<Found> = vec![];
         let mut stack: Vec<Element> = vec![];
+        // The `?`s at the root whose `:` is yet to come, and the last conditional `:` seen
+        let mut root_questions = 0u32;
+        let mut conditional_colon: Option<usize> = None;
         for i in first..end {
             let t = tokens[i];
             match t.kind {
                 Kind::Character(c @ (b'(' | b'[' | b'{')) => {
-                    // A call's arguments and an index follow a value; an array and parens around an expression do not
-                    let after_value = i > first && {
-                        let p = tokens[i - 1];
-                        matches!(p.kind, Kind::Identifier | Kind::Literal)
-                            || p.is_char(b')')
-                            || p.is_char(b']')
-                            || p.is(Kind::Operator, "?.")
-                            || (p.kind == Kind::Keyword
-                                && matches!(
-                                    p.text,
-                                    "this" | "null" | "undefined" | "true" | "false"
-                                ))
-                    };
-                    stack.push(Element::new(i, i, c == b'(' && !after_value, c == b'{'));
+                    // A call's arguments and an index follow a value (`a(b)`, `a!(b)`, `a?.(b)`); an array and parens around an expression do not
+                    let after_value = self.follows_value(i, first)
+                        || (i > first && tokens[i - 1].is(Kind::Operator, "?."));
+                    let call = c == b'(' && after_value;
+                    // Parens right after a conditional's `?` or `:` are one of its branches
+                    let in_conditional = i > first
+                        && (tokens[i - 1].is(Kind::Operator, "?")
+                            || conditional_colon == Some(i - 1));
+                    let mut element =
+                        Element::new(i, i, c == b'(' && !after_value, c == b'{', call);
+                    element.in_conditional = in_conditional;
+                    stack.push(element);
                 }
                 Kind::Character(b')' | b']' | b'}') => {
                     let element = stack.pop()?;
@@ -199,21 +207,55 @@ impl<'s> Code<'s> {
                     // An object's last value (its `}` checked, as brackets may not match: `{a: b)`), or parens all of one
                     let last_value = (element.object && tokens[i].is_char(b'}'))
                         || (kept && self.ends_object(i + 1));
-                    self.close(&element, i, all_of.is_some() && !kept, last_value, &mut found)?;
+                    // Only for parens `close` keeps: a pipe in them, not a conditional's branch nor all of an element
+                    let parent = if element.group
+                        && element.pipe
+                        && !element.conditional
+                        && (all_of.is_none() || kept)
+                    {
+                        let object_value = all_of.is_some_and(|outer| outer.object)
+                            && !self.after_spread(element.open);
+                        self.parent(&element, i, stack.last(), object_value, first, end)
+                    } else {
+                        NestedPipeParent::Other
+                    };
+                    self.close(
+                        &element,
+                        i,
+                        all_of.is_some() && !kept,
+                        last_value,
+                        parent,
+                        &mut found,
+                    )?;
                 }
                 Kind::Character(b',') => {
                     if let Some(element) = stack.last_mut() {
                         let last_value = element.object && self.ends_object(i);
-                        self.close(element, i, false, last_value, &mut found)?;
+                        self.close(
+                            element,
+                            i,
+                            false,
+                            last_value,
+                            NestedPipeParent::Other,
+                            &mut found,
+                        )?;
                         element.next(i);
                     }
                 }
                 Kind::Character(b':') => {
-                    if let Some(element) = stack.last_mut()
-                        && element.object
-                        && element.start.is_none()
+                    let questions = match stack.last_mut() {
+                        Some(element) if element.object && element.start.is_none() => {
+                            element.start = Some(i + 1);
+                            None
+                        }
+                        level => Some(level.map_or(&mut root_questions, |e| &mut e.questions)),
+                    };
+                    // A conditional's `:`, which ends its `?`'s branch
+                    if let Some(questions) = questions
+                        && *questions > 0
                     {
-                        element.start = Some(i + 1);
+                        *questions -= 1;
+                        conditional_colon = Some(i);
                     }
                 }
                 Kind::Operator if t.text == "|" => {
@@ -238,15 +280,80 @@ impl<'s> Code<'s> {
                     {
                         element.conditional = true;
                     }
+                    *stack.last_mut().map_or(&mut root_questions, |e| &mut e.questions) += 1;
                 }
                 _ => {}
             }
         }
-        for Found { span, in_parens, last_value, spread, inner } in found {
+        for Found { span, parens, last_value, spread, inner } in found {
             let expression = expression(allocator, self.source, inner, self.decoded)?;
-            nested.push(NestedPipe { span, in_parens, last_value, spread, expression });
+            nested.push(NestedPipe { span, parens, last_value, spread, expression });
         }
         Some(nested)
+    }
+
+    /// What the parens of `element`, closed at `close`, are part of ([`NestedPipe::parens`]), in the tokens in `[first, end)`:
+    /// what follows them binds first (`!(a | p).b` is a member's object), then what precedes them.
+    /// `level`: the element they are in, `None` at the root; `object_value`: they are all of an object's value.
+    fn parent(
+        &self,
+        element: &Element,
+        close: usize,
+        level: Option<&Element>,
+        object_value: bool,
+        first: usize,
+        end: usize,
+    ) -> NestedPipeParent {
+        let t = |at: usize| (first..end).contains(&at).then(|| self.tokens[at]);
+        let call_argument = level.is_some_and(|level| level.call);
+        let after = t(close + 1);
+        let optional = after.is_some_and(|a| a.is(Kind::Operator, "?."));
+        let next = if optional { t(close + 2) } else { after };
+        match next {
+            Some(n) if n.is_char(b'(') => return NestedPipeParent::Callee,
+            Some(n) if n.is_char(b'[') => return NestedPipeParent::MemberObject { computed: true },
+            Some(n) if n.is_char(b'.') || (optional && n.kind == Kind::Identifier) => {
+                return NestedPipeParent::MemberObject { computed: false };
+            }
+            _ => {}
+        }
+        // All of an operand: nothing binds them on either side (`c ? (a | p) : d`, not `c ? (a | p) + 1 : d`)
+        let before = (element.open > first).then(|| self.tokens[element.open - 1]);
+        let starts = before.is_none_or(|b| {
+            matches!(b.kind, Kind::Character(b'(' | b'[' | b'{' | b',' | b':'))
+                || b.is(Kind::Operator, "?")
+        });
+        let ends = after.is_none_or(|a| {
+            matches!(a.kind, Kind::Character(b')' | b']' | b'}' | b',' | b':' | b';'))
+                || a.is(Kind::Operator, "|")
+        });
+        // A prefix one: no value before it (`a - (b | p)` is a binary's)
+        if before.is_some_and(|b| b.is_prefix() && !self.follows_value(element.open - 1, first)) {
+            NestedPipeParent::UnaryArgument
+        } else if (element.in_conditional && ends)
+            || (starts && after.is_some_and(|a| a.is(Kind::Operator, "?")))
+        {
+            NestedPipeParent::Conditional { call_argument }
+        } else if object_value {
+            NestedPipeParent::ObjectValue
+        } else {
+            NestedPipeParent::Other
+        }
+    }
+
+    /// The token `at`, in the tokens from `first`, follows a value: what a call's arguments, an index or a postfix `!` follow,
+    /// a non-null one too (`a!`).
+    fn follows_value(&self, at: usize, first: usize) -> bool {
+        if at <= first {
+            return false;
+        }
+        let t = self.tokens[at - 1];
+        matches!(t.kind, Kind::Identifier | Kind::Literal)
+            || t.is_char(b')')
+            || t.is_char(b']')
+            || (t.kind == Kind::Keyword
+                && matches!(t.text, "this" | "null" | "undefined" | "true" | "false"))
+            || (t.is(Kind::Operator, "!") && self.follows_value(at - 1, first))
     }
 
     /// The token `at` follows a spread's `...`: it starts the spread's expression.
@@ -270,6 +377,7 @@ impl<'s> Code<'s> {
         end: usize,
         alone: bool,
         last_value: bool,
+        parent: NestedPipeParent,
         found: &mut Vec<Found>,
     ) -> Option<()> {
         let Some(start) = element.start.filter(|_| element.pipe && !element.conditional) else {
@@ -283,7 +391,8 @@ impl<'s> Code<'s> {
         while found.last().is_some_and(|f| f.span.start >= span.start) {
             found.pop();
         }
-        found.push(Found { span, in_parens, last_value, spread, inner });
+        let parens = in_parens.then_some(parent);
+        found.push(Found { span, parens, last_value, spread, inner });
         Some(())
     }
 }
@@ -291,7 +400,7 @@ impl<'s> Code<'s> {
 /// An outermost nested pipe found, read after the scan ([`Code::nested`]).
 struct Found {
     span: Span,
-    in_parens: bool,
+    parens: Option<NestedPipeParent>,
     last_value: bool,
     spread: bool,
     /// The expression's
@@ -308,11 +417,17 @@ struct Element {
     start: Option<usize>,
     pipe: bool,
     conditional: bool,
+    /// `(` after a value: a call's arguments
+    call: bool,
+    /// The `?`s in it whose `:` is yet to come
+    questions: u32,
+    /// It opens right after a conditional's `?` or `:`
+    in_conditional: bool,
 }
 
 impl Element {
     /// From the bracket `open`, its first element past `from` (an object's starts at a key's `:`).
-    fn new(open: usize, from: usize, group: bool, object: bool) -> Self {
+    fn new(open: usize, from: usize, group: bool, object: bool, call: bool) -> Self {
         Self {
             open,
             group,
@@ -320,12 +435,15 @@ impl Element {
             start: (!object).then_some(from + 1),
             pipe: false,
             conditional: false,
+            call,
+            questions: 0,
+            in_conditional: false,
         }
     }
 
     /// The next one, after the `,` at `at`.
     fn next(&mut self, at: usize) {
-        *self = Self::new(self.open, at, self.group, self.object);
+        *self = Self::new(self.open, at, self.group, self.object, self.call);
     }
 }
 

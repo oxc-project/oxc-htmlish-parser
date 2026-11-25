@@ -13,10 +13,10 @@ Root sfc=false
   Comment content=[239..341] " Prettier's tests: attributes.component.html, interpolation.component.html, real-world.component.html "
   Text [344..345] "\n" (nl|nl)
   Element [346..349] "div" Html end_tag=[499..505] "</div>"
-    @[350..359] "[ngClass]" =" [361..497] "{'btn-success': (dialog$ | async).level === dialogLevelEnum.SUCCESS, 'btn-warning': (dialog$ | async).level === dialogLevelEnum.WARNING}" Property target="ngClass" code="{'btn-success': (dialog$ | async).level === dialogLevelEnum.SUCCESS, 'btn-warning': (dialog$ | async).level === dialogLevelEnum.WARNING}" {"(dialog$ | async)": code="dialog$" | async[]} {"(dialog$ | async)": code="dialog$" | async[]}
+    @[350..359] "[ngClass]" =" [361..497] "{'btn-success': (dialog$ | async).level === dialogLevelEnum.SUCCESS, 'btn-warning': (dialog$ | async).level === dialogLevelEnum.WARNING}" Property target="ngClass" code="{'btn-success': (dialog$ | async).level === dialogLevelEnum.SUCCESS, 'btn-warning': (dialog$ | async).level === dialogLevelEnum.WARNING}" {"(dialog$ | async)" MemberObject { computed: false }: code="dialog$" | async[]} {"(dialog$ | async)" MemberObject { computed: false }: code="dialog$" | async[]}
   Text [505..506] "\n" (nl|nl)
   Element [507..508] "p" Html end_tag=[592..596] "</p>"
-    Interpolation expression=[511..590] " 'delete' | translate: {what: ('entities' | translate: {count: array.length})} " code="'delete'" | translate["{what: ('entities' | translate: {count: array.length})}" {"('entities' | translate: {count: array.length})" before}: code="'entities'" | translate["{count: array.length}"]}]
+    Interpolation expression=[511..590] " 'delete' | translate: {what: ('entities' | translate: {count: array.length})} " code="'delete'" | translate["{what: ('entities' | translate: {count: array.length})}" {"('entities' | translate: {count: array.length})" ObjectValue before}: code="'entities'" | translate["{count: array.length}"]}]
   Text [596..597] "\n" (nl|nl)
   Element [598..601] "div" Html end_tag=[671..677] "</div>"
     Text [602..613] "Birthdate: " (-|sp) content=[602..612] "Birthdate:"
@@ -49,3 +49,59 @@ Root sfc=false
     Text [1109..1110] " " (sp|sp)
     Interpolation expression=[1112..1124] " {...a | p} " code="{...a | p}" {"a | p" spread before}: code="a" | p[]}
   Text [1130..1131] "\n" (nl|nl)
+  Comment content=[1135..1248] " Parens bound to what is around them: a call's callee, a member's object, a unary's argument; the others are not "
+  Text [1251..1252] "\n" (nl|nl)
+  Element [1253..1254] "p" Html end_tag=[1391..1395] "</p>"
+    Interpolation expression=[1257..1268] " (a | p).b " code="(a | p).b" {"(a | p)" MemberObject { computed: false }: code="a" | p[]}
+    Text [1270..1271] " " (sp|sp)
+    Interpolation expression=[1273..1285] " (a | p)?.b " code="(a | p)?.b" {"(a | p)" MemberObject { computed: false }: code="a" | p[]}
+    Text [1287..1288] " " (sp|sp)
+    Interpolation expression=[1290..1301] " (a | p)() " code="(a | p)()" {"(a | p)" Callee: code="a" | p[]}
+    Text [1303..1304] " " (sp|sp)
+    Interpolation expression=[1306..1319] " (a | p)?.() " code="(a | p)?.()" {"(a | p)" Callee: code="a" | p[]}
+    Text [1321..1322] " " (sp|sp)
+    Interpolation expression=[1324..1334] " !(a | p) " code="!(a | p)" {"(a | p)" UnaryArgument: code="a" | p[]}
+    Text [1336..1337] " " (sp|sp)
+    Interpolation expression=[1339..1349] " -(a | p) " code="-(a | p)" {"(a | p)" UnaryArgument: code="a" | p[]}
+    Text [1351..1352] " " (sp|sp)
+    Interpolation expression=[1354..1370] " typeof (a | p) " code="typeof (a | p)" {"(a | p)" UnaryArgument: code="a" | p[]}
+    Text [1372..1373] " " (sp|sp)
+    Interpolation expression=[1375..1389] " void (a | p) " code="void (a | p)" {"(a | p)" UnaryArgument: code="a" | p[]}
+  Text [1395..1396] "\n" (nl|nl)
+  Element [1397..1398] "p" Html end_tag=[1531..1535] "</p>"
+    Interpolation expression=[1401..1413] " (a | p)[0] " code="(a | p)[0]" {"(a | p)" MemberObject { computed: true }: code="a" | p[]}
+    Text [1415..1416] " " (sp|sp)
+    Interpolation expression=[1418..1432] " (a | p)?.[0] " code="(a | p)?.[0]" {"(a | p)" MemberObject { computed: true }: code="a" | p[]}
+    Text [1434..1435] " " (sp|sp)
+    Interpolation expression=[1437..1449] " (a | p)!.b " code="(a | p)!.b" {"(a | p)": code="a" | p[]}
+    Text [1451..1452] " " (sp|sp)
+    Interpolation expression=[1454..1467] " x - (a | p) " code="x - (a | p)" {"(a | p)": code="a" | p[]}
+    Text [1469..1470] " " (sp|sp)
+    Interpolation expression=[1472..1483] " x!(a | p) " code="x!(a | p)" {"a | p": code="a" | p[]}
+    Text [1485..1486] " " (sp|sp)
+    Interpolation expression=[1488..1505] " c ? (a | p) : d " code=?"c ? (a | p) : d" {"(a | p)" Conditional { call_argument: false }: code="a" | p[]}
+    Text [1507..1508] " " (sp|sp)
+    Interpolation expression=[1510..1529] " f(x, (a | p) + 1) " code="f(x, (a | p) + 1)" {"(a | p)": code="a" | p[]}
+  Text [1535..1536] "\n" (nl|nl)
+  Element [1537..1538] "p" Html end_tag=[1691..1695] "</p>"
+    Interpolation expression=[1541..1561] " f(c ? (a | p) : d) " code="f(c ? (a | p) : d)" {"(a | p)" Conditional { call_argument: true }: code="a" | p[]}
+    Text [1563..1564] " " (sp|sp)
+    Interpolation expression=[1566..1583] " (a | p) ? b : c " code=?"(a | p) ? b : c" {"(a | p)" Conditional { call_argument: false }: code="a" | p[]}
+    Text [1585..1586] " " (sp|sp)
+    Interpolation expression=[1588..1602] " {k: (a | p)} " code="{k: (a | p)}" {"(a | p)" ObjectValue before}: code="a" | p[]}
+    Text [1604..1605] " " (sp|sp)
+    Interpolation expression=[1607..1621] " {...(a | p)} " code="{...(a | p)}" {"(a | p)" spread before}: code="a" | p[]}
+    Text [1623..1624] " " (sp|sp)
+    Interpolation expression=[1626..1638] " !(a | p).b " code="!(a | p).b" {"(a | p)" MemberObject { computed: false }: code="a" | p[]}
+    Text [1640..1641] " " (sp|sp)
+    Interpolation expression=[1643..1662] " c ? (a | p).b : d " code=?"c ? (a | p).b : d" {"(a | p)" MemberObject { computed: false }: code="a" | p[]}
+    Text [1664..1665] " " (sp|sp)
+    Interpolation expression=[1667..1689] " {k: c ? d : (a | p)} " code="{k: c ? d : (a | p)}" {"(a | p)" Conditional { call_argument: false }: code="a" | p[]}
+  Text [1695..1696] "\n" (nl|nl)
+  Element [1697..1698] "p" Html end_tag=[1776..1780] "</p>"
+    Interpolation expression=[1701..1722] " c ? (a | p) + 1 : d " code=?"c ? (a | p) + 1 : d" {"(a | p)": code="a" | p[]}
+    Text [1724..1725] " " (sp|sp)
+    Interpolation expression=[1727..1748] " x + (a | p) ? b : c " code=?"x + (a | p) ? b : c" {"(a | p)": code="a" | p[]}
+    Text [1750..1751] " " (sp|sp)
+    Interpolation expression=[1753..1774] " c ? d : (a | p) | q " code=?"c ? d : (a | p) | q" {"(a | p)" Conditional { call_argument: false }: code="a" | p[]}
+  Text [1780..1781] "\n" (nl|nl)

@@ -12,8 +12,8 @@ use oxc_htmlish_parser::{
     Allocator, Dialect, Parser, Span,
     ast::{
         AngularAttribute, AngularCode, AngularExpression, Attribute, AttributeKind,
-        BlockParameterKind, Content, Interpolation, NodeId, NodeKind, Quote, Root, TemplateBinding,
-        Whitespace,
+        BlockParameterKind, Content, Interpolation, NestedPipeParent, NodeId, NodeKind, Quote,
+        Root, TemplateBinding, Whitespace,
     },
 };
 
@@ -361,9 +361,14 @@ fn angular_expression(source: &str, e: &AngularExpression<'_>) -> String {
         let mut out = format!("{conditional}{:?}", code.span.slice(source));
         for n in &code.nested {
             let spread = if n.spread { " spread" } else { "" };
+            let parent = match n.parens {
+                None | Some(NestedPipeParent::Other) => String::new(),
+                Some(parent) => format!(" {parent:?}"),
+            };
             let brace = if n.last_value { " before}" } else { "" };
             let expression = angular_expression(source, &n.expression);
-            write!(out, " {{{:?}{spread}{brace}:{expression}}}", n.span.slice(source)).unwrap();
+            write!(out, " {{{:?}{spread}{parent}{brace}:{expression}}}", n.span.slice(source))
+                .unwrap();
         }
         out
     };

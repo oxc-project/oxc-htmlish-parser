@@ -96,7 +96,7 @@ Root sfc=false
     Text [922..923] " " (sp|sp)
     Interpolation expression=[925..935] " x[a | p] " code="x[a | p]" {"a | p": code="a" | p[]}
     Text [937..938] " " (sp|sp)
-    Interpolation expression=[940..958] " (f(a | p) | q).r " code="(f(a | p) | q).r" {"(f(a | p) | q)": code="f(a | p)" {"a | p": code="a" | p[]} | q[]}
+    Interpolation expression=[940..958] " (f(a | p) | q).r " code="(f(a | p) | q).r" {"(f(a | p) | q)" MemberObject { computed: false }: code="f(a | p)" {"a | p": code="a" | p[]} | q[]}
     Text [960..961] " " (sp|sp)
     Interpolation expression=[963..980] " (a ? b : c | p) " code=?"(a ? b : c | p)"
     Text [982..983] " " (sp|sp)
@@ -104,7 +104,7 @@ Root sfc=false
     Text [999..1000] " " (sp|sp)
     Interpolation expression=[1002..1015] " this[a | p] " code="this[a | p]" {"a | p": code="a" | p[]}
     Text [1017..1018] " " (sp|sp)
-    Interpolation expression=[1020..1030] " !(a | p) " code="!(a | p)" {"(a | p)": code="a" | p[]}
+    Interpolation expression=[1020..1030] " !(a | p) " code="!(a | p)" {"(a | p)" UnaryArgument: code="a" | p[]}
     Text [1032..1033] " " (sp|sp)
     Interpolation expression=[1035..1046] " ((a | p)) " code="((a | p))" {"(a | p)": code="a" | p[]}
     Text [1048..1049] " " (sp|sp)

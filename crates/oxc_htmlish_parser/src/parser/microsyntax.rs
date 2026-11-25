@@ -165,9 +165,7 @@ fn expression_end(tokens: &[Token<'_>], first: usize) -> Option<usize> {
         }
         if operand {
             // A prefix operator keeps waiting for the operand
-            operand = matches!(t.kind, Kind::Operator if matches!(t.text, "!" | "-" | "+"))
-                || t.is(Kind::Keyword, "typeof")
-                || t.is(Kind::Keyword, "void");
+            operand = t.is_prefix();
             if !operand && !matches!(t.kind, Kind::Identifier | Kind::Keyword | Kind::Literal) {
                 return None;
             }
