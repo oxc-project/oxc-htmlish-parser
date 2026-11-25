@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.11](https://github.com/oxc-project/oxc-htmlish-parser/compare/oxc-htmlish-parser-v0.0.10...oxc-htmlish-parser-v0.0.11) - 2026-11-25
+
+### Added
+
+- *(parser)* read whether a `{{ }}`'s reference decodes to a quote ([#46](https://github.com/oxc-project/oxc-htmlish-parser/pull/46))
+
 ## [0.0.10](https://github.com/oxc-project/oxc-htmlish-parser/compare/oxc-htmlish-parser-v0.0.9...oxc-htmlish-parser-v0.0.10) - 2026-11-25
 
 ### Added
