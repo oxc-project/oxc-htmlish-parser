@@ -858,7 +858,7 @@ fn unit(bytes: &[u8], at: usize, decoded: bool) -> Option<(u8, usize)> {
 // Rare: kept out of the lexer's loops
 #[cold]
 #[inline(never)]
-fn character_reference(bytes: &[u8]) -> Option<(u8, usize)> {
+pub(super) fn character_reference(bytes: &[u8]) -> Option<(u8, usize)> {
     let len = bytes[1..].iter().take_while(|&&b| b.is_ascii_alphanumeric() || b == b'#').count();
     if len == 0 || bytes.get(1 + len) != Some(&b';') {
         return None;

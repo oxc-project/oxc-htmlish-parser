@@ -229,7 +229,8 @@ function angularCompilerSig(source: string): Sig {
         return n.tokens
           .map((t: any) => {
             if (t.type !== INTERPOLATION || t.parts.length !== 3) return ["t", slice(t.sourceSpan)];
-            return ["i", slice(t.sourceSpan), expressionReading(decodeReferences(t.parts[1]))];
+            const decoded = decodeReferences(t.parts[1]);
+            return ["i", slice(t.sourceSpan), quotes(decoded) > quotes(t.parts[1]), expressionReading(decoded)];
           })
           .filter((t: any) => t[1] !== "");
       // Trimmed, as Angular keeps it
@@ -532,8 +533,9 @@ function vueOracle(source: string): Sig {
         return ["t", n.loc.source];
       case 3:
         return ["c", n.content];
+      // Its expression as Vue reads it, its references decoded (`decodeHTML`)
       case 5:
-        return ["i", n.loc.source];
+        return ["i", n.loc.source, quotes(n.content.content) > quotes(n.loc.source.slice(2, -2))];
       default:
         throw new UnknownNode(`unexpected node type ${n.type}`);
     }
@@ -686,6 +688,11 @@ function decodeReferences(code: string): string {
     const point = parseInt(name.slice(hex ? 2 : 1), hex ? 16 : 10);
     return Number.isNaN(point) ? reference : point <= 0x10ffff ? String.fromCodePoint(point) : "\ufffd";
   });
+}
+
+/** The quotes in `code`, to tell a reference that decodes to one (`Interpolation::decodes_quote`). */
+function quotes(code: string): number {
+  return (code.match(/["']/g) ?? []).length;
 }
 
 /** Ours reads an attribute's or a text's expression decoded, its texts as written: decoded too, they are the oracle's ([`decodeReferences`]).

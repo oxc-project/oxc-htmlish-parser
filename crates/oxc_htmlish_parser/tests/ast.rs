@@ -35,7 +35,7 @@ fn ast_snapshots() {
             Ok(root) => {
                 check::check(&root, NodeId::DOCUMENT).unwrap();
                 let mut printer =
-                    Printer { source: &source, root: &root, out: String::new(), depth: 0 };
+                    Printer { source: &source, root: &root, dialect, out: String::new(), depth: 0 };
                 printer.line(&format!("Root sfc={}", root.sfc));
                 printer.children(NodeId::DOCUMENT);
                 printer.out
@@ -64,6 +64,7 @@ fn snapshot(path: &Path, out: &str) {
 struct Printer<'s, 'a> {
     source: &'s str,
     root: &'s Root<'a>,
+    dialect: Dialect,
     out: String,
     depth: usize,
 }
@@ -140,8 +141,16 @@ impl Printer<'_, '_> {
                 )
             }
             NodeKind::Interpolation(n) => format!(
-                "Interpolation expression={}{}",
+                "Interpolation expression={}{}{}",
                 q(Interpolation::expression(node.span)),
+                if Interpolation::decodes_quote(
+                    Interpolation::expression(node.span).slice(self.source),
+                    self.dialect,
+                ) {
+                    " decodes_quote"
+                } else {
+                    ""
+                },
                 n.angular
                     .as_deref()
                     .map_or_else(String::new, |e| angular_expression(self.source, e))

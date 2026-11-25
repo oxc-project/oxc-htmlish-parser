@@ -195,3 +195,45 @@ impl Builder<'_> {
         self.push(NodeKind::Text(text), span(start, end));
     }
 }
+
+impl Interpolation<'_> {
+    /// A character reference in `expression` decodes to a quote as `dialect` reads it (`'&quot;'` is `'"'` there):
+    /// Angular's needs its `;`, Vue's is HTML's in a text (`&quot`, `&#39` too); no other dialect reads a `{{ }}`.
+    pub fn decodes_quote(expression: &str, dialect: Dialect) -> bool {
+        let bytes = expression.as_bytes();
+        memchr::memchr_iter(b'&', bytes).any(|at| {
+            let char = match dialect {
+                Dialect::Angular => {
+                    angular_expression::character_reference(&bytes[at..]).map(|(char, _)| char)
+                }
+                Dialect::Vue => html_quote_reference(&bytes[at..]),
+                Dialect::Html | Dialect::Xhtml => None,
+            };
+            matches!(char, Some(b'"' | b'\''))
+        })
+    }
+}
+
+/// The quote the character reference `bytes` starts with decodes to in an HTML text, as Vue decodes one (`decodeHTML`):
+/// `&quot` and `&QUOT` with or without their `;` (legacy names), `&apos;`, a number (`&#39`, `&#x22;`) with or without its `;`.
+fn html_quote_reference(bytes: &[u8]) -> Option<u8> {
+    let rest = &bytes[1..];
+    if rest.starts_with(b"quot") || rest.starts_with(b"QUOT") {
+        return Some(b'"');
+    }
+    if rest.starts_with(b"apos;") {
+        return Some(b'\'');
+    }
+    let number = rest.strip_prefix(b"#")?;
+    let (digits, radix) = match number.strip_prefix(b"x").or_else(|| number.strip_prefix(b"X")) {
+        Some(hex) => (hex, 16),
+        None => (number, 10),
+    };
+    let len = digits.iter().take_while(|b| char::from(**b).is_digit(radix)).count();
+    let code = u32::from_str_radix(std::str::from_utf8(&digits[..len]).ok()?, radix).ok()?;
+    match code {
+        0x22 => Some(b'"'),
+        0x27 => Some(b'\''),
+        _ => None,
+    }
+}

@@ -1,0 +1,30 @@
+---
+source: crates/oxc_htmlish_parser/tests/ast.rs
+---
+Root sfc=false
+  Comment content=[4..84] " A reference to a quote, decoded before the code is read; Angular's has its `;` "
+  Text [87..88] "\n" (nl|nl)
+  Element [89..90] "p" Html end_tag=[164..168] "</p>"
+    Interpolation expression=[93..103] " '&quot;' " decodes_quote code="'&quot;'"
+    Text [105..106] " " (sp|sp)
+    Interpolation expression=[108..118] " \"&apos;\" " decodes_quote code="\"&apos;\""
+    Text [120..121] " " (sp|sp)
+    Interpolation expression=[123..132] " '&#34;' " decodes_quote code="'&#34;'"
+    Text [134..135] " " (sp|sp)
+    Interpolation expression=[137..147] " '&#x27;' " decodes_quote
+    Text [149..150] " " (sp|sp)
+    Interpolation expression=[152..162] " '&QUOT;' " decodes_quote code="'&QUOT;'"
+  Text [168..169] "\n" (nl|nl)
+  Comment content=[173..219] " None: no `;`, another character, none at all "
+  Text [222..223] "\n" (nl|nl)
+  Element [224..225] "p" Html end_tag=[297..301] "</p>"
+    Interpolation expression=[228..237] " '&quot' " code="'&quot'"
+    Text [239..240] " " (sp|sp)
+    Interpolation expression=[242..250] " '&#39' " code="'&#39'"
+    Text [252..253] " " (sp|sp)
+    Interpolation expression=[255..266] " '&times;' " code="'&times;'"
+    Text [268..269] " " (sp|sp)
+    Interpolation expression=[271..287] " a &amp;&amp; b " code="a &amp;&amp; b"
+    Text [289..290] " " (sp|sp)
+    Interpolation expression=[292..295] " a " code="a"
+  Text [301..302] "\n" (nl|nl)
