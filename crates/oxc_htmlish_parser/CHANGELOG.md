@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.10](https://github.com/oxc-project/oxc-htmlish-parser/compare/oxc-htmlish-parser-v0.0.9...oxc-htmlish-parser-v0.0.10) - 2026-11-25
+
+### Added
+
+- *(parser/angular)* read what a nested pipe's parens are part of ([#43](https://github.com/oxc-project/oxc-htmlish-parser/pull/43))
+
 ## [0.0.9](https://github.com/oxc-project/oxc-htmlish-parser/compare/oxc-htmlish-parser-v0.0.8...oxc-htmlish-parser-v0.0.9) - 2026-11-20
 
 ### Added
