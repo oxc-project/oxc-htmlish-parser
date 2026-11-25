@@ -23,7 +23,7 @@ use oxc_htmlish_parser::{
     Allocator, Dialect, Parser,
     ast::{
         AngularAttribute, AngularCode, AngularExpression, AttributeKind, Block, BlockParameterKind,
-        Element, NestedPipeParent, NodeId, NodeKind, Root, TemplateBinding,
+        Element, Interpolation, NestedPipeParent, NodeId, NodeKind, Root, TemplateBinding,
     },
 };
 use serde_json::{Value, json};
@@ -75,10 +75,21 @@ fn node(source: &str, root: &Root<'_>, id: NodeId) -> Value {
             json!([
                 "i",
                 node.span.slice(source),
+                Interpolation::decodes_quote(
+                    Interpolation::expression(node.span).slice(source),
+                    Dialect::Angular
+                ),
                 n.angular.as_deref().map(|e| expression(source, e))
             ])
         }
-        NodeKind::Interpolation(_) => raw("i"),
+        NodeKind::Interpolation(_) => json!([
+            "i",
+            node.span.slice(source),
+            Interpolation::decodes_quote(
+                Interpolation::expression(node.span).slice(source),
+                Dialect::Vue
+            )
+        ]),
         // A bogus comment keeps how it opened (`<!`, `<?`, `</`): Vue drops some kinds only.
         NodeKind::Comment(n) if n.bogus => {
             json!(["bc", n.content.slice(source), &node.span.slice(source)[..2]])

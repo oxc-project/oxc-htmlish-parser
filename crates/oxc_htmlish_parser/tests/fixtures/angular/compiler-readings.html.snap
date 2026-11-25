@@ -50,7 +50,7 @@ Root sfc=false
     @[436..439] "[y]" =" [441..459] "a &amp;&amp; b | p" Property target="y" code="a &amp;&amp; b" | p[]
     @[461..464] "(z)" =" [466..482] "f(&apos;;&apos;)" Event target="z" statements=["f(&apos;;&apos;)"]
     @[484..489] "*ngIf" =" [491..507] "&#34;x&#34; as c" Template target="ngIf" [None: Some("&#34;x&#34;") code="&#34;x&#34;" as Some("c")]
-    Interpolation expression=[511..533] " &quot;a//b&quot; | p " code="&quot;a//b&quot;" | p[]
+    Interpolation expression=[511..533] " &quot;a//b&quot; | p " decodes_quote code="&quot;a//b&quot;" | p[]
     Text [535..536] " " (sp|sp)
     Interpolation expression=[538..548] " a &lt; b " code="a &lt; b"
   Text [554..555] "\n" (nl|nl)

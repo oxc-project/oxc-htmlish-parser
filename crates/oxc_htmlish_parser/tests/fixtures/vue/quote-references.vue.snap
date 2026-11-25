@@ -1,0 +1,27 @@
+---
+source: crates/oxc_htmlish_parser/tests/ast.rs
+---
+Root sfc=true
+  Element [1..9] "template" Html end_tag=[262..273] "</template>"
+    Text [10..13] "\n  " (nl|nl)
+    Comment content=[17..96] " A reference to a quote, decoded as HTML decodes a text's: without its `;` too "
+    Text [99..102] "\n  " (nl|nl)
+    Element [103..104] "p" Html end_tag=[176..180] "</p>"
+      Interpolation expression=[107..117] " '&quot;' " decodes_quote
+      Text [119..120] " " (sp|sp)
+      Interpolation expression=[122..131] " '&quot' " decodes_quote
+      Text [133..134] " " (sp|sp)
+      Interpolation expression=[136..144] " '&#39' " decodes_quote
+      Text [146..147] " " (sp|sp)
+      Interpolation expression=[149..159] " '&#x22;' " decodes_quote
+      Text [161..162] " " (sp|sp)
+      Interpolation expression=[164..174] " \"&apos;\" " decodes_quote
+    Text [180..183] "\n  " (nl|nl)
+    Comment content=[187..225] " None: another character, none at all "
+    Text [228..231] "\n  " (nl|nl)
+    Element [232..233] "p" Html end_tag=[257..261] "</p>"
+      Interpolation expression=[236..247] " '&times;' "
+      Text [249..250] " " (sp|sp)
+      Interpolation expression=[252..255] " a "
+    Text [261..262] "\n" (nl|nl)
+  Text [273..274] "\n" (nl|nl)
