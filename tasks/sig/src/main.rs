@@ -23,7 +23,7 @@ use oxc_htmlish_parser::{
     Allocator, Dialect, Parser,
     ast::{
         AngularAttribute, AngularCode, AngularExpression, AttributeKind, Block, BlockParameterKind,
-        Element, NodeId, NodeKind, Root, TemplateBinding,
+        Element, NestedPipeParent, NodeId, NodeKind, Root, TemplateBinding,
     },
 };
 use serde_json::{Value, json};
@@ -156,7 +156,21 @@ fn expression(source: &str, e: &AngularExpression<'_>) -> Value {
     json!([code(source, &e.code), pipes, e.comment.map(|c| c.slice(source))])
 }
 
-/// `[text, conditional, [[text, in_parens, last_value, spread, expression], …]]`, the last its nested pipes
+/// A nested pipe's parens' parent, as `tasks/differential` names it.
+fn parent(parent: NestedPipeParent) -> &'static str {
+    match parent {
+        NestedPipeParent::Callee => "callee",
+        NestedPipeParent::MemberObject { computed: false } => "member",
+        NestedPipeParent::MemberObject { computed: true } => "index",
+        NestedPipeParent::UnaryArgument => "unary",
+        NestedPipeParent::Conditional { call_argument: false } => "conditional",
+        NestedPipeParent::Conditional { call_argument: true } => "conditional-argument",
+        NestedPipeParent::ObjectValue => "object",
+        NestedPipeParent::Other => "other",
+    }
+}
+
+/// `[text, conditional, [[text, in_parens, last_value, spread, parent, expression], …]]`, the last its nested pipes
 fn code(source: &str, code: &AngularCode) -> Value {
     let nested: Vec<Value> = code
         .nested
@@ -164,9 +178,10 @@ fn code(source: &str, code: &AngularCode) -> Value {
         .map(|n| {
             json!([
                 n.span.slice(source),
-                n.in_parens,
+                n.parens.is_some(),
                 n.last_value,
                 n.spread,
+                parent(n.parens.unwrap_or(NestedPipeParent::Other)),
                 expression(source, &n.expression)
             ])
         })

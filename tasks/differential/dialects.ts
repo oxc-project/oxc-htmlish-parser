@@ -355,12 +355,27 @@ const ELEMENTS: Record<string, string[]> = {
   ParenthesizedExpression: ["expression"],
 };
 
-/** The outermost pipes below `n` taking an element's place, in `tasks/sig`'s shape (`[text, in_parens, last_value, spread, expression]`);
- * one in a conditional's branch is no element, and a template literal's are not read. */
-function collectNested(code: string, n: any, element: boolean, out: unknown[], inValue = false, lastValue = false, spread = false): void {
+/** What parens around a pipe are part of (`NestedPipeParent`), by the node they are in and its key; `inArgs`: that node is a call's argument. */
+function parentOf(kind: string, key: string, inArgs: boolean): string {
+  if ((kind === "Call" || kind === "SafeCall") && key === "receiver") return "callee";
+  if ((kind === "PropertyRead" || kind === "SafePropertyRead") && key === "receiver") return "member";
+  if ((kind === "KeyedRead" || kind === "SafeKeyedRead") && key === "receiver") return "index";
+  if ((kind === "PrefixNot" || kind === "TypeofExpression" || kind === "VoidExpression") && key === "expression") return "unary";
+  if (kind === "Unary" && key === "expr") return "unary";
+  if (kind === "Conditional") return inArgs ? "conditional-argument" : "conditional";
+  return "other";
+}
+
+/** The outermost pipes below `n` taking an element's place, in `tasks/sig`'s shape (`[text, in_parens, last_value, spread, parent, expression]`);
+ * one in a conditional's branch is no element, and a template literal's are not read.
+ * `parent`: what `n` is part of (`parentOf`); `inArgs`: `n` is a call's argument. */
+type Context = { inValue?: boolean; lastValue?: boolean; spread?: boolean; parent?: string; inArgs?: boolean };
+
+function collectNested(code: string, n: any, element: boolean, out: unknown[], context: Context = {}): void {
+  const { inValue = false, lastValue = false, spread = false, parent = "other", inArgs = false } = context;
   if (n === null || typeof n !== "object") return;
   if (Array.isArray(n)) {
-    n.forEach((child) => collectNested(code, child, element, out));
+    n.forEach((child) => collectNested(code, child, element, out, { inArgs }));
     return;
   }
   if (!("span" in n)) return;
@@ -371,29 +386,37 @@ function collectNested(code: string, n: any, element: boolean, out: unknown[], i
     const pipe = n.expression;
     out.push(
       element && !inValue
-        ? [code.slice(pipe.span.start, pipe.span.end), false, false, false, nestedReading(code, pipe)]
-        : [code.slice(n.span.start, n.span.end), true, lastValue, spread, nestedReading(code, pipe)],
+        ? [code.slice(pipe.span.start, pipe.span.end), false, false, false, "other", nestedReading(code, pipe)]
+        : [code.slice(n.span.start, n.span.end), true, lastValue, spread, parent, nestedReading(code, pipe)],
     );
     return;
   }
   // A spread's expression is the element, whose parens stay, as an object's value's
-  if (kind === "SpreadElement" && element) return collectNested(code, n.expression, true, out, true, lastValue, true);
+  if (kind === "SpreadElement" && element) return collectNested(code, n.expression, true, out, { inValue: true, lastValue, spread: true });
   // An object's values, a spread's among them (`{...a}`, a key of kind `spread`)
   if (kind === "LiteralMap") {
     n.values.forEach((value: any, i: number) =>
-      collectNested(code, value, true, out, true, i === n.values.length - 1, n.keys[i].kind === "spread"),
+      collectNested(code, value, true, out, {
+        inValue: true,
+        lastValue: i === n.values.length - 1,
+        spread: n.keys[i].kind === "spread",
+        parent: n.keys[i].kind === "spread" ? "other" : "object",
+      }),
     );
     return;
   }
   if (kind === "BindingPipe" && element) {
-    out.push([code.slice(n.span.start, n.span.end), false, lastValue, spread, nestedReading(code, n)]);
+    out.push([code.slice(n.span.start, n.span.end), false, lastValue, spread, "other", nestedReading(code, n)]);
     return;
   }
   const elements = ELEMENTS[kind] ?? [];
   for (const [key, child] of Object.entries(n)) {
     if (key === "span" || key === "sourceSpan" || key === "nameSpan" || key === "argumentSpan") continue;
+    // A unary's operand is also its `right` (`-a` is a `0 - a` binary): read it once, as `expr`
+    if (kind === "Unary" && (key === "left" || key === "right")) continue;
     const isElement = elements.includes(key) && kind !== "ParenthesizedExpression";
-    collectNested(code, child, isElement, out);
+    const args = (kind === "Call" || kind === "SafeCall") && key === "args";
+    collectNested(code, child, isElement, out, { parent: parentOf(kind, key, inArgs), inArgs: args });
   }
 }
 
