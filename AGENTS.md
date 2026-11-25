@@ -25,7 +25,7 @@ Parse behavior targets each dialect's oracle (not the spec), judged against its 
   for Angular the fork's own.
 - HTML has no such compiler: browsers recover from any input, and an `.html` file is often a template whose source no browser reads.
   Prettier's parser is the oracle, and WHATWG the norm it is judged against.
-- Versions follow Prettier's pin (3.10.0): the `angular-html-parser` it bundles, and the `@angular/compiler` minor that fork is cut from.
+- Versions follow Prettier's pin (3.10.1): the `angular-html-parser` it bundles, and the `@angular/compiler` minor that fork is cut from.
   A fix on an oracle's `main` is followed only as a `DIVERGENCES.md` entry citing it.
 
 ## Deciding a difference
